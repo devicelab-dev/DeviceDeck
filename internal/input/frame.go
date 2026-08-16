@@ -105,6 +105,38 @@ func SystemGesture(g Gesture) []byte {
 	return []byte{typeGesture, byte(g)}
 }
 
+// FrameLength returns the total wire length (type byte included) for a
+// frame starting with frameType, or 0 for an unknown type. Mirrors
+// Frame.payloadLength in the Swift sidecar.
+func FrameLength(frameType byte) int {
+	switch {
+	case frameType >= 0x01 && frameType <= 0x03:
+		return 10
+	case frameType >= 0x04 && frameType <= 0x06:
+		return 17
+	case frameType >= 0x07 && frameType <= 0x09:
+		return 9
+	case frameType == typeLegacyButton:
+		return 5
+	case frameType == typeKey:
+		return 6
+	case frameType == typeGesture:
+		return 2
+	default:
+		return 0
+	}
+}
+
+// ValidFrame reports whether raw is exactly one well-formed frame. The
+// live input WebSocket uses it to reject malformed client frames before
+// they can desync the sidecar's stdin stream.
+func ValidFrame(raw []byte) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	return FrameLength(raw[0]) == len(raw)
+}
+
 func buttonFrame(frameType byte, page, usage uint32) []byte {
 	buf := make([]byte, 9)
 	buf[0] = frameType

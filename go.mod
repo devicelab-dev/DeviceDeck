@@ -2,7 +2,10 @@ module github.com/devicelab-dev/DeviceDeck
 
 go 1.26
 
-require github.com/devicelab-dev/maestro-runner v1.1.24-0.20260815210437-b4d707e486bc
+require (
+	github.com/coder/websocket v1.8.15
+	github.com/devicelab-dev/maestro-runner v1.1.24-0.20260815210437-b4d707e486bc
+)
 
 require (
 	github.com/kr/pretty v0.3.0 // indirect

@@ -99,6 +99,45 @@ func TestKey(t *testing.T) {
 	}
 }
 
+func TestFrameLengthAndValidation(t *testing.T) {
+	// Every encoder output must validate against its own length table.
+	valid := [][]byte{
+		Touch(TouchDown, 0, 0, EdgeNone),
+		Touch(TouchMove, 1, 1, EdgeBottom),
+		Touch(TouchUp, 0.5, 0.5, EdgeNone),
+		TwoFinger(TouchDown, 0, 0, 1, 1),
+		TwoFinger(TouchMove, 0, 0, 1, 1),
+		TwoFinger(TouchUp, 0, 0, 1, 1),
+		ButtonPress(1, 2),
+		ButtonDown(1, 2),
+		ButtonUp(1, 2),
+		LegacyButton(0),
+		Key(0, 4),
+		SystemGesture(GestureSwipeToHome),
+	}
+	for _, f := range valid {
+		if !ValidFrame(f) {
+			t.Errorf("encoder output %x rejected by ValidFrame", f)
+		}
+	}
+	invalid := [][]byte{
+		nil,
+		{},
+		{0x00, 1, 2},
+		{0xFF},
+		Touch(TouchDown, 0, 0, EdgeNone)[:9], // truncated
+		append(SystemGesture(GestureSwipeToHome), 0x00), // trailing junk
+	}
+	for _, f := range invalid {
+		if ValidFrame(f) {
+			t.Errorf("ValidFrame accepted %x", f)
+		}
+	}
+	if FrameLength(0x0D) != 0 || FrameLength(0x00) != 0 {
+		t.Error("unknown types must map to 0")
+	}
+}
+
 func TestSystemGesture(t *testing.T) {
 	for _, g := range []Gesture{GestureSwipeToHome, GestureAppSwitcher, GestureNotificationCenter, GestureLockScreen} {
 		got := SystemGesture(g)

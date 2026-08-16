@@ -6,28 +6,56 @@ import (
 	"testing"
 )
 
-func TestResolveSidecarExplicit(t *testing.T) {
-	dir := t.TempDir()
-	bin := filepath.Join(dir, "devicedeck-hid")
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+func writeStub(t *testing.T, dir, name string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	got, err := resolveSidecar(bin)
+	return path
+}
+
+func TestResolveBinaryExplicit(t *testing.T) {
+	bin := writeStub(t, t.TempDir(), "devicedeck-hid")
+	got, err := resolveBinary("devicedeck-hid", bin)
 	if err != nil || got != bin {
-		t.Fatalf("resolveSidecar = %q, %v", got, err)
+		t.Fatalf("resolveBinary = %q, %v", got, err)
 	}
 }
 
-func TestResolveSidecarEnv(t *testing.T) {
-	dir := t.TempDir()
-	bin := filepath.Join(dir, "devicedeck-hid")
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+func TestResolveBinaryEnv(t *testing.T) {
+	bin := writeStub(t, t.TempDir(), "devicedeck-video")
+	t.Setenv("DEVICEDECK_VIDEO", bin)
+	got, err := resolveBinary("devicedeck-video", "")
+	if err != nil || got != bin {
+		t.Fatalf("resolveBinary via env = %q, %v", got, err)
+	}
+}
+
+func TestResolveBinaryDevBuildPath(t *testing.T) {
+	root := t.TempDir()
+	release := filepath.Join(root, "sidecar/.build/release")
+	if err := os.MkdirAll(release, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("DEVICEDECK_HID", bin)
-	got, err := resolveSidecar("")
-	if err != nil || got != bin {
-		t.Fatalf("resolveSidecar via env = %q, %v", got, err)
+	bin := writeStub(t, release, "devicedeck-hid")
+	t.Chdir(root)
+	got, err := resolveBinary("devicedeck-hid", "")
+	if err != nil || got != filepath.Join("sidecar/.build/release", "devicedeck-hid") {
+		t.Fatalf("resolveBinary dev path = %q, %v (stub at %s)", got, err, bin)
+	}
+}
+
+func TestResolveBinarySkipsDirsAndMissing(t *testing.T) {
+	// A directory with the right name must not be accepted as the binary.
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "devicedeck-hid"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DEVICEDECK_HID", filepath.Join(dir, "devicedeck-hid"))
+	t.Chdir(t.TempDir()) // ensure the relative dev-build path also misses
+	if _, err := resolveBinary("devicedeck-hid", ""); err == nil {
+		t.Fatal("expected not-found error")
 	}
 }
 
@@ -61,17 +89,4 @@ func TestDefaultRunnerHome(t *testing.T) {
 			t.Errorf("MAESTRO_RUNNER_HOME = %q, want unset", got)
 		}
 	})
-}
-
-func TestResolveSidecarSkipsDirsAndMissing(t *testing.T) {
-	// A directory with the right name must not be accepted as the binary.
-	dir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(dir, "devicedeck-hid"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("DEVICEDECK_HID", filepath.Join(dir, "devicedeck-hid"))
-	t.Chdir(t.TempDir()) // ensure the relative dev-build path also misses
-	if _, err := resolveSidecar(""); err == nil {
-		t.Fatal("expected not-found error")
-	}
 }

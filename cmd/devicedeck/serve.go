@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -16,34 +17,46 @@ import (
 	"github.com/devicelab-dev/DeviceDeck/internal/runner"
 	"github.com/devicelab-dev/DeviceDeck/internal/server"
 	"github.com/devicelab-dev/DeviceDeck/internal/sim"
+	"github.com/devicelab-dev/DeviceDeck/internal/video"
+	"github.com/devicelab-dev/DeviceDeck/internal/web"
 )
 
 // runServe starts the DeviceDeck HTTP server and blocks until SIGINT/SIGTERM.
 //
 // Coverage waiver: runServe is process-lifecycle wiring (real listener,
 // signals, real backends) verified by running the server; unit tests cover
-// resolveSidecar and everything behind the injected interfaces.
+// resolveBinary, defaultRunnerHome, and everything behind the injected
+// interfaces.
 func runServe(args []string) error {
 	flags := flag.NewFlagSet("serve", flag.ContinueOnError)
 	addr := flags.String("addr", "127.0.0.1:8787", "listen address")
-	sidecarPath := flags.String("sidecar", "", "path to devicedeck-hid (default: auto-discover)")
+	hidPath := flags.String("sidecar", "", "path to devicedeck-hid (default: auto-discover)")
+	videoPath := flags.String("video-sidecar", "", "path to devicedeck-video (default: auto-discover)")
+	fps := flags.Int("fps", 30, "video capture frame rate")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	binPath, err := resolveSidecar(*sidecarPath)
+	hidBin, err := resolveBinary("devicedeck-hid", *hidPath)
+	if err != nil {
+		return err
+	}
+	videoBin, err := resolveBinary("devicedeck-video", *videoPath)
 	if err != nil {
 		return err
 	}
 	defaultRunnerHome()
 
-	inputs := input.NewManager(binPath)
+	inputs := input.NewManager(hidBin)
+	videos := video.NewManager(videoBin, *fps)
 	engines := runner.NewEngines()
-	srv := server.New(sim.NewClient(), sim.NewClient(), inputs, engines)
+	srv := server.New(sim.NewClient(), sim.NewClient(), inputs, engines, videos)
+	srv.SetConsole(web.Handler())
 	httpServer := &http.Server{Addr: *addr, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- httpServer.ListenAndServe() }()
-	slog.Info("devicedeck serving", "addr", *addr, "sidecar", binPath)
+	slog.Info("devicedeck serving", "addr", *addr, "console", "http://"+*addr,
+		"hid", hidBin, "video", videoBin)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
@@ -58,6 +71,7 @@ func runServe(args []string) error {
 	defer cancel()
 	_ = httpServer.Shutdown(ctx)
 	inputs.CloseAll()
+	videos.CloseAll()
 	engines.StopAll(ctx)
 	return nil
 }
@@ -80,15 +94,16 @@ func defaultRunnerHome() {
 	}
 }
 
-// resolveSidecar finds the devicedeck-hid binary: explicit flag, then the
-// DEVICEDECK_HID env var, then next to this executable, then the local
+// resolveBinary finds a sidecar binary: explicit flag value, then the
+// DEVICEDECK_<NAME> env var, then next to this executable, then the local
 // Swift build output (developer setup).
-func resolveSidecar(explicit string) (string, error) {
-	candidates := []string{explicit, os.Getenv("DEVICEDECK_HID")}
+func resolveBinary(name, explicit string) (string, error) {
+	envVar := strings.ToUpper(strings.ReplaceAll(name, "-", "_")) // devicedeck-hid → DEVICEDECK_HID
+	candidates := []string{explicit, os.Getenv(envVar)}
 	if exe, err := os.Executable(); err == nil {
-		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "devicedeck-hid"))
+		candidates = append(candidates, filepath.Join(filepath.Dir(exe), name))
 	}
-	candidates = append(candidates, "sidecar/.build/release/devicedeck-hid")
+	candidates = append(candidates, filepath.Join("sidecar/.build/release", name))
 	for _, c := range candidates {
 		if c == "" {
 			continue
@@ -97,5 +112,5 @@ func resolveSidecar(explicit string) (string, error) {
 			return c, nil
 		}
 	}
-	return "", fmt.Errorf("devicedeck-hid not found; build it with `make sidecar` or pass --sidecar")
+	return "", fmt.Errorf("%s not found; build it with `make sidecar` or pass a flag (env %s also works)", name, envVar)
 }

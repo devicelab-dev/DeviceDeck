@@ -1,5 +1,6 @@
 import Foundation
 import CoreGraphics
+import SimCore
 
 // Function shapes of the private SimulatorKit / IOKit C entry points.
 // Signatures were reverse-engineered by the baguette and tapflow projects
@@ -70,14 +71,9 @@ struct SimKit {
     /// dlopen both frameworks and resolve every symbol, or exit: a sidecar
     /// that cannot inject anything has no reason to keep the pipe open.
     static func load() -> SimKit {
-        let dev = findDeveloperDir()
-        guard dlopen("/Library/Developer/PrivateFrameworks/CoreSimulator.framework/CoreSimulator",
-                     RTLD_NOW | RTLD_GLOBAL) != nil else {
-            fatalStartup("CoreSimulator dlopen failed: \(dlerrorString())")
-        }
-        let kitPath = (dev as NSString)
-            .appendingPathComponent("Library/PrivateFrameworks/SimulatorKit.framework/SimulatorKit")
-        guard let kit = dlopen(kitPath, RTLD_NOW | RTLD_GLOBAL) else {
+        let dev = DeveloperDir.find()
+        CoreSim.load()
+        guard let kit = dlopen(DeveloperDir.simulatorKitPath(dev), RTLD_NOW | RTLD_GLOBAL) else {
             fatalStartup("SimulatorKit dlopen failed: \(dlerrorString())")
         }
         // IOKit symbols live in the dyld shared cache; an explicit handle
@@ -101,48 +97,4 @@ struct SimKit {
             trackpadWrap: sym(kit, "IndigoHIDMessageForTrackpadEventFromHIDEventRef", as: TrackpadWrapFn.self)
         )
     }
-
-    /// Active Xcode developer dir via xcode-select, falling back to any
-    /// /Applications/Xcode*.app that actually ships SimulatorKit.
-    private static func findDeveloperDir() -> String {
-        let selected = runXcodeSelect()
-        if !selected.isEmpty, shipsSimulatorKit(selected) { return selected }
-        let apps = (try? FileManager.default.contentsOfDirectory(atPath: "/Applications")) ?? []
-        for app in apps.sorted() where app.hasPrefix("Xcode") && app.hasSuffix(".app") {
-            let dir = "/Applications/\(app)/Contents/Developer"
-            if shipsSimulatorKit(dir) { return dir }
-        }
-        return selected.isEmpty ? "/Applications/Xcode.app/Contents/Developer" : selected
-    }
-
-    private static func runXcodeSelect() -> String {
-        let pipe = Pipe()
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/xcode-select")
-        task.arguments = ["-p"]
-        task.standardOutput = pipe
-        do { try task.run() } catch { return "" }
-        task.waitUntilExit()
-        return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    }
-
-    private static func shipsSimulatorKit(_ dir: String) -> Bool {
-        FileManager.default.fileExists(atPath: (dir as NSString).appendingPathComponent(
-            "Library/PrivateFrameworks/SimulatorKit.framework/SimulatorKit"))
-    }
-}
-
-/// stderr log line; stdout is reserved for the ready handshake.
-func log(_ message: String) {
-    FileHandle.standardError.write(Data(("devicedeck-hid: " + message + "\n").utf8))
-}
-
-func dlerrorString() -> String {
-    dlerror().map { String(cString: $0) } ?? "unknown dlerror"
-}
-
-func fatalStartup(_ message: String) -> Never {
-    log("fatal: " + message)
-    exit(1)
 }

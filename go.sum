@@ -1,3 +1,5 @@
+github.com/coder/websocket v1.8.15 h1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNUA=
+github.com/coder/websocket v1.8.15/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/devicelab-dev/maestro-runner v1.1.24-0.20260815210437-b4d707e486bc h1:PuoYo7Cb/NwA7LOdxt14eZUDCsllWMZReraejXPg3fo=
 github.com/devicelab-dev/maestro-runner v1.1.24-0.20260815210437-b4d707e486bc/go.mod h1:DMSQv0AMy2xs1COCdt/eIbUUmGzyLX35KmgKx/uJ0Xs=

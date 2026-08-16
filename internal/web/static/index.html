@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DeviceDeck</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <span class="brand">DeviceDeck</span>
+    <select id="devices"></select>
+    <input id="app" placeholder="app bundle id (for tree)" spellcheck="false">
+    <span class="spacer"></span>
+    <button id="btn-home" title="Swipe to home">Home</button>
+    <button id="btn-switcher" title="App switcher">Switcher</button>
+    <button id="btn-lock" title="Lock button">Lock</button>
+    <button id="btn-shot" title="Save screenshot">Shot</button>
+    <button id="btn-inspect" title="Toggle tree inspector">Inspect</button>
+    <span id="status">no device</span>
+  </header>
+  <main>
+    <div id="stage">
+      <canvas id="video" tabindex="0"></canvas>
+      <div id="overlay" hidden></div>
+    </div>
+    <aside id="panel" hidden>
+      <h2 id="node-title">—</h2>
+      <pre id="node-info"></pre>
+    </aside>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

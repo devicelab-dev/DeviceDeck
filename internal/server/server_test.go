@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -24,12 +25,28 @@ type fakeBackend struct {
 	nodes      []runner.Node
 	nodesErr   error
 	treeApp    string
-	frames     [][]byte
 	framesErr  error
-	frameUDID  string
 	// failAfter, when > 0, makes SendFrame fail once that many frames
 	// have been accepted — exercises mid-gesture sidecar death.
 	failAfter int
+
+	// mu guards frames/frameUDID: WebSocket handlers call SendFrame from
+	// server goroutines while tests poll the captured frames.
+	mu        sync.Mutex
+	frames    [][]byte
+	frameUDID string
+}
+
+func (f *fakeBackend) sentFrames() [][]byte {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([][]byte(nil), f.frames...)
+}
+
+func (f *fakeBackend) sentUDID() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.frameUDID
 }
 
 func (f *fakeBackend) Booted(context.Context) ([]sim.Device, error) {
@@ -49,6 +66,8 @@ func (f *fakeBackend) SendFrame(_ context.Context, udid string, frame []byte) er
 	if f.framesErr != nil {
 		return f.framesErr
 	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.failAfter > 0 && len(f.frames) >= f.failAfter {
 		return errors.New("sidecar died mid-gesture")
 	}
@@ -58,7 +77,7 @@ func (f *fakeBackend) SendFrame(_ context.Context, udid string, frame []byte) er
 }
 
 func newTestServer(f *fakeBackend) *Server {
-	s := New(f, f, f, f)
+	s := New(f, f, f, f, &fakeVideo{frames: make(chan []byte)})
 	s.sleep = func(time.Duration) {}
 	return s
 }

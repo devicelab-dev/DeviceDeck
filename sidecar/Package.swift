@@ -2,11 +2,13 @@
 import PackageDescription
 
 let package = Package(
-    name: "devicedeck-hid",
+    name: "devicedeck-sidecars",
     platforms: [.macOS(.v13)],
     targets: [
         .target(name: "HIDProtocol"),
-        .executableTarget(name: "devicedeck-hid", dependencies: ["HIDProtocol"]),
+        .target(name: "SimCore"),
+        .executableTarget(name: "devicedeck-hid", dependencies: ["HIDProtocol", "SimCore"]),
+        .executableTarget(name: "devicedeck-video", dependencies: ["SimCore"]),
         .testTarget(name: "HIDProtocolTests", dependencies: ["HIDProtocol"]),
     ]
 )

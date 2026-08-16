@@ -1,5 +1,6 @@
 import Foundation
 import HIDProtocol
+import SimCore
 
 // devicedeck-hid — DeviceDeck's input sidecar.
 //

@@ -1,6 +1,7 @@
 import Foundation
 import CoreGraphics
 import HIDProtocol
+import SimCore
 
 /// Maps decoded protocol frames onto the right dispatch path: digitizer
 /// for single-finger touch, the 9-arg mouse builder for two-finger, and

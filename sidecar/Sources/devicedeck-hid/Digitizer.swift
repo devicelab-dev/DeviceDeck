@@ -1,6 +1,7 @@
 import Foundation
 import CoreGraphics
 import HIDProtocol
+import SimCore
 
 /// The iOS 26-safe touch path: build a real IOHIDEvent digitizer parent +
 /// finger child, wrap it via `IndigoHIDMessageForTrackpadEventFromHIDEventRef`,

@@ -1,13 +1,9 @@
 import Foundation
 import ObjectiveC
+import SimCore
 
 /// Wraps a SimulatorKit `SimDeviceLegacyHIDClient` bound to one simulator.
 /// All Indigo messages — touch, button, key — go out through `send`.
-///
-/// Objective-C methods are invoked via `class_getInstanceMethod` +
-/// `method_getImplementation`, never `class_getMethodImplementation` alone:
-/// Xcode 26 returns a non-NULL forwarding trampoline for removed selectors
-/// that crashes with "unrecognized selector" when called.
 final class HIDClient {
     private let client: NSObject
     private let sendFn: SendFn
@@ -21,7 +17,7 @@ final class HIDClient {
     /// mouse services (Simulator.app registers them before its first touch;
     /// so do we). Returns nil with a log on any failure.
     init?(udid: String, kit: SimKit) {
-        guard let device = HIDClient.resolveDevice(udid: udid, developerDir: kit.developerDir) else {
+        guard let device = CoreSim.resolveDevice(udid: udid, developerDir: kit.developerDir) else {
             log("device not found (udid=\(udid))")
             return nil
         }
@@ -53,25 +49,12 @@ final class HIDClient {
         }
     }
 
-    private static func resolveDevice(udid: String, developerDir: String) -> NSObject? {
-        guard let cls = NSClassFromString("SimServiceContext"),
-              let ctx = invokeClass(cls, "sharedServiceContextForDeveloperDir:error:",
-                                    with: developerDir as NSString),
-              let set = invokeInstance(ctx, "defaultDeviceSetWithError:") else { return nil }
-        let devices = (set.value(forKey: "availableDevices") as? [NSObject]) ?? []
-        if udid == "booted" {
-            // CoreSimulator state 3 = booted.
-            return devices.first { ($0.value(forKey: "state") as? NSNumber)?.uintValue == 3 }
-        }
-        return devices.first { ($0.value(forKey: "UDID") as? NSUUID)?.uuidString == udid }
-    }
-
     private static func makeClient(device: NSObject) -> NSObject? {
         guard let cls = NSClassFromString("_TtC12SimulatorKit24SimDeviceLegacyHIDClient") else {
             log("SimDeviceLegacyHIDClient class not found")
             return nil
         }
-        guard let allocated = alloc(cls) else { return nil }
+        guard let allocated = ObjC.alloc(cls) else { return nil }
         let initSel = NSSelectorFromString("initWithDevice:error:")
         guard let method = class_getInstanceMethod(type(of: allocated), initSel) else {
             log("initWithDevice:error: missing")
@@ -85,37 +68,5 @@ final class HIDClient {
             allocated, initSel, device, &err)
         if let err { log("SimDeviceLegacyHIDClient init failed: \(err.localizedDescription)") }
         return made
-    }
-
-    private static func alloc(_ cls: AnyClass) -> NSObject? {
-        let sel = NSSelectorFromString("alloc")
-        guard let meta = object_getClass(cls),
-              let method = class_getInstanceMethod(meta, sel) else { return nil }
-        typealias AllocFn = @convention(c) (AnyClass, Selector) -> NSObject?
-        return unsafeBitCast(method_getImplementation(method), to: AllocFn.self)(cls, sel)
-    }
-
-    /// Call a class method taking one object arg and an NSError out-param.
-    private static func invokeClass(_ cls: AnyClass, _ selector: String,
-                                    with arg: AnyObject) -> NSObject? {
-        let sel = NSSelectorFromString(selector)
-        guard let meta = object_getClass(cls),
-              let method = class_getInstanceMethod(meta, sel) else { return nil }
-        typealias Fn = @convention(c) (
-            AnyClass, Selector, AnyObject, AutoreleasingUnsafeMutablePointer<NSError?>
-        ) -> NSObject?
-        var err: NSError?
-        return unsafeBitCast(method_getImplementation(method), to: Fn.self)(cls, sel, arg, &err)
-    }
-
-    /// Call an instance method taking only an NSError out-param.
-    private static func invokeInstance(_ obj: NSObject, _ selector: String) -> NSObject? {
-        let sel = NSSelectorFromString(selector)
-        guard let method = class_getInstanceMethod(type(of: obj), sel) else { return nil }
-        typealias Fn = @convention(c) (
-            NSObject, Selector, AutoreleasingUnsafeMutablePointer<NSError?>
-        ) -> NSObject?
-        var err: NSError?
-        return unsafeBitCast(method_getImplementation(method), to: Fn.self)(obj, sel, &err)
     }
 }

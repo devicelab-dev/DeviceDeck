@@ -42,20 +42,27 @@ type Server struct {
 	screenshots Screenshotter
 	frames      FrameSender
 	trees       TreeSource
+	video       VideoSource
+	console     http.Handler
 	// sleep paces multi-frame gestures; injected so tests run instantly.
 	sleep func(time.Duration)
 }
 
-// New wires a Server. Any nil dependency disables its endpoints with 503.
-func New(devices DeviceLister, screenshots Screenshotter, frames FrameSender, trees TreeSource) *Server {
+// New wires a Server.
+func New(devices DeviceLister, screenshots Screenshotter, frames FrameSender, trees TreeSource, video VideoSource) *Server {
 	return &Server{
 		devices:     devices,
 		screenshots: screenshots,
 		frames:      frames,
 		trees:       trees,
+		video:       video,
 		sleep:       time.Sleep,
 	}
 }
+
+// SetConsole mounts the browser console at /. Optional — API-only servers
+// (and tests) skip it.
+func (s *Server) SetConsole(h http.Handler) { s.console = h }
 
 // Handler returns the API routing table.
 func (s *Server) Handler() http.Handler {
@@ -63,11 +70,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/devices", s.handleDevices)
 	mux.HandleFunc("GET /api/devices/{udid}/screenshot", s.handleScreenshot)
 	mux.HandleFunc("GET /api/devices/{udid}/tree", s.handleTree)
+	mux.HandleFunc("GET /api/devices/{udid}/video", s.handleVideoWS)
+	mux.HandleFunc("GET /api/devices/{udid}/input", s.handleInputWS)
 	mux.HandleFunc("POST /api/devices/{udid}/tap", s.handleTap)
 	mux.HandleFunc("POST /api/devices/{udid}/swipe", s.handleSwipe)
 	mux.HandleFunc("POST /api/devices/{udid}/gesture", s.handleGesture)
 	mux.HandleFunc("POST /api/devices/{udid}/key", s.handleKey)
 	mux.HandleFunc("POST /api/devices/{udid}/button", s.handleButton)
+	if s.console != nil {
+		mux.Handle("GET /", s.console)
+	}
 	return mux
 }
 

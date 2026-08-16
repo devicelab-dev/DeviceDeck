@@ -19,6 +19,11 @@ Derived material in `sidecar/Sources/devicedeck-hid/`:
 - System-gesture timing recipes (swipe-to-home, app switcher, notification
   center, lock screen pulls) and the two-finger settle-window retry —
   `Injector.swift`.
+- The VideoToolbox H.264 low-latency encoder (session tuning, AVCC
+  extraction, avcC parameter-set blob) and the framebuffer IOSurface
+  discovery recipe (`deviceIOPorts` → framebuffer display port →
+  descriptor surface, with the one-shot `updateIOPorts` materialization) —
+  `Sources/devicedeck-video/H264Encoder.swift`, `Framebuffer.swift`.
 
 ## tapflow — MIT License
 

@@ -1,0 +1,97 @@
+* { box-sizing: border-box; margin: 0; }
+
+:root {
+  --bg: #101216;
+  --panel: #1a1e26;
+  --edge: #2a303c;
+  --text: #d7dce4;
+  --dim: #8a93a3;
+  --accent: #4f8cff;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.4 -apple-system, "SF Pro Text", Helvetica, sans-serif;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--edge);
+}
+
+.brand { font-weight: 700; letter-spacing: 0.02em; margin-right: 8px; }
+.spacer { flex: 1; }
+
+select, input, button {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font: inherit;
+}
+
+input#app { width: 230px; }
+button { cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+#status { color: var(--dim); font-size: 12px; margin-left: 8px; }
+
+main { flex: 1; display: flex; min-height: 0; }
+
+#stage {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  padding: 16px;
+  min-width: 0;
+}
+
+#video {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 24px;
+  outline: none;
+  background: #000;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+}
+
+#overlay {
+  position: absolute;
+  pointer-events: none;
+}
+
+#overlay .node {
+  position: absolute;
+  pointer-events: auto;
+  border: 1px solid rgba(79, 140, 255, 0.35);
+  border-radius: 2px;
+}
+
+#overlay .node:hover {
+  border-color: var(--accent);
+  background: rgba(79, 140, 255, 0.18);
+}
+
+#panel {
+  width: 280px;
+  border-left: 1px solid var(--edge);
+  background: var(--panel);
+  padding: 14px;
+  overflow: auto;
+}
+
+#panel h2 { font-size: 13px; margin-bottom: 8px; word-break: break-all; }
+#panel pre { font-size: 12px; color: var(--dim); white-space: pre-wrap; word-break: break-all; }
