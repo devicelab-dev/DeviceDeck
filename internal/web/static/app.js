@@ -191,6 +191,75 @@ $("btn-lock").addEventListener("click", () =>
 $("btn-shot").addEventListener("click", () => window.open(`/api/devices/${udid}/screenshot`));
 $("btn-inspect").addEventListener("click", toggleInspector);
 
+// ---------- flow capture ----------
+
+let recording = false;
+let capturePoll = null;
+
+$("btn-record").addEventListener("click", toggleRecord);
+
+async function toggleRecord() {
+  if (!recording) {
+    const app = $("app").value.trim();
+    if (!app) {
+      status.textContent = "enter an app bundle id to record";
+      $("app").focus();
+      return;
+    }
+    status.textContent = "starting capture (tree warm-up)…";
+    const res = await fetch(`/api/devices/${udid}/capture/start`, {
+      method: "POST",
+      body: JSON.stringify({ app }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      status.textContent = `record: ${body.error}`;
+      return;
+    }
+    recording = true;
+    $("btn-record").classList.add("recording");
+    $("btn-record").innerHTML = "&#9632; Stop";
+    capturePoll = setInterval(pollCapture, 1000);
+    status.textContent = "recording — drive the device";
+  } else {
+    clearInterval(capturePoll);
+    const res = await fetch(`/api/devices/${udid}/capture/stop`, { method: "POST", body: "{}" });
+    const body = await res.json();
+    recording = false;
+    $("btn-record").classList.remove("recording");
+    $("btn-record").innerHTML = "&#9679; Record";
+    if (!res.ok) {
+      status.textContent = `stop: ${body.error}`;
+      return;
+    }
+    showFlow(body.yaml, body.steps);
+  }
+}
+
+async function pollCapture() {
+  const res = await fetch(`/api/devices/${udid}/capture`);
+  const body = await res.json();
+  if (body.recording) {
+    status.textContent = `recording — ${body.steps.length} steps`;
+  }
+}
+
+function showFlow(yaml, steps) {
+  $("panel").hidden = false;
+  $("node-title").textContent = `Captured flow — ${steps.length} steps`;
+  $("node-info").textContent = yaml;
+  let link = $("panel").querySelector("a.download");
+  if (!link) {
+    link = document.createElement("a");
+    link.className = "download";
+    link.textContent = "Download flow.yaml";
+    $("panel").appendChild(link);
+  }
+  link.href = URL.createObjectURL(new Blob([yaml], { type: "text/yaml" }));
+  link.download = "flow.yaml";
+  status.textContent = `captured ${steps.length} steps`;
+}
+
 // ---------- inspector overlay ----------
 
 function positionOverlay() {

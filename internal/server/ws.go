@@ -69,7 +69,7 @@ func (s *Server) handleInputWS(w http.ResponseWriter, r *http.Request) {
 		if kind != websocket.MessageBinary || !input.ValidFrame(raw) {
 			continue
 		}
-		if err := s.frames.SendFrame(ctx, udid, raw); err != nil {
+		if err := s.sendFrame(ctx, udid, raw); err != nil {
 			conn.Close(websocket.StatusInternalError, "sidecar unavailable")
 			return
 		}

@@ -27,10 +27,15 @@ type Session struct {
 }
 
 // StartSidecar launches binPath attached to udid and blocks until the
-// sidecar reports "ready" on stdout (or the context/timeout expires).
-// Sidecar stderr is passed through to our stderr for diagnostics.
-func StartSidecar(ctx context.Context, binPath, udid string) (*Session, error) {
-	cmd := exec.CommandContext(ctx, binPath, udid)
+// sidecar reports "ready" on stdout (or the timeout expires). Sidecar
+// stderr is passed through to our stderr for diagnostics.
+//
+// The process deliberately does NOT inherit the caller's context: sessions
+// outlive the (often short-lived HTTP request) context that first touched
+// them — tying the process to it kills the sidecar the moment that request
+// completes, mid-injection. Lifetime is owned by Close/Manager.
+func StartSidecar(_ context.Context, binPath, udid string) (*Session, error) {
+	cmd := exec.Command(binPath, udid)
 	cmd.Stderr = os.Stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

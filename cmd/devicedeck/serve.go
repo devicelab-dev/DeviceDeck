@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/devicelab-dev/DeviceDeck/internal/capture"
 	"github.com/devicelab-dev/DeviceDeck/internal/input"
 	"github.com/devicelab-dev/DeviceDeck/internal/runner"
 	"github.com/devicelab-dev/DeviceDeck/internal/server"
@@ -49,7 +50,8 @@ func runServe(args []string) error {
 	inputs := input.NewManager(hidBin)
 	videos := video.NewManager(videoBin, *fps)
 	engines := runner.NewEngines()
-	srv := server.New(sim.NewClient(), sim.NewClient(), inputs, engines, videos)
+	captures := capture.NewService(engines)
+	srv := server.New(sim.NewClient(), sim.NewClient(), inputs, engines, videos, captures)
 	srv.SetConsole(web.Handler())
 	httpServer := &http.Server{Addr: *addr, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 

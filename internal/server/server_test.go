@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devicelab-dev/DeviceDeck/internal/capture"
 	"github.com/devicelab-dev/DeviceDeck/internal/input"
 	"github.com/devicelab-dev/DeviceDeck/internal/runner"
 	"github.com/devicelab-dev/DeviceDeck/internal/sim"
@@ -76,8 +77,62 @@ func (f *fakeBackend) SendFrame(_ context.Context, udid string, frame []byte) er
 	return nil
 }
 
+type fakeCapture struct {
+	mu        sync.Mutex
+	recording bool
+	startErr  error
+	stopErr   error
+	appID     string
+	frames    [][]byte
+	yaml      string
+	steps     []capture.Step
+}
+
+func (f *fakeCapture) Start(_ context.Context, udid, appID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.startErr != nil {
+		return f.startErr
+	}
+	f.recording = true
+	f.appID = appID
+	return nil
+}
+
+func (f *fakeCapture) Stop(udid string) (string, []capture.Step, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.stopErr != nil {
+		return "", nil, f.stopErr
+	}
+	f.recording = false
+	return f.yaml, f.steps, nil
+}
+
+func (f *fakeCapture) Status(udid string) (bool, []capture.Step) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.recording, f.steps
+}
+
+func (f *fakeCapture) OnFrame(udid string, frame []byte) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.frames = append(f.frames, frame)
+}
+
+func (f *fakeCapture) observedFrames() [][]byte {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([][]byte(nil), f.frames...)
+}
+
 func newTestServer(f *fakeBackend) *Server {
-	s := New(f, f, f, f, &fakeVideo{frames: make(chan []byte)})
+	return newTestServerWithCapture(f, &fakeCapture{})
+}
+
+func newTestServerWithCapture(f *fakeBackend, c *fakeCapture) *Server {
+	s := New(f, f, f, f, &fakeVideo{frames: make(chan []byte)}, c)
 	s.sleep = func(time.Duration) {}
 	return s
 }
@@ -314,6 +369,54 @@ func TestBadBodiesRejectedEverywhere(t *testing.T) {
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("%s: status = %d", path, rec.Code)
 		}
+	}
+}
+
+func TestCaptureEndpoints(t *testing.T) {
+	fc := &fakeCapture{yaml: "appId: x\n---\n- launchApp\n", steps: []capture.Step{{Kind: "tapOn", ID: "a"}}}
+	s := newTestServerWithCapture(&fakeBackend{}, fc)
+
+	rec := do(t, s, "POST", "/api/devices/AAA/capture/start", `{"app":"com.example"}`)
+	if rec.Code != http.StatusOK || fc.appID != "com.example" {
+		t.Fatalf("start: %d %s (app=%q)", rec.Code, rec.Body, fc.appID)
+	}
+	rec = do(t, s, "GET", "/api/devices/AAA/capture", "")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"recording":true`) {
+		t.Fatalf("status: %d %s", rec.Code, rec.Body)
+	}
+	rec = do(t, s, "POST", "/api/devices/AAA/capture/stop", "{}")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "launchApp") {
+		t.Fatalf("stop: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestCaptureEndpointValidation(t *testing.T) {
+	s := newTestServerWithCapture(&fakeBackend{}, &fakeCapture{})
+	if rec := do(t, s, "POST", "/api/devices/AAA/capture/start", `{}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("missing app: %d", rec.Code)
+	}
+	if rec := do(t, s, "POST", "/api/devices/AAA/capture/start", `{`); rec.Code != http.StatusBadRequest {
+		t.Errorf("bad json: %d", rec.Code)
+	}
+	failing := &fakeCapture{startErr: errors.New("already recording"), stopErr: errors.New("not recording")}
+	s = newTestServerWithCapture(&fakeBackend{}, failing)
+	if rec := do(t, s, "POST", "/api/devices/AAA/capture/start", `{"app":"x"}`); rec.Code != http.StatusConflict {
+		t.Errorf("start conflict: %d", rec.Code)
+	}
+	if rec := do(t, s, "POST", "/api/devices/AAA/capture/stop", "{}"); rec.Code != http.StatusConflict {
+		t.Errorf("stop conflict: %d", rec.Code)
+	}
+}
+
+func TestTapFeedsCapture(t *testing.T) {
+	fc := &fakeCapture{}
+	s := newTestServerWithCapture(&fakeBackend{}, fc)
+	rec := do(t, s, "POST", "/api/devices/AAA/tap", `{"x":0.5,"y":0.5}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("tap: %d", rec.Code)
+	}
+	if frames := fc.observedFrames(); len(frames) != 2 {
+		t.Errorf("capture observed %d frames, want down+up", len(frames))
 	}
 }
 

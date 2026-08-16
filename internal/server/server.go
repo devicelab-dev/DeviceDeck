@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/devicelab-dev/DeviceDeck/internal/capture"
 	"github.com/devicelab-dev/DeviceDeck/internal/input"
 	"github.com/devicelab-dev/DeviceDeck/internal/runner"
 	"github.com/devicelab-dev/DeviceDeck/internal/sim"
@@ -36,6 +37,14 @@ type TreeSource interface {
 	Snapshot(ctx context.Context, udid, appBundleID string) ([]runner.Node, error)
 }
 
+// CaptureService records manual sessions as flows.
+type CaptureService interface {
+	Start(ctx context.Context, udid, appID string) error
+	Stop(udid string) (yaml string, steps []capture.Step, err error)
+	Status(udid string) (recording bool, steps []capture.Step)
+	OnFrame(udid string, frame []byte)
+}
+
 // Server routes the HTTP API onto the injected device backends.
 type Server struct {
 	devices     DeviceLister
@@ -43,21 +52,34 @@ type Server struct {
 	frames      FrameSender
 	trees       TreeSource
 	video       VideoSource
+	capture     CaptureService
 	console     http.Handler
 	// sleep paces multi-frame gestures; injected so tests run instantly.
 	sleep func(time.Duration)
 }
 
 // New wires a Server.
-func New(devices DeviceLister, screenshots Screenshotter, frames FrameSender, trees TreeSource, video VideoSource) *Server {
+func New(devices DeviceLister, screenshots Screenshotter, frames FrameSender, trees TreeSource, video VideoSource, cap CaptureService) *Server {
 	return &Server{
 		devices:     devices,
 		screenshots: screenshots,
 		frames:      frames,
 		trees:       trees,
 		video:       video,
+		capture:     cap,
 		sleep:       time.Sleep,
 	}
+}
+
+// sendFrame forwards one frame to the device's sidecar and, when a
+// recording is active, feeds it to capture — the single choke point both
+// REST handlers and the input WebSocket go through.
+func (s *Server) sendFrame(ctx context.Context, udid string, frame []byte) error {
+	if err := s.frames.SendFrame(ctx, udid, frame); err != nil {
+		return err
+	}
+	s.capture.OnFrame(udid, frame)
+	return nil
 }
 
 // SetConsole mounts the browser console at /. Optional — API-only servers
@@ -77,6 +99,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/devices/{udid}/gesture", s.handleGesture)
 	mux.HandleFunc("POST /api/devices/{udid}/key", s.handleKey)
 	mux.HandleFunc("POST /api/devices/{udid}/button", s.handleButton)
+	mux.HandleFunc("POST /api/devices/{udid}/capture/start", s.handleCaptureStart)
+	mux.HandleFunc("POST /api/devices/{udid}/capture/stop", s.handleCaptureStop)
+	mux.HandleFunc("GET /api/devices/{udid}/capture", s.handleCaptureStatus)
 	if s.console != nil {
 		mux.Handle("GET /", s.console)
 	}
@@ -133,12 +158,12 @@ func (s *Server) handleTap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	udid := r.PathValue("udid")
-	if err := s.frames.SendFrame(r.Context(), udid, input.Touch(input.TouchDown, req.X, req.Y, input.EdgeNone)); err != nil {
+	if err := s.sendFrame(r.Context(), udid, input.Touch(input.TouchDown, req.X, req.Y, input.EdgeNone)); err != nil {
 		httpError(w, http.StatusBadGateway, err)
 		return
 	}
 	s.sleep(durationOrDefault(req.DurationMs, 60))
-	if err := s.frames.SendFrame(r.Context(), udid, input.Touch(input.TouchUp, req.X, req.Y, input.EdgeNone)); err != nil {
+	if err := s.sendFrame(r.Context(), udid, input.Touch(input.TouchUp, req.X, req.Y, input.EdgeNone)); err != nil {
 		httpError(w, http.StatusBadGateway, err)
 		return
 	}
@@ -167,7 +192,7 @@ func (s *Server) handleSwipe(w http.ResponseWriter, r *http.Request) {
 	udid := r.PathValue("udid")
 	const steps = 10
 	stepPause := durationOrDefault(req.DurationMs, 250) / steps
-	if err := s.frames.SendFrame(r.Context(), udid, input.Touch(input.TouchDown, req.FromX, req.FromY, input.EdgeNone)); err != nil {
+	if err := s.sendFrame(r.Context(), udid, input.Touch(input.TouchDown, req.FromX, req.FromY, input.EdgeNone)); err != nil {
 		httpError(w, http.StatusBadGateway, err)
 		return
 	}
@@ -176,12 +201,12 @@ func (s *Server) handleSwipe(w http.ResponseWriter, r *http.Request) {
 		t := float64(i) / steps
 		x := req.FromX + (req.ToX-req.FromX)*t
 		y := req.FromY + (req.ToY-req.FromY)*t
-		if err := s.frames.SendFrame(r.Context(), udid, input.Touch(input.TouchMove, x, y, input.EdgeNone)); err != nil {
+		if err := s.sendFrame(r.Context(), udid, input.Touch(input.TouchMove, x, y, input.EdgeNone)); err != nil {
 			httpError(w, http.StatusBadGateway, err)
 			return
 		}
 	}
-	if err := s.frames.SendFrame(r.Context(), udid, input.Touch(input.TouchUp, req.ToX, req.ToY, input.EdgeNone)); err != nil {
+	if err := s.sendFrame(r.Context(), udid, input.Touch(input.TouchUp, req.ToX, req.ToY, input.EdgeNone)); err != nil {
 		httpError(w, http.StatusBadGateway, err)
 		return
 	}
@@ -208,7 +233,7 @@ func (s *Server) handleGesture(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, fmt.Errorf("unknown gesture %q", req.Kind))
 		return
 	}
-	if err := s.frames.SendFrame(r.Context(), r.PathValue("udid"), input.SystemGesture(gesture)); err != nil {
+	if err := s.sendFrame(r.Context(), r.PathValue("udid"), input.SystemGesture(gesture)); err != nil {
 		httpError(w, http.StatusBadGateway, err)
 		return
 	}
@@ -227,7 +252,7 @@ func (s *Server) handleKey(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, fmt.Errorf("usage is required"))
 		return
 	}
-	if err := s.frames.SendFrame(r.Context(), r.PathValue("udid"), input.Key(req.Modifiers, req.Usage)); err != nil {
+	if err := s.sendFrame(r.Context(), r.PathValue("udid"), input.Key(req.Modifiers, req.Usage)); err != nil {
 		httpError(w, http.StatusBadGateway, err)
 		return
 	}
@@ -261,11 +286,51 @@ func (s *Server) handleButton(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, fmt.Errorf("button name or page+usage required"))
 		return
 	}
-	if err := s.frames.SendFrame(r.Context(), r.PathValue("udid"), frame); err != nil {
+	if err := s.sendFrame(r.Context(), r.PathValue("udid"), frame); err != nil {
 		httpError(w, http.StatusBadGateway, err)
 		return
 	}
 	writeJSON(w, okResponse("button"))
+}
+
+// ---------- capture ----------
+
+func (s *Server) handleCaptureStart(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		App string `json:"app"`
+	}
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	if req.App == "" {
+		httpError(w, http.StatusBadRequest, fmt.Errorf("app bundle id is required"))
+		return
+	}
+	if err := s.capture.Start(r.Context(), r.PathValue("udid"), req.App); err != nil {
+		httpError(w, http.StatusConflict, err)
+		return
+	}
+	writeJSON(w, okResponse("capture-start"))
+}
+
+func (s *Server) handleCaptureStop(w http.ResponseWriter, r *http.Request) {
+	yaml, steps, err := s.capture.Stop(r.PathValue("udid"))
+	if err != nil {
+		httpError(w, http.StatusConflict, err)
+		return
+	}
+	if steps == nil {
+		steps = []capture.Step{}
+	}
+	writeJSON(w, map[string]any{"ok": true, "yaml": yaml, "steps": steps})
+}
+
+func (s *Server) handleCaptureStatus(w http.ResponseWriter, r *http.Request) {
+	recording, steps := s.capture.Status(r.PathValue("udid"))
+	if steps == nil {
+		steps = []capture.Step{}
+	}
+	writeJSON(w, map[string]any{"recording": recording, "steps": steps})
 }
 
 // ---------- helpers ----------

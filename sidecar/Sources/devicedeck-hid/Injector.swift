@@ -105,23 +105,37 @@ final class Injector {
 
     // MARK: - keyboard
 
-    /// Modifier-down → key-down → key-up → modifier-up. Primary path is the
-    /// keyboard-service builder (iOS treats events as real hardware keys);
-    /// fallback routes page 0x07 through HIDArbitrary on older Xcodes.
+    /// Modifier-down → key-down → hold → key-up → modifier-up. The 100ms
+    /// hold matches baguette's verified recipe: shorter holds get keys
+    /// silently dropped (or, when the up event is lost, a long-press
+    /// accent popover that swallows subsequent input). iOS needs the down
+    /// state observable for a full frame cycle before the up lands.
     private func sendKey(modifiers: UInt8, usage: UInt32) {
         // USB HID modifier bitmap → modifier key usages 0xE0–0xE7.
         let held = (0..<8).filter { modifiers & (1 << $0) != 0 }.map { UInt32(0xE0 + $0) }
-        for mod in held { sendKeyEvent(usage: mod, op: Indigo.opDown) }
+        for mod in held {
+            sendKeyEvent(usage: mod, op: Indigo.opDown)
+            usleep(10_000)
+        }
         sendKeyEvent(usage: usage, op: Indigo.opDown)
+        usleep(100_000)
         sendKeyEvent(usage: usage, op: Indigo.opUp)
-        for mod in held.reversed() { sendKeyEvent(usage: mod, op: Indigo.opUp) }
+        for mod in held.reversed() {
+            usleep(10_000)
+            sendKeyEvent(usage: mod, op: Indigo.opUp)
+        }
     }
 
+    /// Primary path is HIDArbitrary on the digitizer target — verified to
+    /// actually type on iOS 18/Xcode 26 (baguette's production path). The
+    /// keyboard-service builder resolves but its events are silently
+    /// dropped on this stack, so it is only a fallback for Xcodes without
+    /// HIDArbitrary.
     private func sendKeyEvent(usage: UInt32, op: UInt32) {
-        if let fn = kit.keyboard {
-            if let msg = fn(usage, op) { client.send(msg) }
-        } else if let fn = kit.hidArbitrary {
+        if let fn = kit.hidArbitrary {
             if let msg = fn(Indigo.targetDigitizer, 0x07, usage, op) { client.send(msg) }
+        } else if let fn = kit.keyboard {
+            if let msg = fn(usage, op) { client.send(msg) }
         } else {
             log("no keyboard HID path available")
         }

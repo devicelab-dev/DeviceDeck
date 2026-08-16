@@ -44,6 +44,13 @@ input#app { width: 230px; }
 button { cursor: pointer; }
 button:hover { border-color: var(--accent); }
 button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.recording { background: #e5484d; border-color: #e5484d; color: #fff; }
+
+#panel a.download {
+  display: inline-block;
+  margin-top: 10px;
+  color: var(--accent);
+}
 
 #status { color: var(--dim); font-size: 12px; margin-left: 8px; }
 

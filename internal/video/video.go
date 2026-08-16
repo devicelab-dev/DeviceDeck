@@ -47,8 +47,13 @@ type Session struct {
 // StartSession launches binPath capturing udid and begins demuxing its
 // stdout. The session dies (and Wait's error is discarded) when the
 // process exits; subscribers see their channels closed.
-func StartSession(ctx context.Context, binPath, udid string, fps int) (*Session, error) {
-	cmd := exec.CommandContext(ctx, binPath, udid, strconv.Itoa(fps))
+//
+// The process deliberately does NOT inherit the caller's context: a
+// session outlives the subscriber whose request happened to start it —
+// inheriting that context would kill capture for every other viewer when
+// the first one disconnects. Lifetime is owned by Close/Manager.
+func StartSession(_ context.Context, binPath, udid string, fps int) (*Session, error) {
+	cmd := exec.Command(binPath, udid, strconv.Itoa(fps))
 	cmd.Stderr = os.Stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
