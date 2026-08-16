@@ -6,8 +6,8 @@ A self-hosted console for iOS Simulators and Android emulators. See a device in 
 drive it with your mouse and keyboard, and turn that session into a deterministic test — replayable
 by maestro-runner, or by any WebDriver/Appium-speaking suite you already have.
 
-Not started yet. Read [PROJECT-BRIEF.md](PROJECT-BRIEF.md) first — it carries the architecture,
-the measurements behind each decision, and the questions still open.
+Not started yet. Read `PROJECT-BRIEF.md` first (local-only, not committed) — it carries the
+architecture, the measurements behind each decision, and the questions still open.
 
 ---
 
