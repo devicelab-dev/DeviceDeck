@@ -2,10 +2,11 @@
 // (github.com/devicelab-dev/maestro-runner).
 //
 // maestro-runner is an internal backend detail, never a framework imposed on
-// users. DeviceDeck's user-facing surface is protocol (HTTP/WS + a
-// WebDriver/Appium-shaped endpoint) so teams keep whatever framework they
-// already run; capture exports to the user's chosen format via pluggable
-// exporters.
+// users. DeviceDeck's user-facing surfaces are the HTTP/WS API and the
+// console's DOM mirror — a positioned overlay of the native tree that web
+// tooling (Playwright, CDP, Cypress) automates with real selectors, the
+// browser itself providing the protocol. Capture exports to the user's
+// chosen framework via pluggable exporters, Maestro YAML first.
 //
 // Contract:
 //   - Only this package may import maestro-runner, and only pkg/driver (the
