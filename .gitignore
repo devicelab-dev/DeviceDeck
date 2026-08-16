@@ -1,0 +1,26 @@
+# Binaries
+/devicedeck
+/dist/
+/bin/
+
+# Go
+coverage.out
+coverage.html
+*.test
+
+# Swift sidecar
+.build/
+*.xcodeproj
+
+# macOS
+.DS_Store
+
+# Local-only Claude state
+.claude/settings.local.json
+
+# Private strategy / planning docs — local only, never committed
+PROJECT-BRIEF.md
+PLAN-*.md
+RESEARCH-*.md
+research/
+docs_local/
