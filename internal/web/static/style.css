@@ -92,6 +92,33 @@ main { flex: 1; display: flex; min-height: 0; }
   background: rgba(79, 140, 255, 0.18);
 }
 
+#overlay .resolved-flash {
+  position: absolute;
+  pointer-events: none;
+  border: 2px solid #37c877;
+  border-radius: 4px;
+  background: rgba(55, 200, 119, 0.15);
+  animation: flash-fade 1.6s ease-out forwards;
+}
+
+#overlay .resolved-flash span {
+  position: absolute;
+  top: -22px;
+  left: 0;
+  background: #37c877;
+  color: #0b2416;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+@keyframes flash-fade {
+  0%, 60% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 #panel {
   width: 280px;
   border-left: 1px solid var(--edge);

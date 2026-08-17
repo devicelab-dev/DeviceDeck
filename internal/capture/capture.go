@@ -48,6 +48,17 @@ type Step struct {
 	StartY float64 `json:"startY,omitempty"`
 	EndX   float64 `json:"endX,omitempty"`
 	EndY   float64 `json:"endY,omitempty"`
+	// Bounds of the resolved element, normalized 0-1 — the console draws
+	// this over the video so the user sees what each tap resolved to.
+	Bounds *NormRect `json:"bounds,omitempty"`
+}
+
+// NormRect is an element frame normalized to the app's bounds.
+type NormRect struct {
+	X      float64 `json:"x"`
+	Y      float64 `json:"y"`
+	Width  float64 `json:"width"`
+	Height float64 `json:"height"`
 }
 
 // SnapshotFunc fetches the current UI tree for the recorder's device.
@@ -199,14 +210,30 @@ func (r *Recorder) resolveTap(kind string, x, y float64) Step {
 		cancel()
 	}
 	if node := hitTest(r.tree, x, y); node != nil {
+		bounds := normalizedBounds(r.tree, node)
 		if node.Identifier != "" {
-			return Step{Kind: kind, ID: node.Identifier}
+			return Step{Kind: kind, ID: node.Identifier, Bounds: bounds}
 		}
 		if node.Label != "" {
-			return Step{Kind: kind, Text: node.Label}
+			return Step{Kind: kind, Text: node.Label, Bounds: bounds}
 		}
 	}
 	return Step{Kind: "tapOnPoint", StartX: x, StartY: y}
+}
+
+// normalizedBounds converts a node's frame from points into the 0-1 space
+// the console overlays on the video.
+func normalizedBounds(tree []runner.Node, node *runner.Node) *NormRect {
+	app := tree[0].Frame
+	if app.Width <= 0 || app.Height <= 0 {
+		return nil
+	}
+	return &NormRect{
+		X:      node.Frame.X / app.Width,
+		Y:      node.Frame.Y / app.Height,
+		Width:  node.Frame.Width / app.Width,
+		Height: node.Frame.Height / app.Height,
+	}
 }
 
 // hitTest finds the most specific durable node containing the point:
@@ -222,11 +249,18 @@ func hitTest(tree []runner.Node, x, y float64) *runner.Node {
 		return nil
 	}
 	px, py := x*app.Width, y*app.Height
+	// A node covering (nearly) the whole screen is a backdrop or splash
+	// image, not a tap target — resolving to it produces a selector that
+	// matches the wrong thing on every other screen.
+	maxArea := app.Width * app.Height * 0.9
 	var best *runner.Node
 	bestScore := math.MaxFloat64
 	for i := range tree {
 		n := &tree[i]
 		if n.Depth == 0 || n.Frame.Width <= 0 || n.Frame.Height <= 0 {
+			continue
+		}
+		if n.Frame.Width*n.Frame.Height >= maxArea {
 			continue
 		}
 		if n.Identifier == "" && n.Label == "" {

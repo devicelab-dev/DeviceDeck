@@ -217,9 +217,10 @@ async function toggleRecord() {
       return;
     }
     recording = true;
+    seenSteps = 0;
     $("btn-record").classList.add("recording");
     $("btn-record").innerHTML = "&#9632; Stop";
-    capturePoll = setInterval(pollCapture, 1000);
+    capturePoll = setInterval(pollCapture, 700);
     status.textContent = "recording — drive the device";
   } else {
     clearInterval(capturePoll);
@@ -236,12 +237,40 @@ async function toggleRecord() {
   }
 }
 
+let seenSteps = 0;
+
 async function pollCapture() {
   const res = await fetch(`/api/devices/${udid}/capture`);
   const body = await res.json();
-  if (body.recording) {
-    status.textContent = `recording — ${body.steps.length} steps`;
+  if (!body.recording) return;
+  status.textContent = `recording — ${body.steps.length} steps`;
+  if (body.steps.length > seenSteps) {
+    const step = body.steps[body.steps.length - 1];
+    if (step.bounds) flashResolved(step);
+    seenSteps = body.steps.length;
   }
+}
+
+// Flash a highlight rectangle over the video where the last recorded step
+// resolved, labeled with its selector — live confirmation of what the
+// captured flow will actually target.
+function flashResolved(step) {
+  positionOverlay();
+  overlay.hidden = false;
+  const el = document.createElement("div");
+  el.className = "resolved-flash";
+  el.style.left = `${step.bounds.x * 100}%`;
+  el.style.top = `${step.bounds.y * 100}%`;
+  el.style.width = `${step.bounds.width * 100}%`;
+  el.style.height = `${step.bounds.height * 100}%`;
+  const tag = document.createElement("span");
+  tag.textContent = step.id ? `id: ${step.id}` : `text: ${step.text}`;
+  el.appendChild(tag);
+  overlay.appendChild(el);
+  setTimeout(() => {
+    el.remove();
+    if (!inspecting && !overlay.children.length) overlay.hidden = true;
+  }, 1600);
 }
 
 function showFlow(yaml, steps) {

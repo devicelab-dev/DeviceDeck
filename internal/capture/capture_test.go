@@ -62,6 +62,15 @@ func TestTapResolvesToIdentifier(t *testing.T) {
 	if len(steps) != 1 || steps[0].Kind != "tapOn" || steps[0].ID != "loginButton" {
 		t.Fatalf("steps = %+v", steps)
 	}
+	// Bounds are the button frame (100,400 200x50 in a 402x874 app),
+	// normalized — the console draws this over the video.
+	b := steps[0].Bounds
+	if b == nil {
+		t.Fatal("resolved step missing bounds")
+	}
+	if b.X < 0.24 || b.X > 0.26 || b.Width < 0.49 || b.Width > 0.51 {
+		t.Errorf("bounds = %+v", b)
+	}
 }
 
 func TestTapResolvesToLabelWhenNoIdentifier(t *testing.T) {
@@ -310,6 +319,20 @@ func TestHitTestEdgeCases(t *testing.T) {
 	got := hitTest(tree, 0.3, 0.3)
 	if got == nil || got.Identifier != "wrap" {
 		t.Errorf("hitTest = %+v, want wrap (id within 2x of leaf)", got)
+	}
+}
+
+func TestHitTestIgnoresFullScreenNodes(t *testing.T) {
+	// A labeled node covering the whole app (splash image, backdrop) must
+	// never become a selector; with nothing else under the point the tap
+	// falls back to coordinates.
+	tree := []runner.Node{
+		{Depth: 0, Frame: runner.Rect{Width: 402, Height: 874}},
+		{Depth: 1, Type: "Image", Label: "RobusTest",
+			Frame: runner.Rect{X: 0, Y: 0, Width: 402, Height: 874}},
+	}
+	if got := hitTest(tree, 0.5, 0.5); got != nil {
+		t.Errorf("full-screen node resolved: %+v", got)
 	}
 }
 
