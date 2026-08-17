@@ -175,7 +175,11 @@ function renderMirror(nodes) {
     const role = ROLES[node.type];
     if (role) el.setAttribute("role", role);
     if (node.identifier) el.setAttribute("data-testid", node.identifier);
-    if (node.label) el.setAttribute("aria-label", node.label);
+    // Accessible name: label first, placeholder as fallback so unnamed
+    // fields still read as `textbox "Username"` in aria snapshots.
+    const name = node.label || node.placeholder || "";
+    if (name) el.setAttribute("aria-label", name);
+    if (node.placeholder) el.setAttribute("aria-placeholder", node.placeholder);
     if (!node.enabled) el.setAttribute("aria-disabled", "true");
     if (node.selected) el.setAttribute("aria-selected", "true");
     // Text content for getByText: label, else value, painted transparent.
