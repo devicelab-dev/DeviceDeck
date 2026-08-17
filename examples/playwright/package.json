@@ -1,0 +1,10 @@
+{
+  "name": "devicedeck-playwright-example",
+  "private": true,
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  },
+  "scripts": {
+    "test": "playwright test"
+  }
+}

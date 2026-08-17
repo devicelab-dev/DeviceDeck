@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DeviceDeck Device</title>
+  <style>
+    /* The automation page: video + a real DOM mirror of the native tree.
+       Deliberately minimal — this DOM is a test target, so it contains
+       nothing but the device. */
+    * { box-sizing: border-box; margin: 0; }
+    html, body { height: 100%; background: #000; }
+    #stage { position: relative; height: 100%; display: flex; align-items: center; justify-content: center; }
+    #video { max-width: 100%; max-height: 100%; background: #000; }
+    #mirror { position: absolute; }
+    #mirror [data-dd-node] {
+      position: absolute;
+      /* Real, visible-to-Playwright elements that add no pixels: no
+         background, no border; text present for getByText but painted
+         transparent so the video underneath stays clean. */
+      color: transparent;
+      overflow: hidden;
+      user-select: none;
+      cursor: default;
+      font: 10px/1 sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="video"></canvas>
+    <div id="mirror" role="application" aria-label="device"></div>
+  </div>
+  <script src="/device.js"></script>
+</body>
+</html>
