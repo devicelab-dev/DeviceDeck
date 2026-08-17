@@ -1,0 +1,9 @@
+appId: com.example.maestro_issue_app
+---
+- launchApp
+- tapOn:
+    id: "accessibility_id"
+- tapOn:
+    id: "test_elevated_button"
+- tapOn:
+    text: "Back"

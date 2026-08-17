@@ -1,0 +1,11 @@
+appId: dev.devicelab.testhive
+---
+- launchApp
+- tapOn:
+    id: "username-input"
+- inputText: "devicelab"
+- tapOn:
+    id: "password-input"
+- inputText: "robustest"
+- tapOn:
+    id: "login-button"

@@ -1,0 +1,11 @@
+appId: org.reactnavigation.playground
+---
+- launchApp
+- tapOn:
+    text: "Push article"
+- tapOn:
+    text: "Go back"
+- tapOn:
+    text: "Push article"
+- tapOn:
+    text: "Go back"
