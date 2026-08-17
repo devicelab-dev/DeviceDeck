@@ -232,7 +232,9 @@ function normalized(event) {
 let pointerDown = false;
 mirror.addEventListener("pointerdown", (e) => {
   pointerDown = true;
-  mirror.setPointerCapture(e.pointerId);
+  // Synthetic events (Cypress, jsdom) may carry no capturable pointerId;
+  // capture is an optimization for drags, never a precondition.
+  try { mirror.setPointerCapture(e.pointerId); } catch {}
   const { x, y } = normalized(e);
   sendFrame(touchFrame(0, x, y));
   noteActivity();
