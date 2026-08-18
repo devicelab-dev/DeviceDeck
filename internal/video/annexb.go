@@ -63,6 +63,9 @@ func RepackAnnexB(r io.Reader, w io.Writer) error {
 				return err
 			}
 		case err := <-readErr:
+			// All chunk sends happen before the error send; drain what's
+			// still buffered or the stream's tail frames are lost.
+			buf, _ = drainChunks(rp, chunks, buf)
 			ferr := rp.finish(buf)
 			if err == io.EOF {
 				return ferr
@@ -77,6 +80,21 @@ func RepackAnnexB(r io.Reader, w io.Writer) error {
 			if buf, err = rp.flushPending(buf); err != nil {
 				return err
 			}
+		}
+	}
+}
+
+// drainChunks consumes every already-buffered chunk without blocking.
+func drainChunks(rp *repacker, chunks <-chan []byte, buf []byte) ([]byte, error) {
+	for {
+		select {
+		case chunk := <-chunks:
+			var err error
+			if buf, err = rp.consume(append(buf, chunk...)); err != nil {
+				return nil, err
+			}
+		default:
+			return buf, nil
 		}
 	}
 }
