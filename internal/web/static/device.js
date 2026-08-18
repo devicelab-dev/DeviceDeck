@@ -48,65 +48,14 @@ function wsURL(path) {
   return `${proto}://${location.host}${path}`;
 }
 
-let decoder = null;
+// Frame handling shared with the console (video-common.js).
+const renderer = createScreenRenderer(canvas, ctx, { onResize: positionMirror });
 
 function connectVideo() {
   const ws = new WebSocket(wsURL(`/api/devices/${udid}/video`));
   ws.binaryType = "arraybuffer";
-  ws.onmessage = ({ data }) => {
-    const bytes = new Uint8Array(data);
-    const payload = bytes.subarray(1);
-    if (bytes[0] === 1) {
-      configureDecoder(payload);
-    } else if (bytes[0] === 4) {
-      drawStill(payload);
-    } else if (decoder && decoder.state === "configured") {
-      decoder.decode(new EncodedVideoChunk({
-        type: bytes[0] === 2 ? "key" : "delta",
-        timestamp: performance.now() * 1000,
-        data: payload,
-      }));
-    }
-  };
+  ws.onmessage = ({ data }) => renderer.handleMessage(new Uint8Array(data));
   ws.onclose = () => setTimeout(connectVideo, 1500);
-}
-
-// Paints a PNG snapshot (type 4). Android capture sends one on join and
-// per keyframe request: its encoder emits video only while pixels
-// change, so the still is what a static screen looks like.
-async function drawStill(png) {
-  try {
-    const bitmap = await createImageBitmap(new Blob([png], { type: "image/png" }));
-    if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
-      canvas.width = bitmap.width;
-      canvas.height = bitmap.height;
-      positionMirror();
-    }
-    ctx.drawImage(bitmap, 0, 0);
-    bitmap.close();
-  } catch {}
-}
-
-function configureDecoder(avcC) {
-  const hex = (b) => b.toString(16).padStart(2, "0");
-  if (decoder) { try { decoder.close(); } catch {} }
-  decoder = new VideoDecoder({
-    output: (frame) => {
-      if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) {
-        canvas.width = frame.displayWidth;
-        canvas.height = frame.displayHeight;
-        positionMirror();
-      }
-      ctx.drawImage(frame, 0, 0);
-      frame.close();
-    },
-    error: () => {},
-  });
-  decoder.configure({
-    codec: `avc1.${hex(avcC[1])}${hex(avcC[2])}${hex(avcC[3])}`,
-    description: avcC,
-    optimizeForLatency: true,
-  });
 }
 
 function connectInput() {

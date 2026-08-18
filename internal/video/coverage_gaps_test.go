@@ -356,6 +356,36 @@ func TestManagerReplacementStartFailure(t *testing.T) {
 	}
 }
 
+func TestLateJoinerGetsCachedStill(t *testing.T) {
+	s, err := StartSession(t.Context(), stubVideo(t), "booted", 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	// Inject a still as capture would, then join late: the static-screen
+	// frame must be replayed to the new viewer.
+	s.dispatch(TypeStill, []byte("frozen-screen"))
+	ch, cancel, err := s.Subscribe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case msg := <-ch:
+			if msg[0] == TypeStill {
+				if string(msg[1:]) != "frozen-screen" {
+					t.Fatalf("still payload = %q", msg[1:])
+				}
+				return
+			}
+		case <-deadline:
+			t.Fatal("cached still not delivered to late joiner")
+		}
+	}
+}
+
 func TestParseDiscoveryFileMissing(t *testing.T) {
 	if kv := parseDiscoveryFile("/nonexistent/pid_1.ini"); len(kv) != 0 {
 		t.Errorf("kv = %v, want empty for unreadable file", kv)

@@ -44,14 +44,8 @@ type androidCapture struct {
 // RunAndroidCapture streams the emulator's screen as sidecar protocol
 // frames on out — the Android counterpart of the devicedeck-video Swift
 // sidecar, run as a hidden subcommand of devicedeck itself so no extra
-// binary ships. The device's own encoder produces H.264 (screenrecord);
-// we only repackage. 'K' on in restarts capture (a restart begins with
-// SPS/PPS + IDR, which is how keyframe-on-join is honored); EOF on in
-// ends the session.
-//
-// Coverage waiver: RunAndroidCapture and its process loop drive a real
-// adb + emulator and are exercised end-to-end; RepackAnnexB and the
-// protocol layer carry the unit-testable logic.
+// binary ships. 'K' on in requests a keyframe; EOF on in ends the
+// session.
 func RunAndroidCapture(serial string, in io.Reader, out io.Writer) error {
 	c := &androidCapture{serial: serial, out: &syncWriter{w: out}}
 	go c.readCommands(in)
@@ -61,13 +55,19 @@ func RunAndroidCapture(serial string, in io.Reader, out io.Writer) error {
 	// no adb, no 3-minute cap, current frame on subscribe. screenrecord
 	// below is the fallback for devices without a discovery file.
 	if ep, err := discoverEndpoint(serial); err == nil {
-		if gerr := c.streamViaGRPC(ep); gerr == nil {
+		gerr := c.streamViaGRPC(ep)
+		if gerr == nil {
 			return nil
-		} else {
-			fmt.Fprintf(os.Stderr, "devicedeck: emulator grpc capture failed (%v); falling back to screenrecord\n", gerr)
 		}
+		fmt.Fprintf(os.Stderr, "devicedeck: emulator grpc capture failed (%v); falling back to screenrecord\n", gerr)
 	}
+	return c.runScreenrecordLoop()
+}
 
+// runScreenrecordLoop drives screenrecord cycles until shutdown. The
+// device's own encoder produces H.264; we only repackage. A keyframe
+// request restarts the cycle (each restart begins with SPS/PPS + IDR).
+func (c *androidCapture) runScreenrecordLoop() error {
 	// screenrecord emits H.264 only while pixels change, so a session
 	// opened on a static screen would otherwise stay black — seed the
 	// viewer with a snapshot of the current content.

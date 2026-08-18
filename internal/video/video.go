@@ -58,8 +58,13 @@ type Session struct {
 	mu          sync.Mutex
 	subscribers map[*subscriber]struct{}
 	description []byte
-	closed      bool
-	idleTimer   *time.Timer
+	// still caches the last TypeStill frame: Android's gRPC capture
+	// sends the current screen once when its stream starts, so a viewer
+	// joining a static screen later would otherwise see nothing until
+	// the next pixel change.
+	still     []byte
+	closed    bool
+	idleTimer *time.Timer
 }
 
 // StartSession launches binPath capturing udid and begins demuxing its
@@ -119,6 +124,9 @@ func (s *Session) Subscribe() (<-chan []byte, func(), error) {
 	if s.description != nil {
 		sub.ch <- append([]byte{TypeDescription}, s.description...)
 	}
+	if s.still != nil {
+		sub.ch <- append([]byte{TypeStill}, s.still...)
+	}
 	s.mu.Unlock()
 
 	if err := s.requestKeyframe(); err != nil {
@@ -150,6 +158,9 @@ func (s *Session) dispatch(frameType byte, payload []byte) {
 	defer s.mu.Unlock()
 	if frameType == TypeDescription {
 		s.description = payload
+	}
+	if frameType == TypeStill {
+		s.still = payload
 	}
 	for sub := range s.subscribers {
 		s.deliver(sub, frameType, msg)

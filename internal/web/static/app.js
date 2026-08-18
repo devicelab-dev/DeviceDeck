@@ -12,7 +12,6 @@ const status = $("status");
 let udid = null;
 let videoWS = null;
 let inputWS = null;
-let decoder = null;
 let pointerDown = false;
 let inspecting = false;
 
@@ -77,65 +76,21 @@ function wsURL(path) {
   return `${proto}://${location.host}${path}`;
 }
 
+// Frame handling shared with the device page (video-common.js).
+const renderer = createScreenRenderer(canvas, ctx, {
+  onResize: () => positionOverlay(),
+  onStatus: (text) => { status.textContent = text; },
+});
+
 function connectVideo() {
   if (videoWS) videoWS.close();
-  if (decoder) { try { decoder.close(); } catch {} decoder = null; }
 
   videoWS = new WebSocket(wsURL(`/api/devices/${udid}/video`));
   videoWS.binaryType = "arraybuffer";
   status.textContent = "connecting video…";
 
-  videoWS.onmessage = ({ data }) => {
-    const bytes = new Uint8Array(data);
-    const type = bytes[0];
-    const payload = bytes.subarray(1);
-    if (type === 1) {
-      configureDecoder(payload);
-    } else if (type === 4) {
-      drawStill(payload);
-    } else if (decoder && decoder.state === "configured") {
-      decoder.decode(new EncodedVideoChunk({
-        type: type === 2 ? "key" : "delta",
-        timestamp: performance.now() * 1000,
-        data: payload,
-      }));
-    }
-  };
+  videoWS.onmessage = ({ data }) => renderer.handleMessage(new Uint8Array(data));
   videoWS.onclose = () => { status.textContent = "video disconnected"; };
-}
-
-// Paints a PNG snapshot (type 4) — what Android capture sends for
-// static screens, where its encoder emits no video frames.
-async function drawStill(png) {
-  try {
-    const bitmap = await createImageBitmap(new Blob([png], { type: "image/png" }));
-    if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
-      canvas.width = bitmap.width;
-      canvas.height = bitmap.height;
-      positionOverlay();
-    }
-    ctx.drawImage(bitmap, 0, 0);
-    bitmap.close();
-  } catch {}
-}
-
-function configureDecoder(avcC) {
-  const hex = (b) => b.toString(16).padStart(2, "0");
-  const codec = `avc1.${hex(avcC[1])}${hex(avcC[2])}${hex(avcC[3])}`;
-  decoder = new VideoDecoder({
-    output: (frame) => {
-      if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) {
-        canvas.width = frame.displayWidth;
-        canvas.height = frame.displayHeight;
-        positionOverlay();
-      }
-      ctx.drawImage(frame, 0, 0);
-      frame.close();
-    },
-    error: (e) => { status.textContent = `decode error: ${e.message}`; },
-  });
-  decoder.configure({ codec, description: avcC, optimizeForLatency: true });
-  status.textContent = `streaming (${codec})`;
 }
 
 // ---------- live input ----------
