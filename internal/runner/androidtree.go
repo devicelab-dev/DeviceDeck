@@ -21,9 +21,10 @@ type AndroidEngine struct {
 	dev     *device.AndroidDevice
 	client  *maestro.Client
 	adapter *maestro.Adapter
-	// mu serializes driver-session calls (snapshots and input): the
-	// WebSocket session handles one request at a time, and the page
-	// polls faster than a slow dump.
+	// The driver's WebSocket client multiplexes concurrent calls by
+	// request ID, so snapshots and input run in parallel — serializing
+	// them here starved tree polls behind slow input and made the page
+	// act on stale geometry. mu guards only local state.
 	mu      sync.Mutex
 	screenW int
 	screenH int
@@ -78,9 +79,7 @@ func StartAndroidEngine(_ context.Context, serial string) (*AndroidEngine, error
 // engineAPI parity but unused: Android page source is always the whole
 // screen, which is exactly what the mirror wants.
 func (e *AndroidEngine) Snapshot(_ context.Context, _ string) ([]Node, error) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	w, h, err := e.screenSizeLocked()
+	w, h, err := e.ScreenSize()
 	if err != nil {
 		return nil, err
 	}
@@ -106,23 +105,19 @@ func (e *AndroidEngine) Stop(context.Context) error {
 
 // Input injection: server-side via the same driver session the tree
 // uses — no per-event adb process, which is what makes the device page
-// feel live. All calls serialize on e.mu with snapshots; the WebSocket
-// session handles one request at a time anyway.
+// feel live. Calls run concurrently with snapshots: the WebSocket client
+// multiplexes by request ID.
 //
 // Coverage waiver: these are one-line delegations to the driver session,
 // exercised end-to-end against a real emulator.
 
 // Click taps at pixel coordinates.
 func (e *AndroidEngine) Click(x, y int) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
 	return e.adapter.Click(x, y)
 }
 
 // Swipe drags between pixel coordinates over durationMs.
 func (e *AndroidEngine) Swipe(x1, y1, x2, y2, durationMs int) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
 	return e.adapter.SwipeCoords(x1, y1, x2, y2, durationMs)
 }
 
@@ -148,8 +143,6 @@ func shellQuoteInputText(text string) string {
 
 // KeyCode presses an Android keycode (Enter, Backspace, arrows…).
 func (e *AndroidEngine) KeyCode(code int) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
 	return e.adapter.PressKeyCode(code)
 }
 

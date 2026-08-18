@@ -25,3 +25,16 @@ Notes:
 - The mirror refreshes from the native tree (~300ms while active), so
   Playwright's auto-waiting works — new screens appear on the next
   refresh rather than instantly.
+
+## Android
+
+The same journey runs against an Android emulator — the mirror carries
+React Native's testID to both platforms as `data-testid`:
+
+```bash
+DEVICEDECK_ANDROID_SERIAL=emulator-5554 npx playwright test testhive-login-android
+```
+
+Run emulators with `hw.keyboard = yes` (Android Studio's default): with a
+hardware keyboard the soft keyboard never opens, so the layout doesn't
+reshape mid-flow. DeviceDeck types via key injection either way.

@@ -1,0 +1,118 @@
+15:49:32.557403 [INFO] === Test execution started ===
+15:49:32.557512 [INFO] Output directory: reports/2026-08-18_15-49-32
+15:49:32.557517 [INFO] Platform: 
+15:49:32.557519 [INFO] Driver: devicelab
+15:49:32.557869 [INFO] Validated 1 flow(s)
+15:49:32.557886 [INFO] Single device execution mode
+15:49:32.557889 [INFO] Starting flow execution (parallel: false, devices: [])
+15:49:32.557892 [INFO] Creating driver for single device execution
+15:49:32.557897 [INFO] Auto-detecting Android device...
+15:49:32.637619 [INFO] Device info: google sdk_gphone64_arm64, SDK 34, Serial emulator-5554, Emulator: true
+15:49:32.721969 [INFO] DeviceLab Android Driver version mismatch: installed=1.0.0, bundled= — upgrading
+15:49:33.032847 [INFO] Starting DeviceLab driver on device emulator-5554
+15:49:34.057927 [WARN] failed to remove default DeviceLab Android Driver socket forward for /tmp/devicelab-driver-emulator-5554.sock: adb forward --remove localfilesystem:/tmp/devicelab-driver-emulator-5554.sock: exit status 1: adb: error: listener 'localfilesystem:/tmp/devicelab-driver-emulator-5554.sock' not found
+15:49:34.067755 [WARN] failed to remove adb forward for tcp:6791: adb forward --remove tcp:6791: exit status 1: adb: error: listener 'tcp:6791' not found
+15:49:36.146532 [INFO] Creating DeviceLab driver session
+15:49:36.152757 [INFO] Session created: dcd30c0f-470c-4089-b5ff-97195590b569
+15:49:36.204402 [INFO] Driver created: android on google sdk_gphone64_arm64
+15:49:36.210873 [INFO] === Starting flow: android-captured-login ===
+15:49:36.210879 [INFO] Flow file: /private/tmp/claude-501/-Users-omnarayan-work-go-src-DeviceDeck/4b89cb73-7b09-4e9d-bc84-56af85d4aa9e/scratchpad/android-captured-login.yaml
+15:49:36.210881 [INFO] Total steps: 7
+15:49:36.212559 [DEBUG] Executing step 0: launchApp
+15:49:36.450999 [WARN] launchApp: RPC launch failed for com.testhiveapp: app_not_found: No launch intent for package: com.testhiveapp — falling back to shell
+15:49:36.665682 [DEBUG] Step 0 completed successfully (453ms): launchApp
+15:49:36.666189 [DEBUG] Executing step 1: tapOn: id="username-input"
+15:49:36.666526 [DEBUG] Flutter: parallel search (text="", id="username-input")
+15:49:36.740109 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:36.773175 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:36.805794 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:36.839197 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:36.871493 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:36.902459 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:36.933049 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:36.963068 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:36.993856 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.025035 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.056448 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.087972 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.118826 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.153141 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.184276 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.216514 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.247349 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.278127 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.308398 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.340055 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.371099 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.401650 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.434206 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.465699 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.496682 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.528243 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.561261 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.592480 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.623185 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.653601 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.687010 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.716473 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.747287 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.777432 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.809807 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.840564 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.871840 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.905050 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.936520 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.967844 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:37.999537 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.029924 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.060559 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.091142 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.125914 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.178551 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.211215 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.243089 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.274120 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.306789 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.337159 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.367822 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.399402 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.430373 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.460796 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.490935 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.523872 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.554402 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.585019 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.615404 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.646858 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.690967 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.728676 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.761311 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.796860 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.828573 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.860373 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.893341 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.917463 [INFO] [devicelab] FindAndClick hit for #username-input via -android uiautomator=new UiSelector().resourceId("username-input"): bounds=[55,1158][1025,1312] (w=970 h=154) center=(540,1235)
+15:49:38.938527 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.979432 [DEBUG] Flutter fallback: failed to get trees: no Flutter VM service found
+15:49:38.979477 [DEBUG] Step 1 completed successfully (2313ms): tapOn: id="username-input"
+15:49:38.980018 [DEBUG] Executing step 2: inputText: "devicelab"
+15:49:39.011324 [DEBUG] Step 2 completed successfully (31ms): inputText: "devicelab"
+15:49:39.011761 [DEBUG] Executing step 3: tapOn: id="password-input"
+15:49:39.284066 [INFO] [devicelab] FindAndClick hit for #password-input via -android uiautomator=new UiSelector().resourceId("password-input"): bounds=[55,972][1025,1126] (w=970 h=154) center=(540,1049)
+15:49:39.284078 [DEBUG] Step 3 completed successfully (272ms): tapOn: id="password-input"
+15:49:39.284458 [DEBUG] Executing step 4: inputText: "robustest"
+15:49:39.292424 [DEBUG] Step 4 completed successfully (7ms): inputText: "robustest"
+15:49:39.292749 [DEBUG] Executing step 5: tapOn: id="login-button"
+15:49:39.550763 [INFO] [devicelab] FindAndClick hit for #login-button via -android uiautomator=new UiSelector().resourceId("login-button"): bounds=[55,1198][1025,1352] (w=970 h=154) center=(540,1275)
+15:49:39.550777 [DEBUG] Step 5 completed successfully (258ms): tapOn: id="login-button"
+15:49:39.551294 [DEBUG] Executing step 6: assertVisible: text="Hello, devicelab!"
+15:49:40.291574 [INFO] [devicelab] findElementFastWithLazyRetry start for Hello, devicelab! (lastTapTime zero=true)
+15:49:40.692054 [DEBUG] Step 6 completed successfully (1140ms): assertVisible: text="Hello, devicelab!"
+15:49:40.695051 [INFO] === Flow completed: android-captured-login (status: passed, duration: 4484ms, passed: 7, failed: 0, skipped: 0) ===
+15:49:41.094370 [WARN] failed to remove default DeviceLab Android Driver socket forward for /tmp/devicelab-driver-emulator-5554.sock: adb forward --remove localfilesystem:/tmp/devicelab-driver-emulator-5554.sock: exit status 1: adb: error: listener 'localfilesystem:/tmp/devicelab-driver-emulator-5554.sock' not found
+15:49:41.105357 [WARN] failed to remove adb forward for tcp:6791: adb forward --remove tcp:6791: exit status 1: adb: error: listener 'tcp:6791' not found
+15:49:41.105380 [INFO] Flow execution completed: 1 passed, 0 failed, 0 skipped
+15:49:41.105636 [INFO] Generating reports...
+15:49:41.107949 [INFO] Shutting down devices started by maestro-runner...
+15:49:41.107957 [INFO] Shutting down all tracked emulators
+15:49:41.107964 [INFO] Shutting down all tracked simulators

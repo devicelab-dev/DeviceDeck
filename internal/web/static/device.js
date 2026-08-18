@@ -230,14 +230,28 @@ function renderMirror(nodes) {
 // ---------- tree sync: adaptive polling + refresh-after-action ----------
 
 // Fast cadence while the screen is likely changing (recent action or
-// recent tree change); idle cadence otherwise. Sequenced so a stale
-// fetch never overwrites a newer one.
+// recent tree change); idle cadence otherwise. Every input event also
+// schedules a near-immediate fetch: keyboards and animations move the
+// layout within a few hundred ms of an action, and waiting out a full
+// poll tick left a window where the next click aimed at stale bounds —
+// the §11.8 refresh-before-act failure mode. Sequenced so a stale fetch
+// never overwrites a newer one.
+const ACTIVE_MS = 60;
 const FAST_MS = 300;
 const IDLE_MS = 1000;
 let lastActivity = 0;
 let syncSeq = 0;
+let syncTimer = null;
+let fetchInFlight = false;
 
 async function syncTree() {
+  // One fetch at a time: tree dumps serialize on the device side, and a
+  // pile-up would queue input calls behind them for seconds.
+  if (fetchInFlight) {
+    scheduleSync(FAST_MS);
+    return;
+  }
+  fetchInFlight = true;
   const seq = ++syncSeq;
   try {
     const url = `/api/devices/${udid}/tree${appId ? `?app=${encodeURIComponent(appId)}` : ""}`;
@@ -248,12 +262,20 @@ async function syncTree() {
       if (lastTreeJSON !== before) lastActivity = Date.now();
     }
   } catch {}
-  const cadence = Date.now() - lastActivity < 5000 ? FAST_MS : IDLE_MS;
-  setTimeout(syncTree, cadence);
+  fetchInFlight = false;
+  scheduleSync(Date.now() - lastActivity < 5000 ? FAST_MS : IDLE_MS);
+}
+
+// scheduleSync (re)arms the single sync timer; a shorter pending delay
+// is never lengthened.
+function scheduleSync(delay) {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(syncTree, delay);
 }
 
 function noteActivity() {
   lastActivity = Date.now();
+  scheduleSync(ACTIVE_MS);
 }
 
 // ---------- interaction forwarding ----------

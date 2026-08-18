@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/devicelab-dev/DeviceDeck/internal/capture"
+	"github.com/devicelab-dev/DeviceDeck/internal/emu"
 	"github.com/devicelab-dev/DeviceDeck/internal/input"
 	"github.com/devicelab-dev/DeviceDeck/internal/runner"
 	"github.com/devicelab-dev/DeviceDeck/internal/server"
@@ -61,7 +62,11 @@ func runServe(args []string) error {
 	frames := input.NewRouter(inputs, func(ctx context.Context, udid string) (input.AndroidInjector, error) {
 		return engines.AndroidInjector(ctx, udid)
 	})
-	srv := server.New(sim.NewClient(), sim.NewClient(), frames, engines, videos, captures)
+	simClient, emuClient := sim.NewClient(), emu.NewClient()
+	srv := server.New(
+		server.MultiLister{simClient, emuClient},
+		server.ScreenshotRouter{IOS: simClient, Android: emuClient},
+		frames, engines, videos, captures)
 	srv.SetConsole(web.Handler())
 	httpServer := &http.Server{Addr: *addr, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 

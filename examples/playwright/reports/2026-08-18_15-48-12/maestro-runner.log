@@ -1,0 +1,22 @@
+15:48:12.470058 [INFO] === Test execution started ===
+15:48:12.470087 [INFO] Output directory: reports/2026-08-18_15-48-12
+15:48:12.470092 [INFO] Platform: 
+15:48:12.470095 [INFO] Driver: uiautomator2
+15:48:12.470751 [INFO] Validated 1 flow(s)
+15:48:12.470773 [INFO] Single device execution mode
+15:48:12.470776 [INFO] Starting flow execution (parallel: false, devices: [])
+15:48:12.470779 [INFO] Creating driver for single device execution
+15:48:12.470782 [INFO] Auto-detecting Android device...
+15:48:12.557416 [INFO] Device info: google sdk_gphone64_arm64, SDK 34, Serial emulator-5554, Emulator: true
+15:48:12.579178 [INFO] Starting UIAutomator2 server on device emulator-5554
+15:48:12.977491 [WARN] failed to remove default socket forward for /tmp/uia2-emulator-5554.sock: adb forward --remove localfilesystem:/tmp/uia2-emulator-5554.sock: exit status 1: adb: error: listener 'localfilesystem:/tmp/uia2-emulator-5554.sock' not found
+15:48:12.987035 [WARN] failed to remove adb forward for tcp:6790: adb forward --remove tcp:6790: exit status 1: adb: error: listener 'tcp:6790' not found
+15:48:13.528477 [INFO] Creating UIAutomator2 session with capabilities: Platform=Android, Device=sdk_gphone64_arm64
+15:48:13.535922 [ERROR] Failed to create session: session not created: java.lang.IllegalStateException: UiAutomation not connected, UiAutomation@f6bf450[id=-1, displayId=0, flags=0]
+15:48:13.914554 [WARN] failed to remove default socket forward for /tmp/uia2-emulator-5554.sock: adb forward --remove localfilesystem:/tmp/uia2-emulator-5554.sock: exit status 1: adb: error: listener 'localfilesystem:/tmp/uia2-emulator-5554.sock' not found
+15:48:13.924011 [WARN] failed to remove adb forward for tcp:6790: adb forward --remove tcp:6790: exit status 1: adb: error: listener 'tcp:6790' not found
+15:48:13.924046 [ERROR] Failed to create driver: create session: session not created: java.lang.IllegalStateException: UiAutomation not connected, UiAutomation@f6bf450[id=-1, displayId=0, flags=0]
+15:48:13.924068 [ERROR] Flow execution failed: failed to create driver: create session: session not created: java.lang.IllegalStateException: UiAutomation not connected, UiAutomation@f6bf450[id=-1, displayId=0, flags=0]
+15:48:13.924112 [INFO] Shutting down devices started by maestro-runner...
+15:48:13.924138 [INFO] Shutting down all tracked emulators
+15:48:13.924157 [INFO] Shutting down all tracked simulators

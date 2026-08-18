@@ -1,0 +1,172 @@
+{
+  "id": "flow-000",
+  "name": "android-captured-login",
+  "sourceFile": "/private/tmp/claude-501/-Users-omnarayan-work-go-src-DeviceDeck/4b89cb73-7b09-4e9d-bc84-56af85d4aa9e/scratchpad/android-captured-login.yaml",
+  "device": {
+    "id": "emulator-5554",
+    "name": "google sdk_gphone64_arm64",
+    "platform": "android",
+    "osVersion": "34",
+    "isSimulator": true
+  },
+  "startTime": "2026-08-18T15:49:36.212212+05:30",
+  "endTime": "2026-08-18T15:49:40.69245+05:30",
+  "duration": 4480,
+  "commands": [
+    {
+      "id": "cmd-000",
+      "index": 0,
+      "type": "launchApp",
+      "yaml": "launchApp",
+      "status": "passed",
+      "startTime": "2026-08-18T15:49:36.212565+05:30",
+      "endTime": "2026-08-18T15:49:36.665723+05:30",
+      "duration": 453,
+      "artifacts": {}
+    },
+    {
+      "id": "cmd-001",
+      "index": 1,
+      "type": "tapOn",
+      "yaml": "tapOn: id=\"username-input\"",
+      "status": "passed",
+      "startTime": "2026-08-18T15:49:36.666194+05:30",
+      "endTime": "2026-08-18T15:49:38.979485+05:30",
+      "duration": 2313,
+      "params": {
+        "selector": {
+          "type": "id",
+          "value": "username-input"
+        }
+      },
+      "element": {
+        "found": true,
+        "text": "Username",
+        "bounds": {
+          "x": 55,
+          "y": 1158,
+          "width": 970,
+          "height": 154
+        }
+      },
+      "artifacts": {}
+    },
+    {
+      "id": "cmd-002",
+      "index": 2,
+      "type": "inputText",
+      "yaml": "inputText: \"devicelab\"",
+      "status": "passed",
+      "startTime": "2026-08-18T15:49:38.980024+05:30",
+      "endTime": "2026-08-18T15:49:39.011334+05:30",
+      "duration": 31,
+      "params": {
+        "text": "devicelab"
+      },
+      "artifacts": {}
+    },
+    {
+      "id": "cmd-003",
+      "index": 3,
+      "type": "tapOn",
+      "yaml": "tapOn: id=\"password-input\"",
+      "status": "passed",
+      "startTime": "2026-08-18T15:49:39.011767+05:30",
+      "endTime": "2026-08-18T15:49:39.284082+05:30",
+      "duration": 272,
+      "params": {
+        "selector": {
+          "type": "id",
+          "value": "password-input"
+        }
+      },
+      "element": {
+        "found": true,
+        "text": "Password",
+        "bounds": {
+          "x": 55,
+          "y": 972,
+          "width": 970,
+          "height": 154
+        }
+      },
+      "artifacts": {}
+    },
+    {
+      "id": "cmd-004",
+      "index": 4,
+      "type": "inputText",
+      "yaml": "inputText: \"robustest\"",
+      "status": "passed",
+      "startTime": "2026-08-18T15:49:39.284461+05:30",
+      "endTime": "2026-08-18T15:49:39.292432+05:30",
+      "duration": 7,
+      "params": {
+        "text": "robustest"
+      },
+      "artifacts": {}
+    },
+    {
+      "id": "cmd-005",
+      "index": 5,
+      "type": "tapOn",
+      "yaml": "tapOn: id=\"login-button\"",
+      "status": "passed",
+      "startTime": "2026-08-18T15:49:39.292752+05:30",
+      "endTime": "2026-08-18T15:49:39.550782+05:30",
+      "duration": 258,
+      "params": {
+        "selector": {
+          "type": "id",
+          "value": "login-button"
+        }
+      },
+      "element": {
+        "found": true,
+        "bounds": {
+          "x": 55,
+          "y": 1198,
+          "width": 970,
+          "height": 154
+        }
+      },
+      "artifacts": {}
+    },
+    {
+      "id": "cmd-006",
+      "index": 6,
+      "type": "assertVisible",
+      "yaml": "assertVisible: text=\"Hello, devicelab!\"",
+      "status": "passed",
+      "startTime": "2026-08-18T15:49:39.551298+05:30",
+      "endTime": "2026-08-18T15:49:40.692063+05:30",
+      "duration": 1140,
+      "params": {
+        "selector": {
+          "type": "text",
+          "value": "Hello, devicelab!"
+        }
+      },
+      "element": {
+        "found": true,
+        "id": "e8",
+        "bounds": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0
+        }
+      },
+      "artifacts": {}
+    }
+  ],
+  "stepLatency": {
+    "count": 7,
+    "mean": 639,
+    "p50": 272,
+    "p95": 2313,
+    "max": 2313,
+    "slowestType": "tapOn"
+  },
+  "artifacts": {}
+}

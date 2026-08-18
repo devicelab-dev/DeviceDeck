@@ -1,0 +1,88 @@
+15:49:36.146582 → Session.create id=1
+15:49:36.152712 ← Session.create id=1 [6.129625ms] OK
+15:49:36.152780 → Settings.update id=2
+15:49:36.153837 ← Settings.update id=2 [1.056417ms] OK
+15:49:36.153866 → Settings.update id=3
+15:49:36.154892 ← Settings.update id=3 [1.025833ms] OK
+15:49:36.210979 → Settings.update id=4
+15:49:36.212183 ← Settings.update id=4 [1.204125ms] OK
+15:49:36.212717 → Device.forceStop id=5
+15:49:36.247246 ← Device.forceStop id=5 [34.528ms] OK
+15:49:36.247300 → Device.grantPermissions id=6
+15:49:36.449285 ← Device.grantPermissions id=6 [201.984458ms] OK
+15:49:36.449329 → Device.launchApp id=7
+15:49:36.450983 ← Device.launchApp id=7 [1.653625ms] ERR: No launch intent for package: com.testhiveapp
+15:49:36.732588 → Gesture.findAndClick id=8
+15:49:36.857601 ← Gesture.findAndClick id=8 [125.012417ms] ERR: Element not found: -android uiautomator=new UiSelector().resourceId("username-input")
+15:49:36.857635 → Gesture.findAndClick id=9
+15:49:36.968112 ← Gesture.findAndClick id=9 [110.477ms] ERR: Element not found: -android uiautomator=new UiSelector().resourceIdMatches(".*username-input.*")
+15:49:36.968169 → Gesture.findAndClick id=10
+15:49:37.086254 ← Gesture.findAndClick id=10 [118.085208ms] ERR: Element not found: -android uiautomator=new UiSelector().resourceId("username-input")
+15:49:37.086313 → Gesture.findAndClick id=11
+15:49:37.200933 ← Gesture.findAndClick id=11 [114.620291ms] ERR: Element not found: -android uiautomator=new UiSelector().resourceIdMatches(".*username-input.*")
+15:49:37.200995 → Gesture.findAndClick id=12
+15:49:37.315677 ← Gesture.findAndClick id=12 [114.681625ms] ERR: Element not found: -android uiautomator=new UiSelector().resourceId("username-input")
+15:49:37.315706 → Gesture.findAndClick id=13
+15:49:37.427006 ← Gesture.findAndClick id=13 [111.299834ms] ERR: Element not found: -android uiautomator=new UiSelector().resourceIdMatches(".*username-input.*")
+15:49:37.444287 → Gesture.findAndClick id=14
+15:49:37.558064 ← Gesture.findAndClick id=14 [113.77675ms] ERR: Element not found: -android uiautomator=new UiSelector().resourceId("username-input")
+15:49:37.558131 → Gesture.findAndClick id=15
+15:49:37.669741 ← Gesture.findAndClick id=15 [111.609709ms] ERR: Element not found: -android uiautomator=new UiSelector().resourceIdMatches(".*username-input.*")
+15:49:37.669806 → Gesture.findAndClick id=16
+15:49:37.787331 ← Gesture.findAndClick id=16 [117.525334ms] ERR: Element not found: -android uiautomator=new UiSelector().resourceId("username-input")
+15:49:37.787376 → Gesture.findAndClick id=17
+15:49:37.898026 ← Gesture.findAndClick id=17 [110.649209ms] ERR: Element not found: -android uiautomator=new UiSelector().resourceIdMatches(".*username-input.*")
+15:49:37.916674 → Gesture.findAndClick id=18
+15:49:38.033128 ← Gesture.findAndClick id=18 [116.453583ms] ERR: Element not found: -android uiautomator=new UiSelector().resourceId("username-input")
+15:49:38.033166 → Gesture.findAndClick id=19
+15:49:38.152375 ← Gesture.findAndClick id=19 [119.208208ms] ERR: Element not found: -android uiautomator=new UiSelector().resourceIdMatches(".*username-input.*")
+15:49:38.171886 → Gesture.findAndClick id=20
+15:49:38.286895 ← Gesture.findAndClick id=20 [115.008708ms] ERR: Element not found: -android uiautomator=new UiSelector().resourceId("username-input")
+15:49:38.286937 → Gesture.findAndClick id=21
+15:49:38.397805 ← Gesture.findAndClick id=21 [110.86725ms] ERR: Element not found: -android uiautomator=new UiSelector().resourceIdMatches(".*username-input.*")
+15:49:38.397859 → Gesture.findAndClick id=22
+15:49:38.512610 ← Gesture.findAndClick id=22 [114.75125ms] ERR: Element not found: -android uiautomator=new UiSelector().resourceId("username-input")
+15:49:38.512657 → Gesture.findAndClick id=23
+15:49:38.622402 ← Gesture.findAndClick id=23 [109.745042ms] ERR: Element not found: -android uiautomator=new UiSelector().resourceIdMatches(".*username-input.*")
+15:49:38.622441 → Gesture.findAndClick id=24
+15:49:38.917355 ← Gesture.findAndClick id=24 [294.914166ms] OK
+15:49:39.002427 → UI.activeElement id=25
+15:49:39.007124 ← UI.activeElement id=25 [4.696916ms] OK
+15:49:39.007162 → Input.sendKeys id=26
+15:49:39.011302 ← Input.sendKeys id=26 [4.140125ms] OK
+15:49:39.012207 → UI.findElement id=27
+15:49:39.022464 ← UI.findElement id=27 [10.256459ms] OK
+15:49:39.045997 → Gesture.findAndClick id=28
+15:49:39.284027 ← Gesture.findAndClick id=28 [238.029417ms] OK
+15:49:39.284718 → UI.activeElement id=29
+15:49:39.288693 ← UI.activeElement id=29 [3.974667ms] OK
+15:49:39.288723 → Input.sendKeys id=30
+15:49:39.292408 ← Input.sendKeys id=30 [3.685083ms] OK
+15:49:39.293087 → UI.findElement id=31
+15:49:39.304478 ← UI.findElement id=31 [11.391541ms] OK
+15:49:39.324588 → Gesture.findAndClick id=32
+15:49:39.550721 ← Gesture.findAndClick id=32 [226.1325ms] OK
+15:49:39.594082 → UI.findElement id=33
+15:49:39.704082 ← UI.findElement id=33 [110.000667ms] ERR: Element not found: -android uiautomator=new UiSelector().textContains("Hello, devicelab!")
+15:49:39.704119 → UI.findElement id=34
+15:49:39.821149 ← UI.findElement id=34 [117.029417ms] ERR: Element not found: -android uiautomator=new UiSelector().descriptionContains("Hello, devicelab!")
+15:49:39.821188 → UI.findElement id=35
+15:49:39.933701 ← UI.findElement id=35 [112.512708ms] ERR: Element not found: -android uiautomator=new UiSelector().hintContains("Hello, devicelab!")
+15:49:39.933783 → UI.findElement id=36
+15:49:40.050188 ← UI.findElement id=36 [116.403916ms] ERR: Element not found: -android uiautomator=new UiSelector().textMatches("(?is).*\QHello, devicelab!\E.*")
+15:49:40.050236 → UI.findElement id=37
+15:49:40.165910 ← UI.findElement id=37 [115.674375ms] ERR: Element not found: -android uiautomator=new UiSelector().descriptionMatches("(?is).*\QHello, devicelab!\E.*")
+15:49:40.165945 → UI.findElement id=38
+15:49:40.281848 ← UI.findElement id=38 [115.902375ms] ERR: Element not found: -android uiautomator=new UiSelector().hintMatches("(?is).*\QHello, devicelab!\E.*")
+15:49:40.281884 → UI.getSource id=39
+15:49:40.291408 ← UI.getSource id=39 [9.524791ms] OK
+15:49:40.312596 → UI.findElement id=40
+15:49:40.425212 ← UI.findElement id=40 [112.615458ms] ERR: Element not found: -android uiautomator=new UiSelector().textContains("Hello, devicelab!")
+15:49:40.425245 → UI.findElement id=41
+15:49:40.539515 ← UI.findElement id=41 [114.268667ms] ERR: Element not found: -android uiautomator=new UiSelector().descriptionContains("Hello, devicelab!")
+15:49:40.539555 → UI.findElement id=42
+15:49:40.688982 ← UI.findElement id=42 [149.426542ms] ERR: Element not found: -android uiautomator=new UiSelector().hintContains("Hello, devicelab!")
+15:49:40.689010 → UI.findElement id=43
+15:49:40.692026 ← UI.findElement id=43 [3.015708ms] OK
+15:49:40.698506 → Session.delete id=44
+15:49:40.699608 ← Session.delete id=44 [1.101417ms] OK

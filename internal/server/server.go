@@ -75,11 +75,12 @@ func New(devices DeviceLister, screenshots Screenshotter, frames FrameSender, tr
 // recording is active, feeds it to capture — the single choke point both
 // REST handlers and the input WebSocket go through.
 func (s *Server) sendFrame(ctx context.Context, udid string, frame []byte) error {
-	if err := s.frames.SendFrame(ctx, udid, frame); err != nil {
-		return err
-	}
+	// Capture observes first: it measures gesture timing from frame
+	// arrival, and dispatch can block on slow backends (an Android
+	// driver click takes ~250ms) — observing afterwards inflated a tap's
+	// down→up gap into a long-press.
 	s.capture.OnFrame(udid, frame)
-	return nil
+	return s.frames.SendFrame(ctx, udid, frame)
 }
 
 // SetConsole mounts the browser console at /. Optional — API-only servers
