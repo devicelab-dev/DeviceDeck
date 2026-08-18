@@ -8,6 +8,8 @@ import (
 	"sync"
 
 	dlios "github.com/devicelab-dev/maestro-runner/pkg/driver/devicelab_ios"
+
+	"github.com/devicelab-dev/DeviceDeck/internal/platform"
 )
 
 // Node is one element of the UI tree in DeviceDeck's own shape. The runner
@@ -142,10 +144,14 @@ type Engines struct {
 	engines map[string]engineAPI
 }
 
-// NewEngines builds an engine cache backed by real runner startup.
+// NewEngines builds an engine cache backed by real runner startup,
+// routing each device to its platform's engine.
 func NewEngines() *Engines {
 	return &Engines{
 		start: func(ctx context.Context, udid string) (engineAPI, error) {
+			if platform.IsAndroidSerial(udid) {
+				return StartAndroidEngine(ctx, udid)
+			}
 			return StartEngine(ctx, udid)
 		},
 		engines: make(map[string]engineAPI),

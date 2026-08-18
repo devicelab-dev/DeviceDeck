@@ -5,17 +5,16 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"strings"
 	"sync"
 	"time"
+
+	"github.com/devicelab-dev/DeviceDeck/internal/platform"
 )
 
-// IsAndroidSerial reports whether udid names an adb device rather than an
-// iOS simulator: emulator serials look like "emulator-5554", simulator
-// UDIDs are UUIDs. DeviceDeck targets emulators only (brief §3), so the
-// prefix is the whole grammar.
+// IsAndroidSerial reports whether udid names an adb device rather than
+// an iOS simulator. Thin delegate to the shared platform check.
 func IsAndroidSerial(udid string) bool {
-	return strings.HasPrefix(udid, "emulator-")
+	return platform.IsAndroidSerial(udid)
 }
 
 // screenrecordLimit is screenrecord's own per-invocation cap (3 minutes);
