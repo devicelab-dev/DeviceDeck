@@ -1,6 +1,7 @@
 package capture
 
 import (
+	"gopkg.in/yaml.v3"
 	"strings"
 	"testing"
 
@@ -56,5 +57,39 @@ func TestExportEmptySession(t *testing.T) {
 func TestValidateFlowRejectsGarbage(t *testing.T) {
 	if _, err := runner.ValidateFlow([]byte("appId: x\n---\n- notARealCommand: 1\n")); err == nil {
 		t.Fatal("expected parser rejection")
+	}
+}
+
+// Flutter merges a widget's child semantics into one label, so labels
+// routinely arrive with embedded newlines. A raw newline in a
+// double-quoted scalar folds to a space, which parses cleanly and then
+// matches nothing — so the escape has to survive a round trip.
+func TestQuoteEscapesControlCharacters(t *testing.T) {
+	label := "#182604 — OverlayPortal\nSemantics\tregression\r\\ \"quoted\""
+	yamlText := ExportMaestro("com.example", []Step{{Kind: "tapOn", Text: label}})
+	if strings.Contains(yamlText, "\n    text: \"#182604 — OverlayPortal\nSemantics") {
+		t.Error("newline emitted raw into the scalar")
+	}
+	if _, err := runner.ValidateFlow([]byte(yamlText)); err != nil {
+		t.Fatalf("exported flow invalid: %v\n%s", err, yamlText)
+	}
+	// launchApp is a bare scalar step, so decode loosely and dig.
+	var steps []any
+	parts := strings.SplitN(yamlText, "---\n", 2)
+	if err := yaml.Unmarshal([]byte(parts[1]), &steps); err != nil {
+		t.Fatalf("re-parse: %v", err)
+	}
+	var got string
+	for _, step := range steps {
+		m, ok := step.(map[string]any)
+		if !ok {
+			continue
+		}
+		if tap, ok := m["tapOn"].(map[string]any); ok {
+			got, _ = tap["text"].(string)
+		}
+	}
+	if got != label {
+		t.Errorf("round trip changed the selector:\n got %q\nwant %q", got, label)
 	}
 }

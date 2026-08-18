@@ -45,6 +45,20 @@ func percent(v float64) string {
 
 // quote YAML-quotes a string defensively: captured identifiers and typed
 // text are user data and can contain any character.
+//
+// Control characters must be escaped, not passed through. A raw newline
+// inside a double-quoted scalar is legal YAML and folds to a space, so
+// the flow parses and then silently fails to match an element whose
+// label really does contain a newline — which Flutter produces routinely,
+// because it merges a widget's child semantics into one label.
 func quote(s string) string {
-	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(s) + `"`
+	return `"` + controlEscaper.Replace(s) + `"`
 }
+
+var controlEscaper = strings.NewReplacer(
+	`\`, `\\`,
+	`"`, `\"`,
+	"\n", `\n`,
+	"\r", `\r`,
+	"\t", `\t`,
+)
