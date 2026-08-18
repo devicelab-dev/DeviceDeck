@@ -16,30 +16,8 @@ const canvas = document.getElementById("video");
 const ctx = canvas.getContext("2d");
 const mirror = document.getElementById("mirror");
 
-// ---------- sidecar protocol frames (lockstep with Go/Swift) ----------
-
-function touchFrame(phase, x, y) {
-  const view = new DataView(new ArrayBuffer(10));
-  view.setUint8(0, 0x01 + phase);
-  view.setFloat32(1, x);
-  view.setFloat32(5, y);
-  view.setUint8(9, 0);
-  return view.buffer;
-}
-
-function keyFrame(modifiers, usage) {
-  const view = new DataView(new ArrayBuffer(6));
-  view.setUint8(0, 0x0b);
-  view.setUint8(1, modifiers);
-  view.setUint32(2, usage);
-  return view.buffer;
-}
-
-let inputWS = null;
-
-function sendFrame(buffer) {
-  if (inputWS && inputWS.readyState === WebSocket.OPEN) inputWS.send(buffer);
-}
+// The reconnecting input socket (input-common.js); created by start().
+let input = null;
 
 // ---------- video ----------
 
@@ -59,9 +37,7 @@ function connectVideo() {
 }
 
 function connectInput() {
-  inputWS = new WebSocket(wsURL(`/api/devices/${udid}/input`));
-  inputWS.binaryType = "arraybuffer";
-  inputWS.onclose = () => setTimeout(connectInput, 1500);
+  input = createInputSocket(wsURL(`/api/devices/${udid}/input`));
 }
 
 // ---------- DOM mirror ----------
@@ -299,41 +275,27 @@ mirror.addEventListener("pointerdown", (e) => {
   // capture is an optimization for drags, never a precondition.
   try { mirror.setPointerCapture(e.pointerId); } catch {}
   const { x, y } = normalized(e);
-  sendFrame(touchFrame(0, x, y));
+  input.send(touchFrame(PHASE.down, x, y));
   noteActivity();
 });
 mirror.addEventListener("pointermove", (e) => {
   if (!pointerDown) return;
   const { x, y } = normalized(e);
-  sendFrame(touchFrame(1, x, y));
+  input.send(touchFrame(PHASE.move, x, y));
 });
 mirror.addEventListener("pointerup", (e) => {
   if (!pointerDown) return;
   pointerDown = false;
   const { x, y } = normalized(e);
-  sendFrame(touchFrame(2, x, y));
+  input.send(touchFrame(PHASE.up, x, y));
   noteActivity();
 });
 
-const KEY_USAGE = (() => {
-  const map = {
-    Enter: 0x28, Escape: 0x29, Backspace: 0x2a, Tab: 0x2b, " ": 0x2c,
-    "-": 0x2d, "=": 0x2e, "[": 0x2f, "]": 0x30, "\\": 0x31, ";": 0x33,
-    "'": 0x34, "`": 0x35, ",": 0x36, ".": 0x37, "/": 0x38,
-    ArrowRight: 0x4f, ArrowLeft: 0x50, ArrowDown: 0x51, ArrowUp: 0x52,
-  };
-  for (let i = 0; i < 26; i++) map[String.fromCharCode(97 + i)] = 0x04 + i;
-  "1234567890".split("").forEach((d, i) => { map[d] = 0x1e + i; });
-  return map;
-})();
-
 document.addEventListener("keydown", (e) => {
-  const usage = KEY_USAGE[e.key.length === 1 ? e.key.toLowerCase() : e.key];
-  if (!usage) return;
+  const frame = keyEventFrame(e);
+  if (!frame) return;
   e.preventDefault();
-  const modifiers = (e.ctrlKey ? 0x01 : 0) | (e.shiftKey ? 0x02 : 0) |
-    (e.altKey ? 0x04 : 0) | (e.metaKey ? 0x08 : 0);
-  sendFrame(keyFrame(modifiers, usage));
+  input.send(frame);
   noteActivity();
 });
 

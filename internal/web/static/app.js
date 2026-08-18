@@ -11,39 +11,9 @@ const status = $("status");
 
 let udid = null;
 let videoWS = null;
-let inputWS = null;
+let input = null;
 let pointerDown = false;
 let inspecting = false;
-
-// ---------- sidecar protocol frame encoders (lockstep with Go/Swift) ----------
-
-const PHASE = { down: 0, move: 1, up: 2 };
-const GESTURE = { home: 1, appSwitcher: 2, notificationCenter: 3, lockScreen: 4 };
-
-function touchFrame(phase, x, y, edge = 0) {
-  const view = new DataView(new ArrayBuffer(10));
-  view.setUint8(0, 0x01 + phase);
-  view.setFloat32(1, x);
-  view.setFloat32(5, y);
-  view.setUint8(9, edge);
-  return view.buffer;
-}
-
-function keyFrame(modifiers, usage) {
-  const view = new DataView(new ArrayBuffer(6));
-  view.setUint8(0, 0x0b);
-  view.setUint8(1, modifiers);
-  view.setUint32(2, usage);
-  return view.buffer;
-}
-
-function gestureFrame(kind) {
-  return new Uint8Array([0x0c, kind]).buffer;
-}
-
-function sendFrame(buffer) {
-  if (inputWS && inputWS.readyState === WebSocket.OPEN) inputWS.send(buffer);
-}
 
 // ---------- devices ----------
 
@@ -53,7 +23,7 @@ function sendFrame(buffer) {
 
 function showLibrary() {
   if (videoWS) { videoWS.close(); videoWS = null; }
-  if (inputWS) { inputWS.close(); inputWS = null; }
+  if (input) { input.close(); input = null; }
   renderer.close();
   udid = null;
   $("library").hidden = false;
@@ -289,9 +259,15 @@ function connectVideo() {
 // ---------- live input ----------
 
 function connectInput() {
-  if (inputWS) inputWS.close();
-  inputWS = new WebSocket(wsURL(`/api/devices/${udid}/input`));
-  inputWS.binaryType = "arraybuffer";
+  if (input) input.close();
+  input = createInputSocket(wsURL(`/api/devices/${udid}/input`));
+}
+
+// Pointer and toolbar handlers stay bound while the library view is
+// showing, where there is no device and no socket — drop those frames
+// instead of throwing.
+function send(frame) {
+  input?.send(frame);
 }
 
 function normalized(event) {
@@ -308,49 +284,35 @@ canvas.addEventListener("pointerdown", (e) => {
   canvas.setPointerCapture(e.pointerId);
   pointerDown = true;
   const { x, y } = normalized(e);
-  sendFrame(touchFrame(PHASE.down, x, y));
+  send(touchFrame(PHASE.down, x, y));
 });
 
 canvas.addEventListener("pointermove", (e) => {
   if (!pointerDown) return;
   const { x, y } = normalized(e);
-  sendFrame(touchFrame(PHASE.move, x, y));
+  send(touchFrame(PHASE.move, x, y));
 });
 
 canvas.addEventListener("pointerup", (e) => {
   if (!pointerDown) return;
   pointerDown = false;
   const { x, y } = normalized(e);
-  sendFrame(touchFrame(PHASE.up, x, y));
+  send(touchFrame(PHASE.up, x, y));
 });
 
 // USB HID keyboard usages for the keys the console forwards.
-const KEY_USAGE = (() => {
-  const map = {
-    Enter: 0x28, Escape: 0x29, Backspace: 0x2a, Tab: 0x2b, " ": 0x2c,
-    "-": 0x2d, "=": 0x2e, "[": 0x2f, "]": 0x30, "\\": 0x31, ";": 0x33,
-    "'": 0x34, "`": 0x35, ",": 0x36, ".": 0x37, "/": 0x38,
-    ArrowRight: 0x4f, ArrowLeft: 0x50, ArrowDown: 0x51, ArrowUp: 0x52,
-  };
-  for (let i = 0; i < 26; i++) map[String.fromCharCode(97 + i)] = 0x04 + i;
-  "1234567890".split("").forEach((d, i) => { map[d] = 0x1e + i; });
-  return map;
-})();
-
 canvas.addEventListener("keydown", (e) => {
-  const usage = KEY_USAGE[e.key.length === 1 ? e.key.toLowerCase() : e.key];
-  if (!usage) return;
+  const frame = keyEventFrame(e);
+  if (!frame) return;
   e.preventDefault();
-  const modifiers = (e.ctrlKey ? 0x01 : 0) | (e.shiftKey ? 0x02 : 0) |
-    (e.altKey ? 0x04 : 0) | (e.metaKey ? 0x08 : 0);
-  sendFrame(keyFrame(modifiers, usage));
+  send(frame);
 });
 
 // ---------- toolbar ----------
 
 $("btn-back").addEventListener("click", showLibrary);
-$("btn-home").addEventListener("click", () => sendFrame(gestureFrame(GESTURE.home)));
-$("btn-switcher").addEventListener("click", () => sendFrame(gestureFrame(GESTURE.appSwitcher)));
+$("btn-home").addEventListener("click", () => send(gestureFrame(GESTURE.home)));
+$("btn-switcher").addEventListener("click", () => send(gestureFrame(GESTURE.appSwitcher)));
 $("btn-lock").addEventListener("click", () =>
   fetch(`/api/devices/${udid}/button`, { method: "POST", body: JSON.stringify({ button: "lock" }) }));
 $("btn-shot").addEventListener("click", () => window.open(`/api/devices/${udid}/screenshot`));

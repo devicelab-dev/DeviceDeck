@@ -15,7 +15,18 @@ test('logs into TestHive on a real simulator', async ({ page }) => {
   const username = page.getByTestId('username-input');
   await expect(username).toBeVisible({ timeout: 30_000 });
 
-  await username.click();
+  // A freshly launched app enters the accessibility tree about a second
+  // before it starts accepting touches: XCUITest reports the field
+  // hittable, enabled and geometrically stable that whole time, so there
+  // is no device-side state to wait on. Prove the field really takes
+  // input, then clear the probe character and type for real.
+  await expect(async () => {
+    await username.click();
+    await page.keyboard.press('x');
+    await expect(username).toHaveText('x');
+  }).toPass({ timeout: 20_000 });
+  await page.keyboard.press('Backspace');
+
   // Keys forward as real HID presses (~100ms hold each) — pace the typing.
   await page.keyboard.type('devicelab', { delay: 150 });
 
