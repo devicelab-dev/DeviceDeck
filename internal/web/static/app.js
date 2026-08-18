@@ -77,7 +77,7 @@ let loadingShownAt = 0;
 // reads as arrival.
 const MIN_LOADING_MS = 700;
 
-function showConsole(next, name) {
+function showConsole(next, name, shape) {
   udid = next;
   $("library").hidden = true;
   $("console-view").hidden = false;
@@ -88,6 +88,8 @@ function showConsole(next, name) {
   // pulsing silhouette instead of an empty canvas until it arrives.
   awaitingFirstFrame = true;
   loadingShownAt = Date.now();
+  $("device-frame").className = "device-frame" +
+    (shape && shape.tablet ? " tablet" : "") + (shape && shape.android ? " android" : "");
   $("loading-text").textContent = `Connecting to ${name || next}…`;
   $("stage-loading").hidden = false;
   canvas.classList.add("connecting");
@@ -166,7 +168,7 @@ function deviceCard(d) {
   if (d.booted) {
     action.className = "use";
     action.textContent = "Use";
-    action.addEventListener("click", () => showConsole(d.udid, d.name));
+    action.addEventListener("click", () => showConsole(d.udid, d.name, deviceShape(d)));
   } else {
     action.textContent = "Boot";
     action.addEventListener("click", () => bootDevice(d, card, glyph, action));
@@ -198,7 +200,7 @@ async function bootDevice(d, card, glyph, action) {
     const { devices } = await (await fetch("/api/devices")).json();
     const fresh = devices.find((x) => x.booted && (x.udid === d.udid || !before.has(x.udid)));
     if (fresh) {
-      showConsole(fresh.udid, fresh.name);
+      showConsole(fresh.udid, fresh.name, deviceShape(fresh));
       return;
     }
     if (Date.now() > deadline) {
@@ -215,6 +217,11 @@ async function bootDevice(d, card, glyph, action) {
 
 function selectDevice(next) {
   showConsole(next);
+}
+
+// deviceShape classifies a device for the connecting frame.
+function deviceShape(d) {
+  return { tablet: /iPad|Tablet/i.test(d.name), android: d.os.startsWith("android") };
 }
 
 // platformBadge returns the platform mark: the Android robot head as
@@ -267,6 +274,9 @@ function connectVideo() {
         if (udid !== device) return; // navigated away meanwhile
         $("stage-loading").hidden = true;
         canvas.classList.remove("connecting");
+        // Still-based streams (Android static screens) never configure a
+        // decoder, so nothing else clears the connecting status.
+        if (status.textContent === "connecting video…") status.textContent = "live";
       };
       const remaining = MIN_LOADING_MS - (Date.now() - loadingShownAt);
       if (remaining > 0) setTimeout(reveal, remaining);
@@ -536,7 +546,7 @@ async function route() {
   }
   const devices = await refreshLibrary();
   const d = devices.find((x) => x.udid === wanted && x.booted);
-  if (d) showConsole(d.udid, d.name);
+  if (d) showConsole(d.udid, d.name, deviceShape(d));
   else showLibrary();
 }
 route();

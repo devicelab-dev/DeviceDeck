@@ -272,17 +272,66 @@ main { flex: 1; display: flex; min-height: 0; }
 
 /* ---------- console connecting state ---------- */
 
+/* A full-size stand-in for the incoming device: the frame appears the
+   moment the console opens, shaped like the device it awaits, and the
+   video takes its place — no layout jump, just the screen filling in. */
 #stage-loading {
   position: absolute;
-  inset: 0;
+  inset: 16px;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  color: var(--dim);
-  font-size: 13px;
 }
-.glyph.big { width: 56px; height: 100px; border-radius: 12px; }
-.glyph.big::after { width: 16px; height: 3px; top: 6px; }
+
+.device-frame {
+  height: 100%;
+  max-width: 100%;
+  aspect-ratio: 9 / 19.5;
+  border: 2px solid var(--edge);
+  border-radius: 24px;
+  background: #000;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.device-frame.tablet { aspect-ratio: 3 / 4; border-radius: 18px; }
+.device-frame.android { border-radius: 12px; }
+
+/* iOS notch line vs Android camera dot, scaled to the full frame. */
+.device-frame::after {
+  content: "";
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 64px;
+  height: 6px;
+  border-radius: 3px;
+  background: #1c212b;
+}
+.device-frame.android::after { width: 8px; height: 8px; border-radius: 50%; }
+
+.frame-screen {
+  position: absolute;
+  inset: 0;
+  animation: frame-pulse 1.6s ease-in-out infinite;
+}
+@keyframes frame-pulse {
+  0%, 100% { background: #0b0e14; }
+  50% { background: #141a26; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .frame-screen { animation: none; background: #0e1118; }
+}
+
+#loading-text {
+  position: relative;
+  color: var(--dim);
+  font-size: 15px;
+  text-align: center;
+  padding: 0 24px;
+}
 #video.connecting { visibility: hidden; }
