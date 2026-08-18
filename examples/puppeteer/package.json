@@ -1,0 +1,10 @@
+{
+  "name": "devicedeck-puppeteer-example",
+  "private": true,
+  "scripts": {
+    "test": "node --test testhive-login.test.js"
+  },
+  "devDependencies": {
+    "puppeteer": "^24.0.0"
+  }
+}
