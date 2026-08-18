@@ -159,7 +159,10 @@ func (s *Server) handleTree(w http.ResponseWriter, r *http.Request) {
 	if nodes == nil {
 		nodes = []runner.Node{}
 	}
-	writeJSON(w, map[string]any{"nodes": nodes})
+	// The hash travels with the tree so a caller can tell "the screen
+	// changed" from "the snapshot differs" without re-deriving the
+	// exclusions (geometry noise, the status bar clock) client-side.
+	writeJSON(w, map[string]any{"nodes": nodes, "hash": runner.ScreenHash(nodes)})
 }
 
 type tapRequest struct {

@@ -130,8 +130,22 @@ function syncNode(el, node, anchorFrame) {
   // fields still read as `textbox "Username"` in aria snapshots.
   setOrRemove(el, "aria-label", node.label || node.placeholder || "");
   setOrRemove(el, "aria-placeholder", node.placeholder || "");
-  setOrRemove(el, "aria-disabled", node.enabled ? "" : "true");
+  // Always explicit, never removed. aria-disabled is inherited down the
+  // ancestor chain, and a native container frequently reports disabled
+  // while an enabled control sits inside it — leaving the attribute off
+  // the child would let the container's "true" claim it. An explicit
+  // "false" stops the walk at the node itself.
+  el.setAttribute("aria-disabled", node.enabled === false ? "true" : "false");
   setOrRemove(el, "aria-selected", node.selected ? "true" : "");
+  // Device truth for the states ARIA cannot carry everywhere:
+  // aria-disabled is only honoured for a fixed set of roles, so a
+  // role-less container's disabled state is invisible to the web tools
+  // without this. hittable is diagnostic only — XCUITest computes it
+  // relative to the app under test, so everything in another window
+  // (the keyboard, alerts) reports false even while plainly tappable,
+  // which makes it unusable as a pointer-events signal.
+  el.setAttribute("data-dd-enabled", node.enabled === false ? "false" : "true");
+  el.setAttribute("data-dd-hittable", node.hittable ? "true" : "false");
   // Text for getByText: label, else value, painted transparent. Kept in
   // a dedicated leading text node — assigning textContent would destroy
   // the nested child elements.
@@ -228,6 +242,26 @@ const FAST_MS = 300;
 const IDLE_MS = 1000;
 let lastActivity = 0;
 let syncSeq = 0;
+
+// Quiescence signal for tests. Playwright's own "stable" check samples
+// getBoundingClientRect across two animation frames, but the mirror only
+// moves at poll boundaries, so between polls it looks stable however
+// hard the device is animating — the check cannot see a native
+// transition. Publishing settledness on the root gives tests something
+// real to await: expect(mirror).toHaveAttribute("data-dd-settled","true").
+const SETTLE_POLLS = 3;
+let quietPolls = 0;
+let lastHash = null;
+
+// The server decides what counts as a change — it excludes geometry noise
+// and the status-bar clock, which would otherwise stop any screen from
+// ever looking quiet. Comparing raw snapshots here would re-derive those
+// exclusions in a second place, and get them wrong.
+function noteSettle(hash) {
+  quietPolls = hash === lastHash ? quietPolls + 1 : 0;
+  lastHash = hash;
+  mirror.setAttribute("data-dd-settled", quietPolls >= SETTLE_POLLS ? "true" : "false");
+}
 let syncTimer = null;
 let fetchInFlight = false;
 
@@ -245,8 +279,10 @@ async function syncTree() {
     const res = await fetch(url);
     if (res.ok && seq === syncSeq) {
       const before = lastTreeJSON;
-      renderMirror((await res.json()).nodes);
+      const payload = await res.json();
+      renderMirror(payload.nodes);
       if (lastTreeJSON !== before) lastActivity = Date.now();
+      noteSettle(payload.hash);
     }
   } catch {}
   fetchInFlight = false;

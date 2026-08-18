@@ -211,6 +211,21 @@ func TestTree(t *testing.T) {
 	}
 }
 
+// The screen hash rides along with every tree so the page can tell a
+// changed screen from a merely different snapshot.
+func TestTreeCarriesScreenHash(t *testing.T) {
+	nodes := []runner.Node{{Index: 0, Type: "Button", Label: "Log in"}}
+	body := do(t, newTestServer(&fakeBackend{nodes: nodes}), "GET", "/api/devices/AAA/tree", "").Body.String()
+	want := runner.ScreenHash(nodes)
+	if !strings.Contains(body, `"hash":"`+want+`"`) {
+		t.Errorf("tree body %s missing hash %s", body, want)
+	}
+	empty := do(t, newTestServer(&fakeBackend{}), "GET", "/api/devices/AAA/tree", "").Body.String()
+	if !strings.Contains(empty, `"hash":"`) {
+		t.Errorf("empty tree carries no hash: %s", empty)
+	}
+}
+
 func TestTap(t *testing.T) {
 	f := &fakeBackend{}
 	rec := do(t, newTestServer(f), "POST", "/api/devices/AAA/tap", `{"x":0.5,"y":0.25}`)
