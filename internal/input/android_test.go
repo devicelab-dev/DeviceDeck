@@ -125,9 +125,17 @@ func TestAndroidTranslatorGestures(t *testing.T) {
 			want: nil,
 		},
 		{
+			name: "system gestures map to Android keycodes",
+			frames: [][]byte{
+				SystemGesture(1), // home
+				SystemGesture(2), // app switcher
+				SystemGesture(4), // lock
+			},
+			want: []string{"key 3", "key 187", "key 26"},
+		},
+		{
 			name: "unsupported frames are dropped",
 			frames: [][]byte{
-				SystemGesture(1),
 				{0xFF, 0x00},
 			},
 			want: nil,

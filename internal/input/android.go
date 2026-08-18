@@ -105,11 +105,42 @@ func (t *androidTranslator) handle(inj AndroidInjector, frame []byte) error {
 		return t.touch(inj, ev)
 	case EventKey:
 		return t.key(inj, ev)
+	case EventGesture:
+		return t.gesture(inj, ev.Gesture)
+	case EventLegacyButton:
+		// Legacy buttons: 0 = home, 1 = lock (power).
+		if ev.Code == 0 {
+			return inj.KeyCode(keycodeHome)
+		}
+		return inj.KeyCode(keycodePower)
 	default:
-		// Two-finger, hardware buttons, iOS system gestures: no Android
-		// mapping yet — dropped rather than guessed.
+		// Two-finger and iOS-specific frames: no Android mapping —
+		// dropped rather than guessed.
 		return nil
 	}
+}
+
+// Android keycodes for system-level actions.
+const (
+	keycodeHome          = 3
+	keycodePower         = 26
+	keycodeAppSwitch     = 187
+	keycodeNotifications = 83 // KEYCODE_NOTIFICATION
+)
+
+// gesture maps iOS-shaped system gestures onto their Android keycodes.
+func (t *androidTranslator) gesture(inj AndroidInjector, g Gesture) error {
+	switch g {
+	case GestureSwipeToHome:
+		return inj.KeyCode(keycodeHome)
+	case GestureAppSwitcher:
+		return inj.KeyCode(keycodeAppSwitch)
+	case GestureNotificationCenter:
+		return inj.KeyCode(keycodeNotifications)
+	case GestureLockScreen:
+		return inj.KeyCode(keycodePower)
+	}
+	return nil
 }
 
 // touch runs the gesture state machine. Coordinates arrive normalized;
