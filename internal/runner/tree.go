@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -151,15 +152,19 @@ func NewEngines() *Engines {
 // On failure it evicts the engine and retries once on a fresh one: the
 // XCUITest runner process can die mid-session (brief §11.4), and a cached
 // dead engine would otherwise fail every request until the whole server
-// restarts. A cancelled context is surfaced as-is — a caller going away
-// must not cost a multi-second engine restart.
+// restarts. Two failure classes are surfaced without evicting: a cancelled
+// context (a caller going away must not cost a multi-second engine
+// restart), and a structured RunnerError — the runner answered, so it is
+// alive; restarting a live engine over an app-level error (APP_NOT_RUNNING,
+// a caught in-runner exception) just burns the startup cost for nothing.
 func (s *Engines) Snapshot(ctx context.Context, udid, appBundleID string) ([]Node, error) {
 	e, err := s.engine(ctx, udid)
 	if err != nil {
 		return nil, err
 	}
 	nodes, err := e.Snapshot(ctx, appBundleID)
-	if err == nil || ctx.Err() != nil {
+	var runnerErr *dlios.RunnerError
+	if err == nil || ctx.Err() != nil || errors.As(err, &runnerErr) {
 		return nodes, err
 	}
 	slog.Warn("tree snapshot failed, restarting engine", "udid", udid, "error", err)

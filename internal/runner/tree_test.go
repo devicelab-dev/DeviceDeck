@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"testing"
+
+	dlios "github.com/devicelab-dev/maestro-runner/pkg/driver/devicelab_ios"
 )
 
 // stubRunner mimics devicelab-ios-runner's /command endpoint.
@@ -186,6 +189,15 @@ func TestEnginesSnapshotRecovery(t *testing.T) {
 			wantErr:     true,
 			wantStarts:  2,
 			wantStopped: true,
+		},
+		{
+			name: "runner-level error does not trigger a restart",
+			engines: []engineAPI{&fakeEngine{
+				err: fmt.Errorf("runner snapshot: %w", &dlios.RunnerError{Code: "APP_NOT_RUNNING", Message: "nope"}),
+			}},
+			ctx:        context.Background,
+			wantErr:    true,
+			wantStarts: 1,
 		},
 		{
 			name:    "cancelled context does not trigger a restart",
