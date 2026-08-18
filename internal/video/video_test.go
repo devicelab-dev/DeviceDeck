@@ -157,6 +157,81 @@ done
 	return path
 }
 
+func TestIdleSessionReaped(t *testing.T) {
+	old := idleGrace
+	idleGrace = 100 * time.Millisecond
+	defer func() { idleGrace = old }()
+
+	s, err := StartSession(context.Background(), stubVideo(t), "booted", 30)
+	if err != nil {
+		t.Fatalf("StartSession: %v", err)
+	}
+	_, cancel, err := s.Subscribe()
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	cancel()
+	select {
+	case <-s.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("session not reaped after idle grace")
+	}
+}
+
+func TestResubscribeCancelsIdleReap(t *testing.T) {
+	old := idleGrace
+	idleGrace = 150 * time.Millisecond
+	defer func() { idleGrace = old }()
+
+	s, err := StartSession(context.Background(), stubVideo(t), "booted", 30)
+	if err != nil {
+		t.Fatalf("StartSession: %v", err)
+	}
+	_, cancel, err := s.Subscribe()
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	cancel()
+	// A viewer returning within the grace keeps the session alive.
+	_, cancel2, err := s.Subscribe()
+	if err != nil {
+		t.Fatalf("re-Subscribe: %v", err)
+	}
+	defer cancel2()
+	select {
+	case <-s.done:
+		t.Fatal("session reaped despite an active subscriber")
+	case <-time.After(400 * time.Millisecond):
+	}
+	s.Close()
+}
+
+func TestCloseKillsStuckSidecar(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "stuck-video")
+	// Detaches from stdin so EOF never reaches it: only Close's kill
+	// fallback can end the process. exec (not a child) keeps the stdout
+	// pipe owned by the killed pid, so reaping is immediate.
+	script := "#!/bin/bash\nexec 0<&-\nexec sleep 60\n"
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s, err := StartSession(context.Background(), path, "booted", 30)
+	if err != nil {
+		t.Fatalf("StartSession: %v", err)
+	}
+	start := time.Now()
+	s.Close()
+	if elapsed := time.Since(start); elapsed < 3*time.Second {
+		t.Errorf("Close returned in %v — kill fallback should engage only after the grace window", elapsed)
+	}
+	select {
+	case <-s.done:
+	default:
+		t.Error("sidecar not reaped after Close")
+	}
+}
+
 func TestSessionEndToEnd(t *testing.T) {
 	s, err := StartSession(context.Background(), stubVideo(t), "booted", 30)
 	if err != nil {

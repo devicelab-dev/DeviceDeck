@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"strconv"
 	"sync"
+	"time"
 )
 
 // Message type bytes, as emitted by devicedeck-video.
@@ -28,6 +29,14 @@ const (
 // bounded: a viewer that can't drain 16 frames is behind by definition.
 const subscriberBuffer = 16
 
+// idleGrace is how long a session keeps capturing after its last viewer
+// leaves. Long enough to absorb page reloads and websocket reconnects;
+// short enough that capture never runs unwatched for hours — a 30fps
+// framebuffer poller with no audience is pure load on SimRenderServer,
+// which has been observed to destabilize under it (2026-08-18). Var, not
+// const, so tests can shorten it.
+var idleGrace = 60 * time.Second
+
 type subscriber struct {
 	ch      chan []byte
 	needKey bool
@@ -37,11 +46,15 @@ type subscriber struct {
 type Session struct {
 	cmd   *exec.Cmd
 	stdin io.WriteCloser
+	// done closes once the sidecar process has exited and been reaped;
+	// Close waits on it so shutdown is graceful-first.
+	done chan struct{}
 
 	mu          sync.Mutex
 	subscribers map[*subscriber]struct{}
 	description []byte
 	closed      bool
+	idleTimer   *time.Timer
 }
 
 // StartSession launches binPath capturing udid and begins demuxing its
@@ -66,11 +79,12 @@ func StartSession(_ context.Context, binPath, udid string, fps int) (*Session, e
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start video sidecar %s: %w", binPath, err)
 	}
-	s := &Session{cmd: cmd, stdin: stdin, subscribers: make(map[*subscriber]struct{})}
+	s := &Session{cmd: cmd, stdin: stdin, done: make(chan struct{}), subscribers: make(map[*subscriber]struct{})}
 	go func() {
 		_ = ReadFrames(stdout, s.dispatch)
 		_ = cmd.Wait()
 		s.shutdown()
+		close(s.done)
 	}()
 	return s, nil
 }
@@ -86,6 +100,10 @@ func (s *Session) Subscribe() (<-chan []byte, func(), error) {
 		s.mu.Unlock()
 		return nil, nil, fmt.Errorf("video session ended")
 	}
+	if s.idleTimer != nil {
+		s.idleTimer.Stop()
+		s.idleTimer = nil
+	}
 	s.subscribers[sub] = struct{}{}
 	if s.description != nil {
 		sub.ch <- append([]byte{TypeDescription}, s.description...)
@@ -99,10 +117,19 @@ func (s *Session) Subscribe() (<-chan []byte, func(), error) {
 	return sub.ch, func() { s.unsubscribe(sub) }, nil
 }
 
-// Close ends the sidecar process; subscriber channels close as a result.
+// Close ends the sidecar gracefully: stdin EOF tells it to detach from
+// the framebuffer and exit 0. Killing it outright severs its SimulatorKit
+// connection mid-frame — observed (2026-08-18) to crash SimRenderServer,
+// which can cascade into CoreSimulator shutting the whole simulator down.
+// Kill remains the fallback for a sidecar that fails to exit in time.
 func (s *Session) Close() {
 	_ = s.stdin.Close()
-	_ = s.cmd.Process.Kill()
+	select {
+	case <-s.done:
+	case <-time.After(3 * time.Second):
+		_ = s.cmd.Process.Kill()
+		<-s.done
+	}
 }
 
 // dispatch routes one demuxed sidecar frame to all subscribers.
@@ -147,6 +174,21 @@ func (s *Session) unsubscribe(sub *subscriber) {
 	if _, ok := s.subscribers[sub]; ok {
 		delete(s.subscribers, sub)
 		close(sub.ch)
+	}
+	if len(s.subscribers) == 0 && !s.closed && s.idleTimer == nil {
+		s.idleTimer = time.AfterFunc(idleGrace, s.closeIfIdle)
+	}
+}
+
+// closeIfIdle ends the session if the idle grace elapsed with no viewer
+// returning. A viewer racing the timer may briefly see a closed channel;
+// its reconnect lands in Manager.Subscribe, which replaces dead sessions.
+func (s *Session) closeIfIdle() {
+	s.mu.Lock()
+	idle := len(s.subscribers) == 0 && !s.closed
+	s.mu.Unlock()
+	if idle {
+		s.Close()
 	}
 }
 

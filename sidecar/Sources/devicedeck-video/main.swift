@@ -97,6 +97,8 @@ DispatchQueue.global().async {
     }
 }
 
+OrphanWatch.start()
+
 log("capturing udid=\(udid) fps=\(fps)")
 
 // Capture loop: poll the surface at the target rate, encode when content

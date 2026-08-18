@@ -23,6 +23,28 @@ public func fatalStartup(_ message: String) -> Never {
 
 /// Locates the active Xcode developer directory, preferring one that
 /// actually ships SimulatorKit.
+/// Exits the sidecar when its parent process dies. Sidecars normally exit
+/// on stdin EOF, but a parent that dies without the pipes unwinding (hard
+/// kill, machine sleep edge cases) has left orphaned sidecars polling the
+/// simulator for hours — sustained no-audience load that has been observed
+/// to destabilize SimRenderServer. Reparenting to launchd is the reliable
+/// orphan signal, so poll getppid.
+public enum OrphanWatch {
+    /// Starts the background watch. Call once at sidecar startup.
+    public static func start() {
+        let parent = getppid()
+        DispatchQueue.global().async {
+            while true {
+                sleep(2)
+                if getppid() != parent {
+                    log("parent process gone — exiting")
+                    exit(0)
+                }
+            }
+        }
+    }
+}
+
 public enum DeveloperDir {
     public static func find() -> String {
         let selected = runXcodeSelect()

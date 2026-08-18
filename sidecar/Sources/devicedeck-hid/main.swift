@@ -59,4 +59,6 @@ DispatchQueue.global(qos: .userInteractive).async {
     }
 }
 
+OrphanWatch.start()
+
 RunLoop.main.run()
