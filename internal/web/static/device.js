@@ -58,6 +58,8 @@ function connectVideo() {
     const payload = bytes.subarray(1);
     if (bytes[0] === 1) {
       configureDecoder(payload);
+    } else if (bytes[0] === 4) {
+      drawStill(payload);
     } else if (decoder && decoder.state === "configured") {
       decoder.decode(new EncodedVideoChunk({
         type: bytes[0] === 2 ? "key" : "delta",
@@ -67,6 +69,22 @@ function connectVideo() {
     }
   };
   ws.onclose = () => setTimeout(connectVideo, 1500);
+}
+
+// Paints a PNG snapshot (type 4). Android capture sends one on join and
+// per keyframe request: its encoder emits video only while pixels
+// change, so the still is what a static screen looks like.
+async function drawStill(png) {
+  try {
+    const bitmap = await createImageBitmap(new Blob([png], { type: "image/png" }));
+    if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      positionMirror();
+    }
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close();
+  } catch {}
 }
 
 function configureDecoder(avcC) {

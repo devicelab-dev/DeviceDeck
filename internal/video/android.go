@@ -1,0 +1,190 @@
+package video
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"strings"
+	"sync"
+	"time"
+)
+
+// IsAndroidSerial reports whether udid names an adb device rather than an
+// iOS simulator: emulator serials look like "emulator-5554", simulator
+// UDIDs are UUIDs. DeviceDeck targets emulators only (brief §3), so the
+// prefix is the whole grammar.
+func IsAndroidSerial(udid string) bool {
+	return strings.HasPrefix(udid, "emulator-")
+}
+
+// screenrecordLimit is screenrecord's own per-invocation cap (3 minutes);
+// asking for just under it lets the process end cleanly on its schedule
+// rather than being cut off mid-write.
+const screenrecordLimit = "179"
+
+// keyframeDebounce ignores keyframe requests arriving within this window
+// of the last capture (re)start: every restart opens with SPS/PPS + IDR,
+// so a burst of joining viewers needs only one restart.
+const keyframeDebounce = 2 * time.Second
+
+// androidCapture owns one screenrecord process at a time and restarts it
+// on exit (the 3-minute cap) or on keyframe request.
+type androidCapture struct {
+	serial string
+	out    io.Writer
+
+	mu        sync.Mutex
+	current   *exec.Cmd
+	startedAt time.Time
+	closed    bool // stdin saw EOF: shut down instead of restarting
+}
+
+// RunAndroidCapture streams the emulator's screen as sidecar protocol
+// frames on out — the Android counterpart of the devicedeck-video Swift
+// sidecar, run as a hidden subcommand of devicedeck itself so no extra
+// binary ships. The device's own encoder produces H.264 (screenrecord);
+// we only repackage. 'K' on in restarts capture (a restart begins with
+// SPS/PPS + IDR, which is how keyframe-on-join is honored); EOF on in
+// ends the session.
+//
+// Coverage waiver: RunAndroidCapture and its process loop drive a real
+// adb + emulator and are exercised end-to-end; RepackAnnexB and the
+// protocol layer carry the unit-testable logic.
+func RunAndroidCapture(serial string, in io.Reader, out io.Writer) error {
+	c := &androidCapture{serial: serial, out: &syncWriter{w: out}}
+	go c.readCommands(in)
+	go watchOrphaned()
+
+	// screenrecord emits H.264 only while pixels change, so a session
+	// opened on a static screen would otherwise stay black — seed the
+	// viewer with a snapshot of the current content.
+	c.emitStill()
+
+	consecutiveFast := 0
+	for {
+		started := time.Now()
+		err := c.runOnce()
+		if err == nil {
+			return nil // stdin closed → deliberate shutdown
+		}
+		// A healthy cycle runs ~3 minutes; rapid failures mean adb or the
+		// emulator is gone — back off, then give up.
+		if time.Since(started) < 2*time.Second {
+			consecutiveFast++
+			if consecutiveFast >= 5 {
+				return fmt.Errorf("android capture failing repeatedly: %w", err)
+			}
+			time.Sleep(time.Second)
+		} else {
+			consecutiveFast = 0
+		}
+	}
+}
+
+// runOnce runs a single screenrecord cycle. Returns nil only when the
+// session should end (stdin closed kills the process on purpose).
+func (c *androidCapture) runOnce() error {
+	cmd := exec.Command("adb", "-s", c.serial, "exec-out",
+		"screenrecord", "--output-format=h264", "--time-limit="+screenrecordLimit, "-")
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	c.current = cmd
+	c.startedAt = time.Now()
+	c.mu.Unlock()
+
+	repackErr := RepackAnnexB(stdout, c.out)
+	waitErr := cmd.Wait()
+	c.mu.Lock()
+	closed := c.closed
+	c.mu.Unlock()
+	if closed {
+		return nil
+	}
+	if repackErr != nil {
+		return repackErr
+	}
+	if waitErr != nil {
+		return waitErr
+	}
+	return fmt.Errorf("screenrecord cycle ended") // normal 3-minute rollover
+}
+
+// readCommands consumes single-byte commands: 'K' restarts capture for a
+// fresh keyframe; EOF marks shutdown and kills the current process.
+func (c *androidCapture) readCommands(in io.Reader) {
+	buf := make([]byte, 1)
+	for {
+		_, err := in.Read(buf)
+		if err != nil {
+			c.mu.Lock()
+			c.closed = true
+			cur := c.current
+			c.mu.Unlock()
+			if cur != nil && cur.Process != nil {
+				_ = cur.Process.Kill()
+			}
+			return
+		}
+		if buf[0] == 'K' {
+			c.requestKeyframe()
+		}
+	}
+}
+
+func (c *androidCapture) requestKeyframe() {
+	// The still always goes out: joining a static screen must show the
+	// current content even when the video restart below is debounced.
+	c.emitStill()
+	c.mu.Lock()
+	cur := c.current
+	recent := time.Since(c.startedAt) < keyframeDebounce
+	c.mu.Unlock()
+	if cur == nil || cur.Process == nil || recent {
+		return
+	}
+	_ = cur.Process.Kill()
+}
+
+// emitStill snapshots the current screen as PNG and frames it as a
+// TypeStill message. Best-effort: a failed screencap only means the
+// viewer waits for the next real frame.
+func (c *androidCapture) emitStill() {
+	png, err := exec.Command("adb", "-s", c.serial, "exec-out", "screencap", "-p").Output()
+	if err != nil || len(png) == 0 {
+		return
+	}
+	_ = WriteFrame(c.out, TypeStill, png)
+}
+
+// syncWriter serializes whole-frame writes from concurrent producers
+// (the repack loop and still snapshots). WriteFrame issues one Write per
+// frame, so per-Write locking is frame-atomic.
+type syncWriter struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+func (s *syncWriter) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.w.Write(p)
+}
+
+// watchOrphaned exits when the parent server dies without the pipes
+// unwinding — same defense as the Swift sidecars' OrphanWatch.
+func watchOrphaned() {
+	for {
+		time.Sleep(2 * time.Second)
+		if os.Getppid() == 1 {
+			os.Exit(0)
+		}
+	}
+}

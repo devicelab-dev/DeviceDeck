@@ -23,6 +23,11 @@ const (
 	TypeDescription byte = 1
 	TypeKeyframe    byte = 2
 	TypeDelta       byte = 3
+	// TypeStill is a PNG snapshot of the current screen. Android capture
+	// emits one on start and per keyframe request because screenrecord
+	// produces H.264 only while pixels change — without a still, a viewer
+	// joining a static screen would see nothing until the next change.
+	TypeStill byte = 4
 )
 
 // subscriberBuffer is each subscriber's frame queue. Small keeps latency
@@ -66,7 +71,13 @@ type Session struct {
 // inheriting that context would kill capture for every other viewer when
 // the first one disconnects. Lifetime is owned by Close/Manager.
 func StartSession(_ context.Context, binPath, udid string, fps int) (*Session, error) {
-	cmd := exec.Command(binPath, udid, strconv.Itoa(fps))
+	return startSessionCmd(exec.Command(binPath, udid, strconv.Itoa(fps)))
+}
+
+// startSessionCmd is StartSession parametrized on the capture command, so
+// platforms with different capture processes (the iOS Swift sidecar, the
+// Android `devicedeck _video-android` subcommand) share one session.
+func startSessionCmd(cmd *exec.Cmd) (*Session, error) {
 	cmd.Stderr = os.Stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -77,7 +88,7 @@ func StartSession(_ context.Context, binPath, udid string, fps int) (*Session, e
 		return nil, fmt.Errorf("video stdout: %w", err)
 	}
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("start video sidecar %s: %w", binPath, err)
+		return nil, fmt.Errorf("start video capture %s: %w", cmd.Path, err)
 	}
 	s := &Session{cmd: cmd, stdin: stdin, done: make(chan struct{}), subscribers: make(map[*subscriber]struct{})}
 	go func() {
@@ -268,12 +279,26 @@ func (m *Manager) session(ctx context.Context, udid string) (*Session, error) {
 	if s, ok := m.sessions[udid]; ok {
 		return s, nil
 	}
-	s, err := StartSession(ctx, m.binPath, udid, m.fps)
+	s, err := m.start(ctx, udid)
 	if err != nil {
 		return nil, err
 	}
 	m.sessions[udid] = s
 	return s, nil
+}
+
+// start launches the platform-appropriate capture process. Android
+// capture is this very binary re-invoked with a hidden subcommand, so
+// the single-binary shape (brief §11.3) holds without a second sidecar.
+func (m *Manager) start(ctx context.Context, udid string) (*Session, error) {
+	if IsAndroidSerial(udid) {
+		exe, err := os.Executable()
+		if err != nil {
+			return nil, fmt.Errorf("resolve devicedeck binary: %w", err)
+		}
+		return startSessionCmd(exec.Command(exe, "_video-android", udid))
+	}
+	return StartSession(ctx, m.binPath, udid, m.fps)
 }
 
 func (m *Manager) drop(udid string, old *Session) {

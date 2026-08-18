@@ -91,6 +91,8 @@ function connectVideo() {
     const payload = bytes.subarray(1);
     if (type === 1) {
       configureDecoder(payload);
+    } else if (type === 4) {
+      drawStill(payload);
     } else if (decoder && decoder.state === "configured") {
       decoder.decode(new EncodedVideoChunk({
         type: type === 2 ? "key" : "delta",
@@ -100,6 +102,21 @@ function connectVideo() {
     }
   };
   videoWS.onclose = () => { status.textContent = "video disconnected"; };
+}
+
+// Paints a PNG snapshot (type 4) — what Android capture sends for
+// static screens, where its encoder emits no video frames.
+async function drawStill(png) {
+  try {
+    const bitmap = await createImageBitmap(new Blob([png], { type: "image/png" }));
+    if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      positionOverlay();
+    }
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close();
+  } catch {}
 }
 
 function configureDecoder(avcC) {
