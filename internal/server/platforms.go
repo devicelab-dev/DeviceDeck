@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"log/slog"
+	"strings"
 
 	"github.com/devicelab-dev/DeviceDeck/internal/platform"
 	"github.com/devicelab-dev/DeviceDeck/internal/sim"
@@ -15,11 +16,20 @@ type MultiLister []DeviceLister
 
 // Booted implements DeviceLister over all sources.
 func (m MultiLister) Booted(ctx context.Context) ([]sim.Device, error) {
+	return m.collect(ctx, func(l DeviceLister) ([]sim.Device, error) { return l.Booted(ctx) })
+}
+
+// All implements DeviceLister over all sources.
+func (m MultiLister) All(ctx context.Context) ([]sim.Device, error) {
+	return m.collect(ctx, func(l DeviceLister) ([]sim.Device, error) { return l.All(ctx) })
+}
+
+func (m MultiLister) collect(_ context.Context, list func(DeviceLister) ([]sim.Device, error)) ([]sim.Device, error) {
 	var devices []sim.Device
 	var firstErr error
 	failures := 0
 	for _, l := range m {
-		ds, err := l.Booted(ctx)
+		ds, err := list(l)
 		if err != nil {
 			failures++
 			if firstErr == nil {
@@ -34,6 +44,22 @@ func (m MultiLister) Booted(ctx context.Context) ([]sim.Device, error) {
 		return nil, firstErr
 	}
 	return devices, nil
+}
+
+// BootRouter picks the platform's boot backend per device id: Android
+// ids are adb serials or avd:-prefixed AVD names; everything else is a
+// simulator UDID.
+type BootRouter struct {
+	IOS     DeviceBooter
+	Android DeviceBooter
+}
+
+// Boot implements DeviceBooter with platform routing.
+func (r BootRouter) Boot(ctx context.Context, id string) error {
+	if platform.IsAndroidSerial(id) || strings.HasPrefix(id, "avd:") {
+		return r.Android.Boot(ctx, id)
+	}
+	return r.IOS.Boot(ctx, id)
 }
 
 // ScreenshotRouter picks the platform's screenshot backend per device.

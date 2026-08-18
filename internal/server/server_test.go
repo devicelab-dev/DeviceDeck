@@ -27,6 +27,8 @@ type fakeBackend struct {
 	nodesErr   error
 	treeApp    string
 	framesErr  error
+	booted     []string
+	bootErr    error
 	// failAfter, when > 0, makes SendFrame fail once that many frames
 	// have been accepted — exercises mid-gesture sidecar death.
 	failAfter int
@@ -52,6 +54,13 @@ func (f *fakeBackend) sentUDID() string {
 
 func (f *fakeBackend) Booted(context.Context) ([]sim.Device, error) {
 	return f.devices, f.devicesErr
+}
+func (f *fakeBackend) All(context.Context) ([]sim.Device, error) {
+	return f.devices, f.devicesErr
+}
+func (f *fakeBackend) Boot(context.Context, string) error {
+	f.booted = append(f.booted, "boot")
+	return f.bootErr
 }
 
 func (f *fakeBackend) Screenshot(_ context.Context, udid string) ([]byte, error) {
@@ -132,7 +141,7 @@ func newTestServer(f *fakeBackend) *Server {
 }
 
 func newTestServerWithCapture(f *fakeBackend, c *fakeCapture) *Server {
-	s := New(f, f, f, f, &fakeVideo{frames: make(chan []byte)}, c)
+	s := New(f, f, f, f, f, &fakeVideo{frames: make(chan []byte)}, c)
 	s.sleep = func(time.Duration) {}
 	return s
 }

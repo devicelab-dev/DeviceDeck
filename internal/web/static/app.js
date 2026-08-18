@@ -47,19 +47,35 @@ function sendFrame(buffer) {
 
 // ---------- devices ----------
 
-async function loadDevices() {
+async function loadDevices(preselect) {
   const res = await fetch("/api/devices");
   const { devices } = await res.json();
   const select = $("devices");
   select.innerHTML = "";
-  for (const d of devices) {
-    const opt = document.createElement("option");
-    opt.value = d.udid;
-    opt.textContent = `${d.name} (${d.os})`;
-    select.appendChild(opt);
+  // The whole inventory, running first: users see every device they
+  // could use, and picking a stopped one boots it.
+  const groups = [
+    { label: "Running", items: devices.filter((d) => d.booted) },
+    { label: "Available (select to boot)", items: devices.filter((d) => !d.booted) },
+  ];
+  for (const g of groups) {
+    if (!g.items.length) continue;
+    const optgroup = document.createElement("optgroup");
+    optgroup.label = g.label;
+    for (const d of g.items) {
+      const opt = document.createElement("option");
+      opt.value = d.udid;
+      opt.textContent = `${d.name} (${d.os})`;
+      optgroup.appendChild(opt);
+    }
+    select.appendChild(optgroup);
   }
-  if (devices.length) selectDevice(devices[0].udid);
-  else status.textContent = "no booted simulators";
+  const running = groups[0].items;
+  if (preselect && running.some((d) => d.udid === preselect)) selectDevice(preselect);
+  else if (running.length) selectDevice(running[0].udid);
+  else if (devices.length) status.textContent = "no running devices — pick one to boot it";
+  else status.textContent = "no simulators or emulators found";
+  return devices;
 }
 
 function selectDevice(next) {
@@ -67,6 +83,36 @@ function selectDevice(next) {
   $("devices").value = udid;
   connectVideo();
   connectInput();
+}
+
+// bootDevice starts a stopped device and polls until it shows up
+// running, then connects to it. AVDs come back under a fresh adb serial,
+// so polling watches for any newly running device rather than the id.
+async function bootDevice(id) {
+  status.textContent = "booting…";
+  const before = new Set(
+    (await (await fetch("/api/devices")).json()).devices.filter((d) => d.booted).map((d) => d.udid));
+  const res = await fetch(`/api/devices/${encodeURIComponent(id)}/boot`, { method: "POST", body: "{}" });
+  if (!res.ok) {
+    status.textContent = `boot failed: ${(await res.json()).error}`;
+    return;
+  }
+  const deadline = Date.now() + 120_000;
+  const poll = async () => {
+    const { devices } = await (await fetch("/api/devices")).json();
+    const fresh = devices.find((d) => d.booted && (d.udid === id || !before.has(d.udid)));
+    if (fresh) {
+      await loadDevices(fresh.udid);
+      return;
+    }
+    if (Date.now() > deadline) {
+      status.textContent = "boot timed out — check the device manually";
+      return;
+    }
+    status.textContent = `booting… (${Math.round((deadline - Date.now()) / 1000)}s left)`;
+    setTimeout(poll, 2000);
+  };
+  setTimeout(poll, 2000);
 }
 
 // ---------- video ----------
@@ -155,7 +201,14 @@ canvas.addEventListener("keydown", (e) => {
 
 // ---------- toolbar ----------
 
-$("devices").addEventListener("change", (e) => selectDevice(e.target.value));
+$("devices").addEventListener("change", (e) => {
+  const opt = e.target.selectedOptions[0];
+  if (opt && opt.parentElement.label && opt.parentElement.label.startsWith("Available")) {
+    bootDevice(opt.value);
+  } else {
+    selectDevice(e.target.value);
+  }
+});
 $("btn-home").addEventListener("click", () => sendFrame(gestureFrame(GESTURE.home)));
 $("btn-switcher").addEventListener("click", () => sendFrame(gestureFrame(GESTURE.appSwitcher)));
 $("btn-lock").addEventListener("click", () =>

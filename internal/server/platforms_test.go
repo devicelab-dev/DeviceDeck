@@ -14,6 +14,7 @@ type stubLister struct {
 }
 
 func (s stubLister) Booted(context.Context) ([]sim.Device, error) { return s.devices, s.err }
+func (s stubLister) All(context.Context) ([]sim.Device, error)    { return s.devices, s.err }
 
 func TestMultiLister(t *testing.T) {
 	iosDev := sim.Device{UDID: "IOS-1", Booted: true}

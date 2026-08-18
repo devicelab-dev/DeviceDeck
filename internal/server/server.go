@@ -17,9 +17,17 @@ import (
 	"github.com/devicelab-dev/DeviceDeck/internal/sim"
 )
 
-// DeviceLister enumerates booted simulators.
+// DeviceLister enumerates devices: All is the whole inventory (booted
+// and stopped — the console shows what could be booted, not just what
+// runs), Booted the running subset.
 type DeviceLister interface {
+	All(ctx context.Context) ([]sim.Device, error)
 	Booted(ctx context.Context) ([]sim.Device, error)
+}
+
+// DeviceBooter starts a stopped device by id.
+type DeviceBooter interface {
+	Boot(ctx context.Context, id string) error
 }
 
 // Screenshotter captures a device's screen as PNG bytes.
@@ -48,6 +56,7 @@ type CaptureService interface {
 // Server routes the HTTP API onto the injected device backends.
 type Server struct {
 	devices     DeviceLister
+	boot        DeviceBooter
 	screenshots Screenshotter
 	frames      FrameSender
 	trees       TreeSource
@@ -59,9 +68,10 @@ type Server struct {
 }
 
 // New wires a Server.
-func New(devices DeviceLister, screenshots Screenshotter, frames FrameSender, trees TreeSource, video VideoSource, cap CaptureService) *Server {
+func New(devices DeviceLister, boot DeviceBooter, screenshots Screenshotter, frames FrameSender, trees TreeSource, video VideoSource, cap CaptureService) *Server {
 	return &Server{
 		devices:     devices,
+		boot:        boot,
 		screenshots: screenshots,
 		frames:      frames,
 		trees:       trees,
@@ -91,6 +101,7 @@ func (s *Server) SetConsole(h http.Handler) { s.console = h }
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/devices", s.handleDevices)
+	mux.HandleFunc("POST /api/devices/{udid}/boot", s.handleBoot)
 	mux.HandleFunc("GET /api/devices/{udid}/screenshot", s.handleScreenshot)
 	mux.HandleFunc("GET /api/devices/{udid}/tree", s.handleTree)
 	mux.HandleFunc("GET /api/devices/{udid}/video", s.handleVideoWS)
@@ -110,7 +121,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
-	devices, err := s.devices.Booted(r.Context())
+	devices, err := s.devices.All(r.Context())
 	if err != nil {
 		httpError(w, http.StatusInternalServerError, err)
 		return
@@ -119,6 +130,14 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 		devices = []sim.Device{}
 	}
 	writeJSON(w, map[string]any{"devices": devices})
+}
+
+func (s *Server) handleBoot(w http.ResponseWriter, r *http.Request) {
+	if err := s.boot.Boot(r.Context(), r.PathValue("udid")); err != nil {
+		httpError(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "action": "boot"})
 }
 
 func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"syscall"
 
 	"github.com/devicelab-dev/DeviceDeck/internal/platform"
 	"github.com/devicelab-dev/DeviceDeck/internal/sim"
@@ -58,6 +59,68 @@ func (c *Client) Booted(ctx context.Context) ([]sim.Device, error) {
 // Screenshot captures a PNG of the emulator's screen.
 func (c *Client) Screenshot(ctx context.Context, serial string) ([]byte, error) {
 	return c.run(ctx, "adb", "-s", serial, "exec-out", "screencap", "-p")
+}
+
+// AVDPrefix marks a device id that names a stopped AVD rather than a
+// running emulator's adb serial (an AVD has no serial until it boots).
+const AVDPrefix = "avd:"
+
+// All returns running emulators plus stopped AVDs, so the console shows
+// the whole Android inventory. Stopped AVDs are identified by name with
+// the avd: prefix; running ones are matched back to their AVD (via the
+// emulator console) and deduplicated.
+func (c *Client) All(ctx context.Context) ([]sim.Device, error) {
+	running, err := c.Booted(ctx)
+	if err != nil {
+		return nil, err
+	}
+	inUse := map[string]bool{}
+	for _, d := range running {
+		if name := c.avdName(ctx, d.UDID); name != "" {
+			inUse[name] = true
+		}
+	}
+	// Best-effort: adb working without the emulator tool installed still
+	// lists running devices.
+	if out, err := c.run(ctx, "emulator", "-list-avds"); err == nil {
+		for _, name := range strings.Split(string(out), "\n") {
+			name = strings.TrimSpace(name)
+			if name == "" || inUse[name] {
+				continue
+			}
+			running = append(running, sim.Device{
+				UDID: AVDPrefix + name,
+				Name: name,
+				OS:   "android",
+			})
+		}
+	}
+	return running, nil
+}
+
+// Boot launches a stopped AVD detached from this process; it appears in
+// adb (and the device list) once Android finishes booting.
+func (c *Client) Boot(ctx context.Context, id string) error {
+	name := strings.TrimPrefix(id, AVDPrefix)
+	cmd := exec.Command("emulator", "-avd", name, "-no-snapshot-save", "-no-audio")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("launch emulator %s: %w", name, err)
+	}
+	// The emulator outlives DeviceDeck by design; release the process.
+	go func() { _ = cmd.Wait() }()
+	return nil
+}
+
+// avdName asks a running emulator which AVD it is.
+func (c *Client) avdName(ctx context.Context, serial string) string {
+	out, err := c.run(ctx, "adb", "-s", serial, "emu", "avd", "name")
+	if err != nil {
+		return ""
+	}
+	// Output is the name on the first line, then "OK".
+	line, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\n")
+	return strings.TrimSpace(line)
 }
 
 // describe names a device by its AVD model, falling back to the serial.

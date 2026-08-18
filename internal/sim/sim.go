@@ -38,6 +38,24 @@ func NewClient() *Client {
 	}}
 }
 
+// All returns every available simulator, booted or not — the console
+// shows the whole inventory so users see what they could boot, not just
+// what already runs.
+func (c *Client) All(ctx context.Context) ([]Device, error) {
+	return c.list(ctx)
+}
+
+// Boot starts a stopped simulator and brings the Simulator app forward
+// so its screen actually renders (framebuffer capture needs a running
+// render server).
+func (c *Client) Boot(ctx context.Context, udid string) error {
+	if _, err := c.run(ctx, "xcrun", "simctl", "boot", udid); err != nil {
+		return err
+	}
+	_, err := c.run(ctx, "open", "-a", "Simulator")
+	return err
+}
+
 // Booted returns every currently booted simulator.
 func (c *Client) Booted(ctx context.Context) ([]Device, error) {
 	all, err := c.list(ctx)
