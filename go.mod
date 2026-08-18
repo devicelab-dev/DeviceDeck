@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	github.com/coder/websocket v1.8.15
-	github.com/devicelab-dev/maestro-runner v1.1.24-0.20260815210437-b4d707e486bc
+	github.com/devicelab-dev/maestro-runner v1.1.25-0.20260818055205-45b2d36df1c2
 )
 
 require (

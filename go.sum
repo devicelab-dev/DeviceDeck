@@ -1,8 +1,8 @@
 github.com/coder/websocket v1.8.15 h1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNUA=
 github.com/coder/websocket v1.8.15/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
-github.com/devicelab-dev/maestro-runner v1.1.24-0.20260815210437-b4d707e486bc h1:PuoYo7Cb/NwA7LOdxt14eZUDCsllWMZReraejXPg3fo=
-github.com/devicelab-dev/maestro-runner v1.1.24-0.20260815210437-b4d707e486bc/go.mod h1:DMSQv0AMy2xs1COCdt/eIbUUmGzyLX35KmgKx/uJ0Xs=
+github.com/devicelab-dev/maestro-runner v1.1.25-0.20260818055205-45b2d36df1c2 h1:5ZndSYJ95UgySQzuApavA7BOpR2Psxvg1zMgcCWXWpI=
+github.com/devicelab-dev/maestro-runner v1.1.25-0.20260818055205-45b2d36df1c2/go.mod h1:DMSQv0AMy2xs1COCdt/eIbUUmGzyLX35KmgKx/uJ0Xs=
 github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORNo=
 github.com/kr/pretty v0.3.0 h1:WgNl7dwNpEZ6jJ9k1snq4pZsg7DOEN8hP9Xw0Tsjwk0=
 github.com/kr/pretty v0.3.0/go.mod h1:640gp4NfQd8pI5XOwp5fnNeVWj67G7CFk/SaSQn7NBk=
