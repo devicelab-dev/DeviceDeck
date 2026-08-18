@@ -47,72 +47,154 @@ function sendFrame(buffer) {
 
 // ---------- devices ----------
 
-async function loadDevices(preselect) {
-  const res = await fetch("/api/devices");
-  const { devices } = await res.json();
-  const select = $("devices");
-  select.innerHTML = "";
-  // The whole inventory, running first: users see every device they
-  // could use, and picking a stopped one boots it.
-  const groups = [
-    { label: "Running", items: devices.filter((d) => d.booted) },
-    { label: "Available (select to boot)", items: devices.filter((d) => !d.booted) },
-  ];
-  for (const g of groups) {
-    if (!g.items.length) continue;
-    const optgroup = document.createElement("optgroup");
-    optgroup.label = g.label;
-    for (const d of g.items) {
-      const opt = document.createElement("option");
-      opt.value = d.udid;
-      opt.textContent = `${d.name} (${d.os})`;
-      optgroup.appendChild(opt);
-    }
-    select.appendChild(optgroup);
+// The console has two views: the device library (pick or boot a device)
+// and the streaming console for one device. The URL carries the state
+// (/?device=UDID) so consoles are linkable and reload-safe.
+
+function showLibrary() {
+  if (videoWS) { videoWS.close(); videoWS = null; }
+  if (inputWS) { inputWS.close(); inputWS = null; }
+  renderer.close();
+  udid = null;
+  $("library").hidden = false;
+  $("console-view").hidden = true;
+  $("console-controls").hidden = true;
+  $("console-actions").hidden = true;
+  status.textContent = "";
+  if (new URLSearchParams(location.search).get("device")) {
+    history.pushState({}, "", location.pathname);
   }
-  const running = groups[0].items;
-  if (preselect && running.some((d) => d.udid === preselect)) selectDevice(preselect);
-  else if (running.length) selectDevice(running[0].udid);
-  else if (devices.length) status.textContent = "no running devices — pick one to boot it";
-  else status.textContent = "no simulators or emulators found";
-  return devices;
+  refreshLibrary();
 }
 
-function selectDevice(next) {
+function showConsole(next, name) {
   udid = next;
-  $("devices").value = udid;
+  $("library").hidden = true;
+  $("console-view").hidden = false;
+  $("console-controls").hidden = false;
+  $("console-actions").hidden = false;
+  $("device-label").textContent = name || next;
+  if (new URLSearchParams(location.search).get("device") !== next) {
+    history.pushState({}, "", `${location.pathname}?device=${encodeURIComponent(next)}`);
+  }
   connectVideo();
   connectInput();
 }
 
-// bootDevice starts a stopped device and polls until it shows up
-// running, then connects to it. AVDs come back under a fresh adb serial,
-// so polling watches for any newly running device rather than the id.
-async function bootDevice(id) {
-  status.textContent = "booting…";
+async function refreshLibrary() {
+  const { devices } = await (await fetch("/api/devices")).json();
+  const groups = $("library-groups");
+  groups.innerHTML = "";
+  const running = devices.filter((d) => d.booted);
+  const stopped = devices.filter((d) => !d.booted);
+  $("library-summary").textContent =
+    devices.length ? `${running.length} running · ${stopped.length} available` : "";
+
+  if (!devices.length) {
+    const empty = document.createElement("p");
+    empty.className = "library-empty";
+    empty.textContent =
+      "No simulators or emulators found. Add simulators in Xcode " +
+      "(Settings → Platforms) or create a virtual device in Android Studio, " +
+      "then reload.";
+    groups.appendChild(empty);
+    return devices;
+  }
+  for (const g of [
+    { label: `Running · ${running.length}`, items: running },
+    { label: `Available · ${stopped.length}`, items: stopped },
+  ]) {
+    if (!g.items.length) continue;
+    const section = document.createElement("div");
+    section.className = "device-group";
+    const label = document.createElement("div");
+    label.className = "group-label";
+    label.textContent = g.label;
+    section.appendChild(label);
+    const grid = document.createElement("div");
+    grid.className = "device-grid";
+    for (const d of g.items) grid.appendChild(deviceCard(d));
+    section.appendChild(grid);
+    groups.appendChild(section);
+  }
+  return devices;
+}
+
+// deviceCard renders one device: a state-lit silhouette, the details,
+// and its single action (Use when running, Boot when stopped).
+function deviceCard(d) {
+  const card = document.createElement("div");
+  card.className = "device-card" + (d.booted ? " running" : "");
+
+  const glyph = document.createElement("div");
+  const isTablet = /iPad|Tablet/i.test(d.name);
+  const isAndroid = d.os.startsWith("android");
+  glyph.className = "glyph" + (isTablet ? " tablet" : "") +
+    (isAndroid ? " android" : "") + (d.booted ? " on" : "");
+  glyph.appendChild(Object.assign(document.createElement("div"), { className: "screen" }));
+  card.appendChild(glyph);
+
+  const meta = document.createElement("div");
+  meta.className = "device-meta";
+  const name = Object.assign(document.createElement("div"), { className: "device-name", textContent: d.name, title: d.name });
+  const os = Object.assign(document.createElement("div"), { className: "device-os", textContent: d.os });
+  const id = Object.assign(document.createElement("div"), { className: "device-id", textContent: d.udid, title: d.udid });
+  meta.append(name, os, id);
+  card.appendChild(meta);
+
+  const action = document.createElement("button");
+  if (d.booted) {
+    action.className = "use";
+    action.textContent = "Use";
+    action.addEventListener("click", () => showConsole(d.udid, d.name));
+  } else {
+    action.textContent = "Boot";
+    action.addEventListener("click", () => bootDevice(d, card, glyph, action));
+  }
+  card.appendChild(action);
+  return card;
+}
+
+// bootDevice starts a stopped device and polls until it comes up, then
+// enters its console. AVDs come back under a fresh adb serial, so the
+// poll watches for any newly running device rather than the id.
+async function bootDevice(d, card, glyph, action) {
+  action.disabled = true;
+  action.textContent = "Starting…";
+  glyph.classList.add("booting");
   const before = new Set(
-    (await (await fetch("/api/devices")).json()).devices.filter((d) => d.booted).map((d) => d.udid));
-  const res = await fetch(`/api/devices/${encodeURIComponent(id)}/boot`, { method: "POST", body: "{}" });
+    (await (await fetch("/api/devices")).json()).devices.filter((x) => x.booted).map((x) => x.udid));
+  const res = await fetch(`/api/devices/${encodeURIComponent(d.udid)}/boot`, { method: "POST", body: "{}" });
   if (!res.ok) {
+    action.disabled = false;
+    action.textContent = "Boot";
+    glyph.classList.remove("booting");
     status.textContent = `boot failed: ${(await res.json()).error}`;
     return;
   }
   const deadline = Date.now() + 120_000;
   const poll = async () => {
+    if (udid) return; // user entered another console meanwhile
     const { devices } = await (await fetch("/api/devices")).json();
-    const fresh = devices.find((d) => d.booted && (d.udid === id || !before.has(d.udid)));
+    const fresh = devices.find((x) => x.booted && (x.udid === d.udid || !before.has(x.udid)));
     if (fresh) {
-      await loadDevices(fresh.udid);
+      showConsole(fresh.udid, fresh.name);
       return;
     }
     if (Date.now() > deadline) {
+      action.disabled = false;
+      action.textContent = "Boot";
+      glyph.classList.remove("booting");
       status.textContent = "boot timed out — check the device manually";
       return;
     }
-    status.textContent = `booting… (${Math.round((deadline - Date.now()) / 1000)}s left)`;
     setTimeout(poll, 2000);
   };
   setTimeout(poll, 2000);
+}
+
+function selectDevice(next) {
+  showConsole(next);
 }
 
 // ---------- video ----------
@@ -201,14 +283,7 @@ canvas.addEventListener("keydown", (e) => {
 
 // ---------- toolbar ----------
 
-$("devices").addEventListener("change", (e) => {
-  const opt = e.target.selectedOptions[0];
-  if (opt && opt.parentElement.label && opt.parentElement.label.startsWith("Available")) {
-    bootDevice(opt.value);
-  } else {
-    selectDevice(e.target.value);
-  }
-});
+$("btn-back").addEventListener("click", showLibrary);
 $("btn-home").addEventListener("click", () => sendFrame(gestureFrame(GESTURE.home)));
 $("btn-switcher").addEventListener("click", () => sendFrame(gestureFrame(GESTURE.appSwitcher)));
 $("btn-lock").addEventListener("click", () =>
@@ -392,4 +467,20 @@ async function tapNode(node, app) {
 }
 
 window.addEventListener("resize", positionOverlay);
-loadDevices();
+
+// Back/forward moves between the library and device consoles.
+window.addEventListener("popstate", route);
+
+// route enters the view the URL names.
+async function route() {
+  const wanted = new URLSearchParams(location.search).get("device");
+  if (!wanted) {
+    showLibrary();
+    return;
+  }
+  const devices = await refreshLibrary();
+  const d = devices.find((x) => x.udid === wanted && x.booted);
+  if (d) showConsole(d.udid, d.name);
+  else showLibrary();
+}
+route();

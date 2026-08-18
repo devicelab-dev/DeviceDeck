@@ -10,18 +10,30 @@
 <body>
   <header>
     <span class="brand">DeviceDeck</span>
-    <select id="devices"></select>
-    <input id="app" placeholder="app bundle id (for tree)" spellcheck="false">
+    <span class="console-only" hidden id="console-controls">
+      <button id="btn-back" title="Back to device library">&#8249; Devices</button>
+      <span id="device-label"></span>
+      <input id="app" placeholder="app bundle id (for tree)" spellcheck="false">
+    </span>
     <span class="spacer"></span>
-    <button id="btn-record" title="Record session as a Maestro flow">&#9679; Record</button>
-    <button id="btn-home" title="Swipe to home">Home</button>
-    <button id="btn-switcher" title="App switcher">Switcher</button>
-    <button id="btn-lock" title="Lock button">Lock</button>
-    <button id="btn-shot" title="Save screenshot">Shot</button>
-    <button id="btn-inspect" title="Toggle tree inspector">Inspect</button>
-    <span id="status">no device</span>
+    <span class="console-only" hidden id="console-actions">
+      <button id="btn-record" title="Record session as a Maestro flow">&#9679; Record</button>
+      <button id="btn-home" title="Swipe to home">Home</button>
+      <button id="btn-switcher" title="App switcher">Switcher</button>
+      <button id="btn-lock" title="Lock button">Lock</button>
+      <button id="btn-shot" title="Save screenshot">Shot</button>
+      <button id="btn-inspect" title="Toggle tree inspector">Inspect</button>
+    </span>
+    <span id="status"></span>
   </header>
-  <main>
+  <section id="library">
+    <div class="library-head">
+      <h1>Devices</h1>
+      <span id="library-summary"></span>
+    </div>
+    <div id="library-groups"></div>
+  </section>
+  <main id="console-view" hidden>
     <div id="stage">
       <canvas id="video" tabindex="0"></canvas>
       <div id="overlay" hidden></div>

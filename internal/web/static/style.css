@@ -1,4 +1,6 @@
 * { box-sizing: border-box; margin: 0; }
+/* The hidden attribute must win over explicit display rules. */
+[hidden] { display: none !important; }
 
 :root {
   --bg: #101216;
@@ -129,3 +131,131 @@ main { flex: 1; display: flex; min-height: 0; }
 
 #panel h2 { font-size: 13px; margin-bottom: 8px; word-break: break-all; }
 #panel pre { font-size: 12px; color: var(--dim); white-space: pre-wrap; word-break: break-all; }
+
+/* ---------- device library ---------- */
+
+#library {
+  flex: 1;
+  overflow-y: auto;
+  padding: 28px 32px 48px;
+}
+
+.library-head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.library-head h1 { font-size: 20px; font-weight: 700; letter-spacing: 0.01em; }
+#library-summary { color: var(--dim); font-size: 13px; }
+
+.device-group { margin-bottom: 28px; }
+
+.group-label {
+  color: var(--dim);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+
+.device-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 12px;
+}
+
+.device-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.device-card.running { border-color: #31435f; }
+
+/* Device silhouette: proportioned per class, screen lit when running. */
+.glyph {
+  flex: none;
+  width: 26px;
+  height: 46px;
+  border: 1.5px solid var(--dim);
+  border-radius: 6px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.glyph.tablet { width: 38px; height: 48px; border-radius: 5px; }
+.glyph.android { border-radius: 3px; }
+.glyph .screen {
+  width: 78%;
+  height: 82%;
+  border-radius: 2px;
+  background: transparent;
+}
+.glyph.on { border-color: var(--accent); }
+.glyph.on .screen { background: linear-gradient(160deg, #3a6fd8, #274a90); }
+.glyph.booting .screen { animation: screen-pulse 1.2s ease-in-out infinite; }
+/* iOS notch line vs Android camera dot */
+.glyph::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 8px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--dim);
+}
+.glyph.android::after { width: 3px; height: 3px; border-radius: 50%; }
+.glyph.on::after { background: #9db8e8; }
+
+@keyframes screen-pulse {
+  0%, 100% { background: #223a66; }
+  50% { background: #3a6fd8; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .glyph.booting .screen { animation: none; background: #3a6fd8; }
+}
+
+.device-meta { flex: 1; min-width: 0; }
+.device-name {
+  font-weight: 600;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.device-os {
+  color: var(--dim);
+  font: 12px ui-monospace, "SF Mono", Menlo, monospace;
+  margin-top: 2px;
+}
+.device-id {
+  color: var(--dim);
+  font: 10px ui-monospace, "SF Mono", Menlo, monospace;
+  opacity: 0.65;
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.device-card button { flex: none; min-width: 58px; }
+.device-card button.use { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.library-empty {
+  color: var(--dim);
+  max-width: 480px;
+  line-height: 1.6;
+}
+
+#device-label { font-weight: 600; margin: 0 4px; }
+.console-only { display: inline-flex; align-items: center; gap: 8px; }
