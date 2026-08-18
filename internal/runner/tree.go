@@ -100,7 +100,11 @@ type Engine struct {
 // xcodebuild-driven runner lifecycle and only execute against a real booted
 // simulator; they are exercised by end-to-end runs, not unit tests.
 func StartEngine(ctx context.Context, udid string) (*Engine, error) {
-	artifacts, err := dlios.EnsureBuilt(ctx, udid)
+	// Embedded, not installed: the runner source ships inside the pinned
+	// maestro-runner module, so the runner DeviceDeck builds always
+	// matches the client it compiled against — no maestro-runner
+	// installation on the machine, no protocol skew.
+	artifacts, err := dlios.EnsureBuiltEmbedded(ctx, udid)
 	if err != nil {
 		return nil, fmt.Errorf("build devicelab-ios-runner: %w", err)
 	}
