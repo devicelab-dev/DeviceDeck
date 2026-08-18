@@ -198,7 +198,16 @@ main { flex: 1; display: flex; min-height: 0; }
   height: 82%;
   border-radius: 2px;
   background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
+/* Platform mark on the glyph's screen, boot-splash style. */
+.glyph .platform-badge { margin: 0; }
+.glyph .platform-badge svg { width: 18px; height: 11px; }
+.glyph .platform-badge.apple { font-size: 16px; color: var(--dim); }
+.glyph.on .platform-badge.apple { color: rgba(255, 255, 255, 0.9); }
+.glyph.on .platform-badge svg path { fill: #b9f6d4; }
 .glyph.on { border-color: var(--accent); }
 .glyph.on .screen { background: linear-gradient(160deg, #3a6fd8, #274a90); }
 .glyph.booting .screen { animation: screen-pulse 1.2s ease-in-out infinite; }

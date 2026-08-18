@@ -150,16 +150,15 @@ function deviceCard(d) {
   const isAndroid = d.os.startsWith("android");
   glyph.className = "glyph" + (isTablet ? " tablet" : "") +
     (isAndroid ? " android" : "") + (d.booted ? " on" : "");
-  glyph.appendChild(Object.assign(document.createElement("div"), { className: "screen" }));
+  const screen = Object.assign(document.createElement("div"), { className: "screen" });
+  screen.appendChild(platformBadge(isAndroid)); // boot-splash style
+  glyph.appendChild(screen);
   card.appendChild(glyph);
 
   const meta = document.createElement("div");
   meta.className = "device-meta";
   const name = Object.assign(document.createElement("div"), { className: "device-name", textContent: d.name, title: d.name });
-  const os = document.createElement("div");
-  os.className = "device-os";
-  os.appendChild(platformBadge(isAndroid));
-  os.appendChild(document.createTextNode(d.os));
+  const os = Object.assign(document.createElement("div"), { className: "device-os", textContent: d.os });
   const id = Object.assign(document.createElement("div"), { className: "device-id", textContent: d.udid, title: d.udid });
   meta.append(name, os, id);
   card.appendChild(meta);
