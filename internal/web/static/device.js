@@ -128,15 +128,15 @@ function setOrRemove(el, attr, value) {
   else el.removeAttribute(attr);
 }
 
-function syncNode(el, node, app) {
+// syncNode positions el inside its rendered ancestor: node frames are
+// screen-absolute, so coordinates convert to percentages of the
+// ancestor's frame and stay proportional at any canvas size.
+function syncNode(el, node, anchorFrame) {
   const f = node.frame;
-  el.style.left = `${(f.x / app.width) * 100}%`;
-  el.style.top = `${(f.y / app.height) * 100}%`;
-  el.style.width = `${(f.width / app.width) * 100}%`;
-  el.style.height = `${(f.height / app.height) * 100}%`;
-  // Deeper nodes stack above their containers so the most specific
-  // element receives the click, mirroring native hit-testing.
-  el.style.zIndex = String(node.depth);
+  el.style.left = `${((f.x - anchorFrame.x) / anchorFrame.width) * 100}%`;
+  el.style.top = `${((f.y - anchorFrame.y) / anchorFrame.height) * 100}%`;
+  el.style.width = `${(f.width / anchorFrame.width) * 100}%`;
+  el.style.height = `${(f.height / anchorFrame.height) * 100}%`;
 
   setOrRemove(el, "role", ROLES[node.type] || "");
   setOrRemove(el, "data-testid", node.identifier || "");
@@ -146,9 +146,19 @@ function syncNode(el, node, app) {
   setOrRemove(el, "aria-placeholder", node.placeholder || "");
   setOrRemove(el, "aria-disabled", node.enabled ? "" : "true");
   setOrRemove(el, "aria-selected", node.selected ? "true" : "");
-  // Text content for getByText: label, else value, painted transparent.
+  // Text for getByText: label, else value, painted transparent. Kept in
+  // a dedicated leading text node — assigning textContent would destroy
+  // the nested child elements.
   const text = node.label || node.value || "";
-  if (el.textContent !== text) el.textContent = text;
+  const textNode =
+    el.firstChild && el.firstChild.nodeType === Node.TEXT_NODE ? el.firstChild : null;
+  if (!text) {
+    if (textNode) textNode.remove();
+  } else if (textNode) {
+    if (textNode.data !== text) textNode.data = text;
+  } else {
+    el.insertBefore(document.createTextNode(text), el.firstChild);
+  }
 }
 
 // A node earns a mirror element only if something can find it: an
@@ -188,14 +198,31 @@ function renderMirror(nodes) {
   // keeps its DOM identity, so automation handles held across refreshes
   // (Playwright aria-refs, Selenium elements) stay valid between actions.
   const existing = new Map();
-  for (const el of [...mirror.children]) existing.set(el.getAttribute("data-dd-key"), el);
+  for (const el of mirror.querySelectorAll("[data-dd-key]")) {
+    existing.set(el.getAttribute("data-dd-key"), el);
+  }
   const counts = new Map();
-  for (const node of nodes.filter(mirrorable)) {
+  // The mirror nests like the native tree: a node's element is appended
+  // under its nearest *rendered* ancestor. Nesting is what makes a text
+  // child a legitimate hit target for clicks aimed at its container
+  // (Playwright's actionability check), and native paint order becomes
+  // plain DOM order — no z-index arithmetic. anchors[i] carries the
+  // container element + frame that node i's children position against.
+  const anchors = new Map();
+  const rootAnchor = { el: mirror, frame: app };
+  for (const node of nodes) {
+    const parentAnchor =
+      (node.parentIndex != null && anchors.get(node.parentIndex)) || rootAnchor;
+    if (!mirrorable(node)) {
+      anchors.set(node.index, parentAnchor); // children inherit the anchor
+      continue;
+    }
     const el = acquireEl(existing, nodeKey(node, counts));
-    syncNode(el, node, app);
-    // Append-or-move keeps DOM order tracking native order, so aria
-    // snapshots read top-to-bottom; moving preserves element identity.
-    mirror.appendChild(el);
+    syncNode(el, node, parentAnchor.frame);
+    // Append-or-move keeps DOM order tracking native order; moving
+    // (including across parents) preserves element identity.
+    parentAnchor.el.appendChild(el);
+    anchors.set(node.index, { el, frame: node.frame });
   }
   for (const el of existing.values()) el.remove();
 }
