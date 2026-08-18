@@ -34,10 +34,11 @@ type androidCapture struct {
 	serial string
 	out    io.Writer
 
-	mu        sync.Mutex
-	current   *exec.Cmd
-	startedAt time.Time
-	closed    bool // stdin saw EOF: shut down instead of restarting
+	mu           sync.Mutex
+	current      *exec.Cmd
+	startedAt    time.Time
+	closed       bool // stdin saw EOF: shut down instead of restarting
+	cancelStream func()
 }
 
 // RunAndroidCapture streams the emulator's screen as sidecar protocol
@@ -55,6 +56,17 @@ func RunAndroidCapture(serial string, in io.Reader, out io.Writer) error {
 	c := &androidCapture{serial: serial, out: &syncWriter{w: out}}
 	go c.readCommands(in)
 	go watchOrphaned()
+
+	// Preferred path: the emulator's host-side gRPC screenshot stream —
+	// no adb, no 3-minute cap, current frame on subscribe. screenrecord
+	// below is the fallback for devices without a discovery file.
+	if ep, err := discoverEmulator(serial); err == nil {
+		if gerr := c.streamViaGRPC(ep); gerr == nil {
+			return nil
+		} else {
+			fmt.Fprintf(os.Stderr, "devicedeck: emulator grpc capture failed (%v); falling back to screenrecord\n", gerr)
+		}
+	}
 
 	// screenrecord emits H.264 only while pixels change, so a session
 	// opened on a static screen would otherwise stay black — seed the
@@ -101,7 +113,13 @@ func (c *androidCapture) runOnce() error {
 	c.mu.Unlock()
 
 	repackErr := RepackAnnexB(stdout, c.out)
-	waitErr := cmd.Wait()
+	return c.cycleResult(repackErr, cmd.Wait())
+}
+
+// cycleResult classifies a finished screenrecord cycle: nil only for a
+// deliberate shutdown; everything else (including the normal 3-minute
+// rollover) is an error so the outer loop restarts capture.
+func (c *androidCapture) cycleResult(repackErr, waitErr error) error {
 	c.mu.Lock()
 	closed := c.closed
 	c.mu.Unlock()
@@ -127,9 +145,13 @@ func (c *androidCapture) readCommands(in io.Reader) {
 			c.mu.Lock()
 			c.closed = true
 			cur := c.current
+			cancel := c.cancelStream
 			c.mu.Unlock()
 			if cur != nil && cur.Process != nil {
 				_ = cur.Process.Kill()
+			}
+			if cancel != nil {
+				cancel()
 			}
 			return
 		}
