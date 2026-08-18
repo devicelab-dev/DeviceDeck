@@ -60,12 +60,22 @@ function showLibrary() {
   $("console-view").hidden = true;
   $("console-controls").hidden = true;
   $("console-actions").hidden = true;
+  $("stage-loading").hidden = true;
+  canvas.classList.remove("connecting");
   status.textContent = "";
   if (new URLSearchParams(location.search).get("device")) {
     history.pushState({}, "", location.pathname);
   }
   refreshLibrary();
 }
+
+let awaitingFirstFrame = false;
+let loadingShownAt = 0;
+
+// The connecting state stays up at least this long even when the first
+// frame is instant — a flash of loading reads as a glitch, a beat of it
+// reads as arrival.
+const MIN_LOADING_MS = 700;
 
 function showConsole(next, name) {
   udid = next;
@@ -74,6 +84,13 @@ function showConsole(next, name) {
   $("console-controls").hidden = false;
   $("console-actions").hidden = false;
   $("device-label").textContent = name || next;
+  // The first frame can take seconds on a cold session — show the
+  // pulsing silhouette instead of an empty canvas until it arrives.
+  awaitingFirstFrame = true;
+  loadingShownAt = Date.now();
+  $("loading-text").textContent = `Connecting to ${name || next}…`;
+  $("stage-loading").hidden = false;
+  canvas.classList.add("connecting");
   if (new URLSearchParams(location.search).get("device") !== next) {
     history.pushState({}, "", `${location.pathname}?device=${encodeURIComponent(next)}`);
   }
@@ -239,7 +256,24 @@ function connectVideo() {
   videoWS.binaryType = "arraybuffer";
   status.textContent = "connecting video…";
 
-  videoWS.onmessage = ({ data }) => renderer.handleMessage(new Uint8Array(data));
+  videoWS.onmessage = ({ data }) => {
+    const bytes = new Uint8Array(data);
+    // Types 2 (keyframe), 3 (delta), 4 (still) all paint pixels; the
+    // decoder description (1) alone does not.
+    if (awaitingFirstFrame && bytes[0] !== 1) {
+      awaitingFirstFrame = false;
+      const device = udid;
+      const reveal = () => {
+        if (udid !== device) return; // navigated away meanwhile
+        $("stage-loading").hidden = true;
+        canvas.classList.remove("connecting");
+      };
+      const remaining = MIN_LOADING_MS - (Date.now() - loadingShownAt);
+      if (remaining > 0) setTimeout(reveal, remaining);
+      else reveal();
+    }
+    renderer.handleMessage(bytes);
+  };
   videoWS.onclose = () => { status.textContent = "video disconnected"; };
 }
 
