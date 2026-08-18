@@ -51,7 +51,22 @@ type Step struct {
 	// Bounds of the resolved element, normalized 0-1 — the console draws
 	// this over the video so the user sees what each tap resolved to.
 	Bounds *NormRect `json:"bounds,omitempty"`
+	// Screen fingerprints either side of the action: Pre is the screen it
+	// was performed against, Post the screen once it settled. They never
+	// reach the Maestro flow — a captured flow has to stay byte-identical
+	// to replay unchanged on real devices — and travel in a sidecar
+	// instead, where replay can use them to say which step diverged
+	// rather than only that a tap failed.
+	Pre  string `json:"pre,omitempty"`
+	Post string `json:"post,omitempty"`
 }
+
+// NoEffect reports that the action left the screen exactly as it found
+// it. Such a step is the likeliest to flake on replay — the tap may have
+// landed on nothing — so the recorder surfaces it rather than emitting a
+// step that quietly does nothing. Unknown until the post-action snapshot
+// lands, so a step still settling reports false.
+func (s Step) NoEffect() bool { return s.Post != "" && s.Post == s.Pre }
 
 // NormRect is an element frame normalized to the app's bounds.
 type NormRect struct {
@@ -120,20 +135,35 @@ func (r *Recorder) OnEvent(ev input.Event) {
 	case input.EventGesture:
 		r.flushTextLocked()
 		if ev.Gesture == input.GestureSwipeToHome {
-			r.steps = append(r.steps, Step{Kind: "pressKey", Input: "Home"})
+			r.appendStep(Step{Kind: "pressKey", Input: "Home"})
 		}
 		// Other system gestures have no durable Maestro equivalent; they
 		// are intentionally not recorded rather than recorded as lies.
 	case input.EventLegacyButton:
 		r.flushTextLocked()
 		if ev.Code == 0 {
-			r.steps = append(r.steps, Step{Kind: "pressKey", Input: "Home"})
+			r.appendStep(Step{Kind: "pressKey", Input: "Home"})
 		} else if ev.Code == 1 {
-			r.steps = append(r.steps, Step{Kind: "pressKey", Input: "Lock"})
+			r.appendStep(Step{Kind: "pressKey", Input: "Lock"})
 		}
 	default:
 		// Two-finger and raw HID buttons are not yet exportable.
 	}
+}
+
+// appendStep records a step against the screen it was performed on. Every
+// step goes through here so no path can forget the fingerprint.
+func (r *Recorder) appendStep(s Step) {
+	hash := runner.ScreenHash(r.tree)
+	// Close out the previous step if nothing has yet. Only touches
+	// schedule a settle refresh, so typing and key presses would
+	// otherwise never learn what they produced — and the screen we are
+	// about to act on is exactly the screen the previous step left.
+	if n := len(r.steps); n > 0 && r.steps[n-1].Post == "" {
+		r.steps[n-1].Post = hash
+	}
+	s.Pre = hash
+	r.steps = append(r.steps, s)
 }
 
 // Steps returns a copy of what has been recorded so far.
@@ -181,7 +211,7 @@ func (r *Recorder) onTouch(ev input.Event) {
 func (r *Recorder) finalizeTouch(p *pendingTouch) {
 	distance := math.Hypot(p.lastX-p.startX, p.lastY-p.startY)
 	if distance >= swipeDistance {
-		r.steps = append(r.steps, Step{
+		r.appendStep(Step{
 			Kind:   "swipe",
 			StartX: p.startX, StartY: p.startY,
 			EndX: p.lastX, EndY: p.lastY,
@@ -192,7 +222,7 @@ func (r *Recorder) finalizeTouch(p *pendingTouch) {
 	if r.now().Sub(p.startedAt) >= longPressAfter {
 		kind = "longPressOn"
 	}
-	r.steps = append(r.steps, r.resolveTap(kind, p.startX, p.startY))
+	r.appendStep(r.resolveTap(kind, p.startX, p.startY))
 }
 
 // resolveTap turns a normalized point into a selector-based step, falling
@@ -302,6 +332,10 @@ func (r *Recorder) scheduleRefreshLocked() {
 		if r.refresh == generation {
 			r.tree = tree
 			r.treeAt = r.now()
+			// The screen has settled: close out the step that caused it.
+			if n := len(r.steps); n > 0 && r.steps[n-1].Post == "" {
+				r.steps[n-1].Post = runner.ScreenHash(tree)
+			}
 		}
 	}()
 }
@@ -311,7 +345,7 @@ func (r *Recorder) scheduleRefreshLocked() {
 func (r *Recorder) onKey(ev input.Event) {
 	if ev.Usage == 0x28 { // Enter
 		r.flushTextLocked()
-		r.steps = append(r.steps, Step{Kind: "pressKey", Input: "Enter"})
+		r.appendStep(Step{Kind: "pressKey", Input: "Enter"})
 		return
 	}
 	if ev.Usage == 0x2A { // Backspace: retract the last buffered rune
@@ -329,7 +363,7 @@ func (r *Recorder) flushTextLocked() {
 	if len(r.text) == 0 {
 		return
 	}
-	r.steps = append(r.steps, Step{Kind: "inputText", Input: string(r.text)})
+	r.appendStep(Step{Kind: "inputText", Input: string(r.text)})
 	r.text = nil
 }
 

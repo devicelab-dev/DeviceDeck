@@ -108,14 +108,14 @@ func (f *fakeCapture) Start(_ context.Context, udid, appID string) error {
 	return nil
 }
 
-func (f *fakeCapture) Stop(udid string) (string, []capture.Step, error) {
+func (f *fakeCapture) Stop(udid string) (string, string, []capture.Step, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.stopErr != nil {
-		return "", nil, f.stopErr
+		return "", "", nil, f.stopErr
 	}
 	f.recording = false
-	return f.yaml, f.steps, nil
+	return f.yaml, capture.ExportGuard("com.example", f.steps), f.steps, nil
 }
 
 func (f *fakeCapture) Status(udid string) (bool, []capture.Step) {
@@ -411,6 +411,10 @@ func TestCaptureEndpoints(t *testing.T) {
 	rec = do(t, s, "POST", "/api/devices/AAA/capture/stop", "{}")
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "launchApp") {
 		t.Fatalf("stop: %d %s", rec.Code, rec.Body)
+	}
+	// The replay guard ships beside the flow, never inside it.
+	if !strings.Contains(rec.Body.String(), `"guard":"`) {
+		t.Errorf("stop response carries no guard: %s", rec.Body)
 	}
 }
 

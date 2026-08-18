@@ -48,7 +48,7 @@ type TreeSource interface {
 // CaptureService records manual sessions as flows.
 type CaptureService interface {
 	Start(ctx context.Context, udid, appID string) error
-	Stop(udid string) (yaml string, steps []capture.Step, err error)
+	Stop(udid string) (yaml, guard string, steps []capture.Step, err error)
 	Status(udid string) (recording bool, steps []capture.Step)
 	OnFrame(udid string, frame []byte)
 }
@@ -337,7 +337,7 @@ func (s *Server) handleCaptureStart(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCaptureStop(w http.ResponseWriter, r *http.Request) {
-	yaml, steps, err := s.capture.Stop(r.PathValue("udid"))
+	yaml, guard, steps, err := s.capture.Stop(r.PathValue("udid"))
 	if err != nil {
 		httpError(w, http.StatusConflict, err)
 		return
@@ -345,7 +345,7 @@ func (s *Server) handleCaptureStop(w http.ResponseWriter, r *http.Request) {
 	if steps == nil {
 		steps = []capture.Step{}
 	}
-	writeJSON(w, map[string]any{"ok": true, "yaml": yaml, "steps": steps})
+	writeJSON(w, map[string]any{"ok": true, "yaml": yaml, "guard": guard, "steps": steps})
 }
 
 func (s *Server) handleCaptureStatus(w http.ResponseWriter, r *http.Request) {

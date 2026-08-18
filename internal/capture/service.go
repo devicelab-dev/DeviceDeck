@@ -55,18 +55,19 @@ func (s *Service) Start(ctx context.Context, udid, appID string) error {
 	return nil
 }
 
-// Stop ends udid's recording and returns the exported Maestro YAML plus
-// the structured steps.
-func (s *Service) Stop(udid string) (string, []Step, error) {
+// Stop ends udid's recording and returns the exported Maestro YAML, the
+// replay guard sidecar, and the structured steps. The flow and the guard
+// are separate artifacts on purpose — see ExportGuard.
+func (s *Service) Stop(udid string) (yaml, guard string, steps []Step, err error) {
 	s.mu.Lock()
 	rec, ok := s.recorders[udid]
 	delete(s.recorders, udid)
 	s.mu.Unlock()
 	if !ok {
-		return "", nil, fmt.Errorf("not recording %s", udid)
+		return "", "", nil, fmt.Errorf("not recording %s", udid)
 	}
-	steps := rec.Finish()
-	return ExportMaestro(rec.AppID(), steps), steps, nil
+	steps = rec.Finish()
+	return ExportMaestro(rec.AppID(), steps), ExportGuard(rec.AppID(), steps), steps, nil
 }
 
 // Status reports whether udid is recording and the steps so far.

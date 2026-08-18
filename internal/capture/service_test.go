@@ -44,7 +44,7 @@ func TestServiceLifecycle(t *testing.T) {
 		t.Fatalf("status = %v %+v", recording, steps)
 	}
 
-	yaml, steps, err := svc.Stop("UDID-1")
+	yaml, guard, steps, err := svc.Stop("UDID-1")
 	if err != nil || len(steps) != 1 {
 		t.Fatalf("Stop: %v %+v", err, steps)
 	}
@@ -54,8 +54,12 @@ func TestServiceLifecycle(t *testing.T) {
 	if _, err := runner.ValidateFlow([]byte(yaml)); err != nil {
 		t.Errorf("exported yaml invalid: %v", err)
 	}
+	// The guard is a separate artifact covering the same steps.
+	if !strings.Contains(guard, `"version": 1`) || !strings.Contains(guard, `"kind": "tapOn"`) {
+		t.Errorf("guard missing or wrong shape:\n%s", guard)
+	}
 
-	if _, _, err := svc.Stop("UDID-1"); err == nil {
+	if _, _, _, err := svc.Stop("UDID-1"); err == nil {
 		t.Fatal("Stop without recording must fail")
 	}
 	if recording, _ := svc.Status("UDID-1"); recording {
