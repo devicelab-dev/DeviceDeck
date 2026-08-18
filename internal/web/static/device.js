@@ -145,49 +145,92 @@ function positionMirror() {
   mirror.style.height = `${rect.height}px`;
 }
 
+// Identity key for reconciliation: the identifier when present, else
+// type + placeholder (stable while a field's value changes), else the
+// label; same-key siblings are disambiguated by occurrence order.
+function nodeKey(node, counts) {
+  const base =
+    node.identifier || `${node.type}|${node.placeholder || node.label || ""}`;
+  const n = counts.get(base) || 0;
+  counts.set(base, n + 1);
+  return `${base}#${n}`;
+}
+
+function setOrRemove(el, attr, value) {
+  if (value) el.setAttribute(attr, value);
+  else el.removeAttribute(attr);
+}
+
+function syncNode(el, node, app) {
+  const f = node.frame;
+  el.style.left = `${(f.x / app.width) * 100}%`;
+  el.style.top = `${(f.y / app.height) * 100}%`;
+  el.style.width = `${(f.width / app.width) * 100}%`;
+  el.style.height = `${(f.height / app.height) * 100}%`;
+  // Deeper nodes stack above their containers so the most specific
+  // element receives the click, mirroring native hit-testing.
+  el.style.zIndex = String(node.depth);
+
+  setOrRemove(el, "role", ROLES[node.type] || "");
+  setOrRemove(el, "data-testid", node.identifier || "");
+  // Accessible name: label first, placeholder as fallback so unnamed
+  // fields still read as `textbox "Username"` in aria snapshots.
+  setOrRemove(el, "aria-label", node.label || node.placeholder || "");
+  setOrRemove(el, "aria-placeholder", node.placeholder || "");
+  setOrRemove(el, "aria-disabled", node.enabled ? "" : "true");
+  setOrRemove(el, "aria-selected", node.selected ? "true" : "");
+  // Text content for getByText: label, else value, painted transparent.
+  const text = node.label || node.value || "";
+  if (el.textContent !== text) el.textContent = text;
+}
+
+// A node earns a mirror element only if something can find it: an
+// identifier, visible text, or a mapped role. Zero-size nodes never do.
+function mirrorable(node) {
+  if (node.depth === 0) return false;
+  if (!(node.frame.width > 0) || !(node.frame.height > 0)) return false;
+  return !!(node.identifier || node.label || node.value || ROLES[node.type]);
+}
+
+// Reuse the keyed element from a previous render when one exists.
+function acquireEl(existing, key) {
+  const found = existing.get(key);
+  if (found) {
+    existing.delete(key);
+    return found;
+  }
+  const el = document.createElement("div");
+  el.setAttribute("data-dd-node", "");
+  el.setAttribute("data-dd-key", key);
+  return el;
+}
+
 function renderMirror(nodes) {
   const json = JSON.stringify(nodes);
   if (json === lastTreeJSON) return;
   lastTreeJSON = json;
 
-  mirror.innerHTML = "";
   positionMirror();
-  if (!nodes.length) return;
-  const app = nodes[0].frame;
-  if (!(app.width > 0) || !(app.height > 0)) return;
+  const app = nodes.length ? nodes[0].frame : null;
+  if (!app || !(app.width > 0) || !(app.height > 0)) {
+    mirror.innerHTML = "";
+    return;
+  }
 
-  for (const node of nodes) {
-    if (node.depth === 0) continue;
-    const f = node.frame;
-    if (!(f.width > 0) || !(f.height > 0)) continue;
-    if (!node.identifier && !node.label && !node.value && !ROLES[node.type]) continue;
-
-    const el = document.createElement("div");
-    el.setAttribute("data-dd-node", "");
-    el.style.left = `${(f.x / app.width) * 100}%`;
-    el.style.top = `${(f.y / app.height) * 100}%`;
-    el.style.width = `${(f.width / app.width) * 100}%`;
-    el.style.height = `${(f.height / app.height) * 100}%`;
-    // Deeper nodes stack above their containers so the most specific
-    // element receives the click, mirroring native hit-testing.
-    el.style.zIndex = String(node.depth);
-
-    const role = ROLES[node.type];
-    if (role) el.setAttribute("role", role);
-    if (node.identifier) el.setAttribute("data-testid", node.identifier);
-    // Accessible name: label first, placeholder as fallback so unnamed
-    // fields still read as `textbox "Username"` in aria snapshots.
-    const name = node.label || node.placeholder || "";
-    if (name) el.setAttribute("aria-label", name);
-    if (node.placeholder) el.setAttribute("aria-placeholder", node.placeholder);
-    if (!node.enabled) el.setAttribute("aria-disabled", "true");
-    if (node.selected) el.setAttribute("aria-selected", "true");
-    // Text content for getByText: label, else value, painted transparent.
-    const text = node.label || node.value || "";
-    if (text) el.textContent = text;
-
+  // Reconcile instead of rebuilding: an element that survives a refresh
+  // keeps its DOM identity, so automation handles held across refreshes
+  // (Playwright aria-refs, Selenium elements) stay valid between actions.
+  const existing = new Map();
+  for (const el of [...mirror.children]) existing.set(el.getAttribute("data-dd-key"), el);
+  const counts = new Map();
+  for (const node of nodes.filter(mirrorable)) {
+    const el = acquireEl(existing, nodeKey(node, counts));
+    syncNode(el, node, app);
+    // Append-or-move keeps DOM order tracking native order, so aria
+    // snapshots read top-to-bottom; moving preserves element identity.
     mirror.appendChild(el);
   }
+  for (const el of existing.values()) el.remove();
 }
 
 // ---------- tree sync: adaptive polling + refresh-after-action ----------

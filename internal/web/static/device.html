@@ -4,6 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>DeviceDeck Device</title>
+  <!-- Explicit icon: without it browsers request /favicon.ico, and the
+       404 surfaces as a console error in every automation client. -->
+  <link rel="icon" href="/favicon.svg">
   <style>
     /* The automation page: video + a real DOM mirror of the native tree.
        Deliberately minimal — this DOM is a test target, so it contains
