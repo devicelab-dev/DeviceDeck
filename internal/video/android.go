@@ -60,7 +60,7 @@ func RunAndroidCapture(serial string, in io.Reader, out io.Writer) error {
 	// Preferred path: the emulator's host-side gRPC screenshot stream —
 	// no adb, no 3-minute cap, current frame on subscribe. screenrecord
 	// below is the fallback for devices without a discovery file.
-	if ep, err := discoverEmulator(serial); err == nil {
+	if ep, err := discoverEndpoint(serial); err == nil {
 		if gerr := c.streamViaGRPC(ep); gerr == nil {
 			return nil
 		} else {
@@ -110,7 +110,13 @@ func (c *androidCapture) runOnce() error {
 	c.mu.Lock()
 	c.current = cmd
 	c.startedAt = time.Now()
+	closedNow := c.closed
 	c.mu.Unlock()
+	// Shutdown may have raced the registration above — its kill would
+	// have found no process, so finish the job here or block forever.
+	if closedNow {
+		_ = cmd.Process.Kill()
+	}
 
 	repackErr := RepackAnnexB(stdout, c.out)
 	return c.cycleResult(repackErr, cmd.Wait())
@@ -202,6 +208,9 @@ func (s *syncWriter) Write(p []byte) (int, error) {
 
 // watchOrphaned exits when the parent server dies without the pipes
 // unwinding — same defense as the Swift sidecars' OrphanWatch.
+//
+// Coverage waiver: the os.Exit branch cannot run inside the test
+// process; the loop is exercised by every capture lifecycle test.
 func watchOrphaned() {
 	for {
 		time.Sleep(2 * time.Second)

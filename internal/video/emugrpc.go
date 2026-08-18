@@ -21,6 +21,10 @@ type emulatorEndpoint struct {
 	token string
 }
 
+// discoverEndpoint resolves a serial to its gRPC endpoint. Var so tests
+// can point capture at an in-process fake emulator.
+var discoverEndpoint = discoverEmulator
+
 // discoverEmulator finds the gRPC endpoint for an adb serial by matching
 // the console port against the emulator's discovery files — the same
 // files Android Studio's device streaming reads. The static grpc.token
@@ -143,9 +147,14 @@ func (c *androidCapture) isClosed() bool {
 }
 
 // setCancel registers how to abort the in-flight stream so a stdin EOF
-// unblocks Recv immediately.
+// unblocks Recv immediately. Shutdown may already have happened — then
+// its cancel found nothing registered, so fire it here.
 func (c *androidCapture) setCancel(cancel context.CancelFunc) {
 	c.mu.Lock()
 	c.cancelStream = cancel
+	closed := c.closed
 	c.mu.Unlock()
+	if closed {
+		cancel()
+	}
 }

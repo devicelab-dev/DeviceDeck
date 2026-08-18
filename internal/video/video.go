@@ -287,18 +287,28 @@ func (m *Manager) session(ctx context.Context, udid string) (*Session, error) {
 	return s, nil
 }
 
-// start launches the platform-appropriate capture process. Android
-// capture is this very binary re-invoked with a hidden subcommand, so
-// the single-binary shape (brief §11.3) holds without a second sidecar.
-func (m *Manager) start(ctx context.Context, udid string) (*Session, error) {
+// start launches the platform-appropriate capture process.
+func (m *Manager) start(_ context.Context, udid string) (*Session, error) {
+	cmd, err := m.captureCommand(udid)
+	if err != nil {
+		return nil, err
+	}
+	return startSessionCmd(cmd)
+}
+
+// captureCommand picks the capture process for a device: the Swift
+// sidecar for simulators; for Android, this very binary re-invoked with
+// a hidden subcommand, so the single-binary shape (brief §11.3) holds
+// without a second sidecar.
+func (m *Manager) captureCommand(udid string) (*exec.Cmd, error) {
 	if IsAndroidSerial(udid) {
 		exe, err := os.Executable()
 		if err != nil {
 			return nil, fmt.Errorf("resolve devicedeck binary: %w", err)
 		}
-		return startSessionCmd(exec.Command(exe, "_video-android", udid))
+		return exec.Command(exe, "_video-android", udid), nil
 	}
-	return StartSession(ctx, m.binPath, udid, m.fps)
+	return exec.Command(m.binPath, udid, strconv.Itoa(m.fps)), nil
 }
 
 func (m *Manager) drop(udid string, old *Session) {
