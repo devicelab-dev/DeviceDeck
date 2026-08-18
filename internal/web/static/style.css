@@ -259,3 +259,13 @@ main { flex: 1; display: flex; min-height: 0; }
 
 #device-label { font-weight: 600; margin: 0 4px; }
 .console-only { display: inline-flex; align-items: center; gap: 8px; }
+
+.platform-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 6px;
+  vertical-align: -1px;
+}
+.platform-badge svg { width: 14px; height: 9px; }
+.platform-badge.apple { color: var(--dim); font-size: 12px; font-family: -apple-system, "SF Pro Text", sans-serif; }
+.device-card.running .platform-badge.apple { color: var(--text); }

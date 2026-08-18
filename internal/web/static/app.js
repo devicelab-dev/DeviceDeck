@@ -137,7 +137,10 @@ function deviceCard(d) {
   const meta = document.createElement("div");
   meta.className = "device-meta";
   const name = Object.assign(document.createElement("div"), { className: "device-name", textContent: d.name, title: d.name });
-  const os = Object.assign(document.createElement("div"), { className: "device-os", textContent: d.os });
+  const os = document.createElement("div");
+  os.className = "device-os";
+  os.appendChild(platformBadge(isAndroid));
+  os.appendChild(document.createTextNode(d.os));
   const id = Object.assign(document.createElement("div"), { className: "device-id", textContent: d.udid, title: d.udid });
   meta.append(name, os, id);
   card.appendChild(meta);
@@ -195,6 +198,25 @@ async function bootDevice(d, card, glyph, action) {
 
 function selectDevice(next) {
   showConsole(next);
+}
+
+// platformBadge returns the platform mark: the Android robot head as
+// inline SVG, or the Apple glyph — the system font renders it, and this
+// console only runs on Macs.
+function platformBadge(isAndroid) {
+  const badge = document.createElement("span");
+  badge.className = "platform-badge" + (isAndroid ? " android" : " apple");
+  if (isAndroid) {
+    badge.innerHTML =
+      '<svg viewBox="0 0 24 15" aria-label="Android" role="img">' +
+      '<path fill="#3DDC84" d="M17.5 4.6l1.7-2.9a.35.35 0 0 0-.6-.35l-1.7 3A10.6 10.6 0 0 0 12 3.4c-1.75 0-3.4.33-4.9.95l-1.7-3a.35.35 0 0 0-.6.35l1.7 2.9C3.6 6.2 1.7 9 1.5 12.3h21c-.2-3.3-2.1-6.1-5-7.7z"/>' +
+      '<circle fill="#101216" cx="7.6" cy="9" r="1"/>' +
+      '<circle fill="#101216" cx="16.4" cy="9" r="1"/></svg>';
+  } else {
+    badge.textContent = "\uF8FF"; // Apple logo glyph in the system font
+    badge.setAttribute("aria-label", "Apple");
+  }
+  return badge;
 }
 
 // ---------- video ----------
