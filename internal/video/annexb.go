@@ -1,11 +1,11 @@
 package video
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
+	"time"
 )
 
 // H.264 NAL unit types (nal_unit_type, low 5 bits of the header byte).
@@ -30,6 +30,15 @@ func WriteFrame(w io.Writer, frameType byte, payload []byte) error {
 	return err
 }
 
+// repackIdleFlush is how long the stream must stay quiet before the
+// pending access unit is flushed. An Annex-B NAL is only provably
+// complete when the next start code arrives — but screenrecord pauses
+// output whenever pixels stop changing, which would hold the burst's
+// last frame (often the IDR) hostage indefinitely. screenrecord writes
+// whole access units, so a quiet pipe means the buffered tail is a
+// complete NAL.
+const repackIdleFlush = 100 * time.Millisecond
+
 // RepackAnnexB converts an H.264 Annex-B elementary stream (what
 // `adb screenrecord --output-format=h264` emits) into the sidecar frame
 // protocol: an avcC decoder description once SPS+PPS are seen, then one
@@ -37,21 +46,65 @@ func WriteFrame(w io.Writer, frameType byte, payload []byte) error {
 // until r is exhausted; returns nil on EOF.
 func RepackAnnexB(r io.Reader, w io.Writer) error {
 	rp := &repacker{w: w}
-	sc := newAnnexBScanner(r)
+	done := make(chan struct{})
+	defer close(done)
+	chunks, readErr := readChunks(r, done)
+
+	var buf []byte
+	quiet := false // one idle tick of grace before flushing
+	idle := time.NewTicker(repackIdleFlush)
+	defer idle.Stop()
 	for {
-		nal, err := sc.next()
-		if nal != nil {
-			if werr := rp.handleNAL(nal); werr != nil {
-				return werr
+		select {
+		case chunk := <-chunks:
+			quiet = false
+			var err error
+			if buf, err = rp.consume(append(buf, chunk...)); err != nil {
+				return err
+			}
+		case err := <-readErr:
+			ferr := rp.finish(buf)
+			if err == io.EOF {
+				return ferr
+			}
+			return err
+		case <-idle.C:
+			if !quiet {
+				quiet = true
+				continue
+			}
+			var err error
+			if buf, err = rp.flushPending(buf); err != nil {
+				return err
 			}
 		}
-		if err == io.EOF {
-			return rp.flush()
-		}
-		if err != nil {
-			return err
-		}
 	}
+}
+
+// readChunks pumps r into a channel; the terminal read error (io.EOF
+// included) arrives on the second channel. done releases the goroutine
+// if the consumer returns early.
+func readChunks(r io.Reader, done <-chan struct{}) (<-chan []byte, <-chan error) {
+	chunks := make(chan []byte, 8)
+	readErr := make(chan error, 1)
+	go func() {
+		for {
+			buf := make([]byte, 32*1024)
+			n, err := r.Read(buf)
+			if n > 0 {
+				select {
+				case chunks <- buf[:n]:
+				case <-done:
+					return
+				}
+			}
+			if err != nil {
+				readErr <- err
+				return
+			}
+		}
+	}()
+	return chunks, readErr
 }
 
 // repacker accumulates NAL units into access units and writes protocol
@@ -144,41 +197,50 @@ func buildAVCC(sps, pps []byte) []byte {
 	return append(out, pps...)
 }
 
-// annexBScanner splits a byte stream on Annex-B start codes (00 00 01,
-// optionally preceded by an extra 00), yielding complete NAL units. A
-// NAL is only known complete once the next start code (or EOF) arrives.
-type annexBScanner struct {
-	r   *bufio.Reader
-	buf []byte
-}
-
-func newAnnexBScanner(r io.Reader) *annexBScanner {
-	return &annexBScanner{r: bufio.NewReaderSize(r, 64*1024)}
-}
-
-var startCode = []byte{0, 0, 1}
-
-// next returns the next complete NAL unit. It returns a final NAL
-// together with io.EOF when the stream ends.
-func (s *annexBScanner) next() ([]byte, error) {
+// consume parses every complete NAL out of buf, returning the unparsed
+// remainder. Bytes before the first start code (possible after an idle
+// flush consumed a NAL without its terminator) are dropped to resync.
+func (rp *repacker) consume(buf []byte) ([]byte, error) {
 	for {
-		if nal, rest, ok := splitNAL(s.buf); ok {
-			s.buf = rest
-			return nal, nil
-		}
-		chunk := make([]byte, 32*1024)
-		n, err := s.r.Read(chunk)
-		s.buf = append(s.buf, chunk[:n]...)
-		if err != nil {
-			nal := trimStartCode(s.buf)
-			s.buf = nil
-			if err == io.EOF && len(nal) == 0 {
-				return nil, io.EOF
+		if trimStartCode(buf) == nil && len(buf) >= 4 {
+			if idx := bytes.Index(buf, startCode); idx >= 0 {
+				buf = buf[idx:]
+			} else {
+				buf = buf[len(buf)-3:] // keep a possible partial start code
 			}
-			return nal, err
+		}
+		nal, rest, ok := splitNAL(buf)
+		if !ok {
+			return buf, nil
+		}
+		buf = rest
+		if err := rp.handleNAL(nal); err != nil {
+			return nil, err
 		}
 	}
 }
+
+// flushPending treats a quiet stream's buffered tail as a complete NAL
+// (screenrecord writes whole access units) and emits the pending AU.
+func (rp *repacker) flushPending(buf []byte) ([]byte, error) {
+	if nal := trimStartCode(buf); len(nal) > 0 {
+		if err := rp.handleNAL(nal); err != nil {
+			return nil, err
+		}
+		buf = nil
+	}
+	return buf, rp.flush()
+}
+
+// finish drains the final buffered NAL at stream end.
+func (rp *repacker) finish(buf []byte) error {
+	if _, err := rp.flushPending(buf); err != nil {
+		return err
+	}
+	return nil
+}
+
+var startCode = []byte{0, 0, 1}
 
 // splitNAL extracts the first complete NAL from buf: the bytes between
 // the leading start code and the next one.

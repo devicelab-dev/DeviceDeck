@@ -51,6 +51,23 @@ func (b *syncBuffer) Bytes() []byte {
 	return append([]byte(nil), b.buf.Bytes()...)
 }
 
+// waitForFrames polls out until the frame counts satisfy cond; fail is
+// invoked on timeout so callers can attach context (like the capture's
+// exit error).
+func waitForFrames(t *testing.T, out *syncBuffer, fail func(string), cond func(map[byte]int) bool) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		counts := map[byte]int{}
+		_ = ReadFrames(bytes.NewReader(out.Bytes()), func(ft byte, _ []byte) { counts[ft]++ })
+		if cond(counts) {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	fail("expected frames never arrived")
+}
+
 func TestAndroidCaptureLifecycle(t *testing.T) {
 	stubADB(t)
 	stdinR, stdinW := io.Pipe()
@@ -58,15 +75,31 @@ func TestAndroidCaptureLifecycle(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() { done <- RunAndroidCapture("emulator-0000", stdinR, out) }()
+	failNow := func(msg string) {
+		b := out.Bytes()
+		head := b
+		if len(head) > 48 {
+			head = head[:48]
+		}
+		select {
+		case err := <-done:
+			t.Fatalf("%s (capture exited: %v; buffer %d bytes, head % x)", msg, err, len(b), head)
+		default:
+			t.Fatalf("%s (capture running; buffer %d bytes, head % x)", msg, len(b), head)
+		}
+	}
 
-	// Give the first cycle time to emit the still and the GOP, then ask
-	// for a keyframe: the restart is debounced, but a fresh still must
-	// still go out.
-	time.Sleep(600 * time.Millisecond)
+	// Wait for the first cycle's still and GOP (polling, not fixed
+	// sleeps — full-suite race runs load the machine enough to lose a
+	// timing bet), then request a keyframe: the restart is debounced,
+	// but a fresh still must still go out.
+	waitForFrames(t, out, failNow, func(counts map[byte]int) bool {
+		return counts[TypeKeyframe] >= 1 && counts[TypeStill] >= 1
+	})
 	if _, err := stdinW.Write([]byte{'K'}); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(400 * time.Millisecond)
+	waitForFrames(t, out, failNow, func(counts map[byte]int) bool { return counts[TypeStill] >= 2 })
 	_ = stdinW.Close()
 
 	select {

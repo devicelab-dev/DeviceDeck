@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"testing"
+	"time"
 )
 
 // nal builds a synthetic NAL unit of the given type with payload bytes.
@@ -164,6 +165,34 @@ func TestRepackSurvivesFragmentedReads(t *testing.T) {
 	if len(frames) != 3 {
 		t.Fatalf("got %d frames, want 3 (description, keyframe, trailing delta flushed at EOF)", len(frames))
 	}
+}
+
+func TestRepackFlushesWhenStreamPauses(t *testing.T) {
+	// screenrecord's real shape: a burst of frames, then silence while
+	// pixels are static. The burst's last access unit has no terminating
+	// start code — the idle flush must deliver it anyway.
+	pr, pw := io.Pipe()
+	defer pw.Close()
+	out := &syncBuffer{}
+	done := make(chan error, 1)
+	go func() { done <- RepackAnnexB(pr, out) }()
+
+	sps := nal(0x67, 0x42, 0xC0, 0x32)
+	pps := nal(0x68, 0xCE)
+	if _, err := pw.Write(annexb(true, sps, pps, nal(0x65, frameStart, 0x11))); err != nil {
+		t.Fatal(err)
+	}
+	// No more writes: the IDR must arrive without waiting for stream end.
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		counts := map[byte]int{}
+		_ = ReadFrames(bytes.NewReader(out.Bytes()), func(ft byte, _ []byte) { counts[ft]++ })
+		if counts[TypeKeyframe] >= 1 {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("paused stream's keyframe never flushed")
 }
 
 func TestIsAndroidSerial(t *testing.T) {
