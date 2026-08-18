@@ -90,13 +90,23 @@ function positionMirror() {
 
 // Identity key for reconciliation: the identifier when present, else
 // type + placeholder (stable while a field's value changes), else the
-// label; same-key siblings are disambiguated by occurrence order.
-function nodeKey(node, counts) {
+// label.
+//
+// Same-key siblings are disambiguated by occurrence order *within their
+// parent*, never across the whole tree. Counting globally means one
+// unidentified node appearing or disappearing anywhere above shifts the
+// ordinal of every later node sharing its base key — they all re-key,
+// their elements are replaced rather than reused, and every automation
+// handle into them (Playwright aria-refs, Selenium elements) dies for a
+// change that never touched them. Unlabelled containers make that the
+// common case, not the corner case.
+function nodeKey(node, parentKey, counts) {
   const base =
     node.identifier || `${node.type}|${node.placeholder || node.label || ""}`;
-  const n = counts.get(base) || 0;
-  counts.set(base, n + 1);
-  return `${base}#${n}`;
+  const scoped = `${parentKey}/${base}`;
+  const n = counts.get(scoped) || 0;
+  counts.set(scoped, n + 1);
+  return `${scoped}#${n}`;
 }
 
 function setOrRemove(el, attr, value) {
@@ -185,7 +195,7 @@ function renderMirror(nodes) {
   // plain DOM order — no z-index arithmetic. anchors[i] carries the
   // container element + frame that node i's children position against.
   const anchors = new Map();
-  const rootAnchor = { el: mirror, frame: app };
+  const rootAnchor = { el: mirror, frame: app, key: "" };
   for (const node of nodes) {
     const parentAnchor =
       (node.parentIndex != null && anchors.get(node.parentIndex)) || rootAnchor;
@@ -193,12 +203,13 @@ function renderMirror(nodes) {
       anchors.set(node.index, parentAnchor); // children inherit the anchor
       continue;
     }
-    const el = acquireEl(existing, nodeKey(node, counts));
+    const key = nodeKey(node, parentAnchor.key, counts);
+    const el = acquireEl(existing, key);
     syncNode(el, node, parentAnchor.frame);
     // Append-or-move keeps DOM order tracking native order; moving
     // (including across parents) preserves element identity.
     parentAnchor.el.appendChild(el);
-    anchors.set(node.index, { el, frame: node.frame });
+    anchors.set(node.index, { el, frame: node.frame, key });
   }
   for (const el of existing.values()) el.remove();
 }
