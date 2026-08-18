@@ -371,13 +371,8 @@ async function start() {
   }
   connectVideo();
   connectInput();
-  // On iOS the tree engine must target an app: unscoped snapshots make
-  // the XCUITest runner activate its placeholder host app, covering the
-  // screen. Poll only when scoped (Android trees are whole-screen).
-  if (appId || udid.startsWith("emulator-")) {
-    syncTree();
-  } else {
-    console.warn("DeviceDeck: mirror disabled — add ?app=<bundle id> to enable the tree on iOS");
-  }
+  // Unscoped trees follow the frontmost app (the runner resolves it);
+  // ?app= narrows to one bundle when tests want isolation.
+  syncTree();
 }
 start();

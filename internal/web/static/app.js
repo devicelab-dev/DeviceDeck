@@ -466,16 +466,9 @@ function positionOverlay() {
 }
 
 async function toggleInspector() {
-  // On iOS the tree engine needs a target app: with no bundle id the
-  // XCUITest runner activates its own placeholder host, hijacking the
-  // screen with a blank page. Ask for the id instead of letting that
-  // happen. Android trees are whole-screen and need no id.
-  const isAndroid = udid && udid.startsWith("emulator-");
-  if (!inspecting && !isAndroid && !$("app").value.trim()) {
-    status.textContent = "enter the app bundle id to inspect (e.g. dev.devicelab.testhive)";
-    $("app").focus();
-    return;
-  }
+  // No app id needed: the tree engine targets whatever is on screen
+  // (the runner resolves the frontmost app; Android trees are
+  // whole-screen). The id input still narrows the tree when set.
   inspecting = !inspecting;
   $("btn-inspect").classList.toggle("active", inspecting);
   $("panel").hidden = !inspecting;
