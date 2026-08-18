@@ -147,3 +147,129 @@ func TestInputWSClosesOnSidecarFailure(t *testing.T) {
 		t.Error("expected close after sidecar failure")
 	}
 }
+
+// A connection that vanishes mid-drag must not leave the device holding
+// a finger down: the sidecar would have a touch-down with no matching up
+// and every later interaction would land on a wedged input stack.
+func TestInputWSReleasesHeldTouchOnDisconnect(t *testing.T) {
+	backend := &fakeBackend{}
+	srv := wsServer(t, backend, &fakeVideo{frames: make(chan []byte)})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, wsAddr(srv, "/api/devices/AAA/input"), nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	down := input.Touch(input.TouchDown, 0.25, 0.75, input.EdgeNone)
+	if err := conn.Write(ctx, websocket.MessageBinary, down); err != nil {
+		t.Fatal(err)
+	}
+	for len(backend.sentFrames()) < 1 {
+		time.Sleep(5 * time.Millisecond)
+	}
+	// Vanish mid-gesture, without ever sending the up.
+	conn.CloseNow()
+
+	want := input.Touch(input.TouchUp, 0.25, 0.75, input.EdgeNone)
+	deadline := time.After(5 * time.Second)
+	for {
+		frames := backend.sentFrames()
+		if len(frames) >= 2 && string(frames[len(frames)-1]) == string(want) {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("held touch never released; frames=%x", frames)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
+// A completed gesture needs no cleanup — a spurious extra touch-up would
+// register as a second tap.
+func TestInputWSDoesNotReleaseCompletedGesture(t *testing.T) {
+	backend := &fakeBackend{}
+	srv := wsServer(t, backend, &fakeVideo{frames: make(chan []byte)})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, wsAddr(srv, "/api/devices/AAA/input"), nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	for _, f := range [][]byte{
+		input.Touch(input.TouchDown, 0.5, 0.5, input.EdgeNone),
+		input.Touch(input.TouchUp, 0.5, 0.5, input.EdgeNone),
+	} {
+		if err := conn.Write(ctx, websocket.MessageBinary, f); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for len(backend.sentFrames()) < 2 {
+		time.Sleep(5 * time.Millisecond)
+	}
+	conn.CloseNow()
+
+	// Give any erroneous cleanup a chance to fire before asserting.
+	time.Sleep(200 * time.Millisecond)
+	if got := len(backend.sentFrames()); got != 2 {
+		t.Fatalf("expected exactly the two frames sent, got %d: %x", got, backend.sentFrames())
+	}
+}
+
+// Two-finger gestures hold two contacts and need the two-finger release.
+func TestInputWSReleasesHeldTwoFinger(t *testing.T) {
+	backend := &fakeBackend{}
+	srv := wsServer(t, backend, &fakeVideo{frames: make(chan []byte)})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, wsAddr(srv, "/api/devices/AAA/input"), nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	if err := conn.Write(ctx, websocket.MessageBinary,
+		input.TwoFinger(input.TouchDown, 0.2, 0.3, 0.7, 0.8)); err != nil {
+		t.Fatal(err)
+	}
+	for len(backend.sentFrames()) < 1 {
+		time.Sleep(5 * time.Millisecond)
+	}
+	conn.CloseNow()
+
+	want := input.TwoFinger(input.TouchUp, 0.2, 0.3, 0.7, 0.8)
+	deadline := time.After(5 * time.Second)
+	for {
+		frames := backend.sentFrames()
+		if len(frames) >= 2 && string(frames[len(frames)-1]) == string(want) {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("two-finger contact never released; frames=%x", frames)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
+// observe must ignore frames that are not contacts: a key press between
+// touch-down and disconnect must not clear the held contact, and an
+// undecodable frame must not panic or change state.
+func TestHeldTouchObserveIgnoresNonContactFrames(t *testing.T) {
+	var h heldTouch
+	h.observe(input.Touch(input.TouchDown, 0.1, 0.2, input.EdgeNone))
+	h.observe(input.Key(0, 0x04))
+	h.observe(input.SystemGesture(input.GestureSwipeToHome))
+	h.observe([]byte{0xFF})
+	got := h.frames()
+	if len(got) != 1 || string(got[0]) != string(input.Touch(input.TouchUp, 0.1, 0.2, input.EdgeNone)) {
+		t.Fatalf("held contact lost or corrupted: %x", got)
+	}
+	// A move updates the release point without releasing.
+	h.observe(input.Touch(input.TouchMove, 0.6, 0.7, input.EdgeNone))
+	got = h.frames()
+	if len(got) != 1 || string(got[0]) != string(input.Touch(input.TouchUp, 0.6, 0.7, input.EdgeNone)) {
+		t.Fatalf("release point not tracked through move: %x", got)
+	}
+}
