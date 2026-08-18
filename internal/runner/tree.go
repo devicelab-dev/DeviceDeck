@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 
 	dlios "github.com/devicelab-dev/maestro-runner/pkg/driver/devicelab_ios"
@@ -147,12 +148,39 @@ func NewEngines() *Engines {
 }
 
 // Snapshot fetches the UI tree for udid, starting its engine on first use.
+// On failure it evicts the engine and retries once on a fresh one: the
+// XCUITest runner process can die mid-session (brief §11.4), and a cached
+// dead engine would otherwise fail every request until the whole server
+// restarts. A cancelled context is surfaced as-is — a caller going away
+// must not cost a multi-second engine restart.
 func (s *Engines) Snapshot(ctx context.Context, udid, appBundleID string) ([]Node, error) {
 	e, err := s.engine(ctx, udid)
 	if err != nil {
 		return nil, err
 	}
+	nodes, err := e.Snapshot(ctx, appBundleID)
+	if err == nil || ctx.Err() != nil {
+		return nodes, err
+	}
+	slog.Warn("tree snapshot failed, restarting engine", "udid", udid, "error", err)
+	s.evict(ctx, udid, e)
+	if e, err = s.engine(ctx, udid); err != nil {
+		return nil, fmt.Errorf("restart tree engine: %w", err)
+	}
 	return e.Snapshot(ctx, appBundleID)
+}
+
+// evict drops failed from the cache and stops it — unless a concurrent
+// caller already replaced it. The identity check keeps a straggler holding
+// the dead engine from tearing down its healthy replacement.
+func (s *Engines) evict(ctx context.Context, udid string, failed engineAPI) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.engines[udid] != failed {
+		return
+	}
+	delete(s.engines, udid)
+	_ = failed.Stop(context.WithoutCancel(ctx))
 }
 
 func (s *Engines) engine(ctx context.Context, udid string) (engineAPI, error) {

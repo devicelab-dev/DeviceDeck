@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -98,10 +99,11 @@ func TestConvertNodesEmpty(t *testing.T) {
 
 type fakeEngine struct {
 	nodes   []Node
+	err     error
 	stopped bool
 }
 
-func (f *fakeEngine) Snapshot(context.Context, string) ([]Node, error) { return f.nodes, nil }
+func (f *fakeEngine) Snapshot(context.Context, string) ([]Node, error) { return f.nodes, f.err }
 func (f *fakeEngine) Stop(context.Context) error                       { f.stopped = true; return nil }
 
 func TestEnginesCachesPerUDID(t *testing.T) {
@@ -137,6 +139,97 @@ func TestEnginesCachesPerUDID(t *testing.T) {
 	}
 	if _, err := s.Snapshot(ctx, "AAA", ""); err != nil || started["AAA"] != 2 {
 		t.Errorf("expected fresh start after StopAll, starts=%v err=%v", started, err)
+	}
+}
+
+// startSequence returns a start func handing out the given engines in order,
+// counting calls; starts beyond the sequence fail.
+func startSequence(started *int, engines ...engineAPI) func(context.Context, string) (engineAPI, error) {
+	return func(context.Context, string) (engineAPI, error) {
+		*started++
+		if *started > len(engines) {
+			return nil, errors.New("no more engines")
+		}
+		return engines[*started-1], nil
+	}
+}
+
+func TestEnginesSnapshotRecovery(t *testing.T) {
+	snapErr := errors.New("connection refused")
+	tests := []struct {
+		name        string
+		engines     []engineAPI
+		ctx         func() context.Context
+		wantErr     bool
+		wantStarts  int
+		wantStopped bool // first engine stopped by eviction
+	}{
+		{
+			name:        "dead engine evicted and retried on fresh one",
+			engines:     []engineAPI{&fakeEngine{err: snapErr}, &fakeEngine{nodes: []Node{{Type: "Application"}}}},
+			ctx:         context.Background,
+			wantStarts:  2,
+			wantStopped: true,
+		},
+		{
+			name:        "retry on fresh engine also fails",
+			engines:     []engineAPI{&fakeEngine{err: snapErr}, &fakeEngine{err: snapErr}},
+			ctx:         context.Background,
+			wantErr:     true,
+			wantStarts:  2,
+			wantStopped: true,
+		},
+		{
+			name:        "restart failure is reported",
+			engines:     []engineAPI{&fakeEngine{err: snapErr}},
+			ctx:         context.Background,
+			wantErr:     true,
+			wantStarts:  2,
+			wantStopped: true,
+		},
+		{
+			name:    "cancelled context does not trigger a restart",
+			engines: []engineAPI{&fakeEngine{err: snapErr}},
+			ctx: func() context.Context {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				return ctx
+			},
+			wantErr:    true,
+			wantStarts: 1,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			started := 0
+			s := &Engines{start: startSequence(&started, tt.engines...), engines: make(map[string]engineAPI)}
+			nodes, err := s.Snapshot(tt.ctx(), "AAA", "")
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Snapshot err = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && nodes[0].Type != "Application" {
+				t.Errorf("nodes = %v, want recovered snapshot", nodes)
+			}
+			if started != tt.wantStarts {
+				t.Errorf("starts = %d, want %d", started, tt.wantStarts)
+			}
+			if got := tt.engines[0].(*fakeEngine).stopped; got != tt.wantStopped {
+				t.Errorf("first engine stopped = %v, want %v", got, tt.wantStopped)
+			}
+		})
+	}
+}
+
+func TestEvictSkipsReplacedEngine(t *testing.T) {
+	dead := &fakeEngine{err: errors.New("dead")}
+	replacement := &fakeEngine{}
+	s := &Engines{engines: map[string]engineAPI{"AAA": replacement}}
+	s.evict(context.Background(), "AAA", dead)
+	if dead.stopped || replacement.stopped {
+		t.Errorf("stopped: dead=%v replacement=%v, want neither", dead.stopped, replacement.stopped)
+	}
+	if s.engines["AAA"] != engineAPI(replacement) {
+		t.Error("replacement engine must stay cached")
 	}
 }
 
