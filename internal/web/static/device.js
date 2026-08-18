@@ -161,6 +161,21 @@ function syncNode(el, node, anchorFrame) {
   }
 }
 
+// twinOf returns the immediately preceding rendered sibling when it
+// occupies exactly the same frame, meaning the two nodes describe one
+// control. Only an exact match counts: a merely overlapping element is a
+// real overlay and must keep intercepting, because on the device it
+// would genuinely take the touch.
+function twinOf(parentAnchor, node) {
+  const prev = parentAnchor.lastChild;
+  if (!prev) return null;
+  const a = prev.frame;
+  const b = node.frame;
+  const same =
+    a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+  return same ? prev : null;
+}
+
 // A node earns a mirror element only if something can find it: an
 // identifier, visible text, or a mapped role. Zero-size nodes never do.
 function mirrorable(node) {
@@ -209,7 +224,7 @@ function renderMirror(nodes) {
   // plain DOM order — no z-index arithmetic. anchors[i] carries the
   // container element + frame that node i's children position against.
   const anchors = new Map();
-  const rootAnchor = { el: mirror, frame: app, key: "" };
+  const rootAnchor = { el: mirror, frame: app, key: "", lastChild: null };
   for (const node of nodes) {
     const parentAnchor =
       (node.parentIndex != null && anchors.get(node.parentIndex)) || rootAnchor;
@@ -217,13 +232,24 @@ function renderMirror(nodes) {
       anchors.set(node.index, parentAnchor); // children inherit the anchor
       continue;
     }
-    const key = nodeKey(node, parentAnchor.key, counts);
+    // One control, two nodes: platforms routinely split a control's
+    // identifier onto a wrapper and its label and role onto a twin with
+    // the same frame — Flutter does it for every merged-semantics
+    // widget. Left as siblings they overlap exactly, the later one
+    // paints on top, and a click aimed at the identifier is refused as
+    // intercepted by its own twin. Nested, the twin is a descendant,
+    // which is what a hit test accepts, so both selectors resolve to
+    // something clickable.
+    const anchor = twinOf(parentAnchor, node) || parentAnchor;
+    const key = nodeKey(node, anchor.key, counts);
     const el = acquireEl(existing, key);
-    syncNode(el, node, parentAnchor.frame);
+    syncNode(el, node, anchor.frame);
     // Append-or-move keeps DOM order tracking native order; moving
     // (including across parents) preserves element identity.
-    parentAnchor.el.appendChild(el);
-    anchors.set(node.index, { el, frame: node.frame, key });
+    anchor.el.appendChild(el);
+    const rendered = { el, frame: node.frame, key, lastChild: null };
+    anchor.lastChild = rendered;
+    anchors.set(node.index, rendered);
   }
   for (const el of existing.values()) el.remove();
 }
