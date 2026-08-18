@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -151,8 +152,15 @@ func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTree(w http.ResponseWriter, r *http.Request) {
-	nodes, err := s.trees.Snapshot(r.Context(), r.PathValue("udid"), r.URL.Query().Get("app"))
+	udid := r.PathValue("udid")
+	nodes, err := s.trees.Snapshot(r.Context(), udid, r.URL.Query().Get("app"))
 	if err != nil {
+		// Logged, not just returned: a failed snapshot reaches the page
+		// as an empty mirror, and every consumer then reports a missing
+		// element instead of a broken engine. Without this the server
+		// side of that failure leaves no trace at all, which is how a
+		// driver that would not start cost an evening to identify.
+		slog.Warn("tree snapshot failed", "udid", udid, "err", err)
 		httpError(w, http.StatusBadGateway, err)
 		return
 	}

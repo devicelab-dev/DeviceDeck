@@ -3,8 +3,8 @@ github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XL
 github.com/coder/websocket v1.8.15 h1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNUA=
 github.com/coder/websocket v1.8.15/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
-github.com/devicelab-dev/maestro-runner v1.1.25-0.20260818115616-bc3c809b693c h1:NiK65KdJuVuEjkT/xM30h14oiXsTIpmY1FuBKt7ble0=
-github.com/devicelab-dev/maestro-runner v1.1.25-0.20260818115616-bc3c809b693c/go.mod h1:DMSQv0AMy2xs1COCdt/eIbUUmGzyLX35KmgKx/uJ0Xs=
+github.com/devicelab-dev/maestro-runner v1.1.25-0.20260818192022-2ad25f651253 h1:X8NtuvyUj/HNTGn6bAeFEaXaMaRTwI3aAe4/uDwgY5Q=
+github.com/devicelab-dev/maestro-runner v1.1.25-0.20260818192022-2ad25f651253/go.mod h1:DMSQv0AMy2xs1COCdt/eIbUUmGzyLX35KmgKx/uJ0Xs=
 github.com/go-logr/logr v1.4.3 h1:CjnDlHq8ikf6E492q6eKboGOC0T8CDaOvkHCIg8idEI=
 github.com/go-logr/logr v1.4.3/go.mod h1:9T104GzyrTigFIr8wt5mBrctHMim0Nb2HLGrmQ40KvY=
 github.com/go-logr/stdr v1.2.2 h1:hSWxHoqTgW2S2qGc0LTAI563KZ5YKYRhT3MFKZMbjag=
