@@ -37,6 +37,11 @@ func runServe(args []string) error {
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
+	// DEVICEDECK_LOG=debug surfaces per-event diagnostics (input
+	// translation, engine internals) that are too chatty for normal runs.
+	if os.Getenv("DEVICEDECK_LOG") == "debug" {
+		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	}
 	hidBin, err := resolveBinary("devicedeck-hid", *hidPath)
 	if err != nil {
 		return err
@@ -51,7 +56,12 @@ func runServe(args []string) error {
 	videos := video.NewManager(videoBin, *fps)
 	engines := runner.NewEngines()
 	captures := capture.NewService(engines)
-	srv := server.New(sim.NewClient(), sim.NewClient(), inputs, engines, videos, captures)
+	// Android input rides the tree engine's driver session; the router
+	// picks the backend per device.
+	frames := input.NewRouter(inputs, func(ctx context.Context, udid string) (input.AndroidInjector, error) {
+		return engines.AndroidInjector(ctx, udid)
+	})
+	srv := server.New(sim.NewClient(), sim.NewClient(), frames, engines, videos, captures)
 	srv.SetConsole(web.Handler())
 	httpServer := &http.Server{Addr: *addr, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 

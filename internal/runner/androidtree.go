@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 
@@ -20,9 +21,12 @@ type AndroidEngine struct {
 	dev     *device.AndroidDevice
 	client  *maestro.Client
 	adapter *maestro.Adapter
-	// mu serializes Snapshot calls: the WebSocket session handles one
-	// request at a time, and the page polls faster than a slow dump.
-	mu sync.Mutex
+	// mu serializes driver-session calls (snapshots and input): the
+	// WebSocket session handles one request at a time, and the page
+	// polls faster than a slow dump.
+	mu      sync.Mutex
+	screenW int
+	screenH int
 }
 
 // StartAndroidEngine installs (if needed) and starts the devicelab
@@ -59,6 +63,14 @@ func StartAndroidEngine(_ context.Context, serial string) (*AndroidEngine, error
 		_ = dev.StopDeviceLabDriver()
 		return nil, fmt.Errorf("create driver session: %w", err)
 	}
+	// Cap UIAutomator's wait-for-idle: page source runs through it, and
+	// with the default the mirror's tree polls block for seconds during
+	// typing or animation — the page then taps against stale geometry
+	// (e.g. a layout the keyboard has since shifted). 50ms keeps dumps
+	// near-live; the mirror's own refresh loop provides the settling.
+	if err := adapter.SetAppiumSettings(map[string]interface{}{"waitForIdleTimeout": 50}); err != nil {
+		slog.Warn("android driver: setting waitForIdleTimeout failed", "error", err)
+	}
 	return &AndroidEngine{dev: dev, client: client, adapter: adapter}, nil
 }
 
@@ -68,6 +80,10 @@ func StartAndroidEngine(_ context.Context, serial string) (*AndroidEngine, error
 func (e *AndroidEngine) Snapshot(_ context.Context, _ string) ([]Node, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	w, h, err := e.screenSizeLocked()
+	if err != nil {
+		return nil, err
+	}
 	xml, err := e.adapter.Source()
 	if err != nil {
 		return nil, fmt.Errorf("android page source: %w", err)
@@ -76,7 +92,7 @@ func (e *AndroidEngine) Snapshot(_ context.Context, _ string) ([]Node, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse android page source: %w", err)
 	}
-	return convertAndroidElements(elems), nil
+	return convertAndroidElements(elems, w, h), nil
 }
 
 // Stop tears the session down, gracefully first.
@@ -86,6 +102,96 @@ func (e *AndroidEngine) Stop(context.Context) error {
 	_ = e.adapter.DeleteSession()
 	_ = e.client.Close()
 	return e.dev.StopDeviceLabDriver()
+}
+
+// Input injection: server-side via the same driver session the tree
+// uses — no per-event adb process, which is what makes the device page
+// feel live. All calls serialize on e.mu with snapshots; the WebSocket
+// session handles one request at a time anyway.
+//
+// Coverage waiver: these are one-line delegations to the driver session,
+// exercised end-to-end against a real emulator.
+
+// Click taps at pixel coordinates.
+func (e *AndroidEngine) Click(x, y int) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.adapter.Click(x, y)
+}
+
+// Swipe drags between pixel coordinates over durationMs.
+func (e *AndroidEngine) Swipe(x1, y1, x2, y2, durationMs int) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.adapter.SwipeCoords(x1, y1, x2, y2, durationMs)
+}
+
+// Text types into the focused element via `input text` over adb: it
+// appends at the cursor (SendKeysToActive's setText would clobber the
+// field), runs in ~300ms per word (the driver's per-key events took
+// seconds), and — deliberately — does not touch the driver session, so
+// tree snapshots keep flowing while text lands and the mirror never
+// serves stale geometry to the click that follows typing.
+func (e *AndroidEngine) Text(text string) error {
+	_, err := e.dev.Shell("input text " + shellQuoteInputText(text))
+	return err
+}
+
+// shellQuoteInputText prepares text for `input text`: spaces become %s
+// (the tool's own escape), and the whole argument is single-quoted for
+// the shell with embedded quotes escaped.
+func shellQuoteInputText(text string) string {
+	escaped := strings.ReplaceAll(text, " ", "%s")
+	escaped = strings.ReplaceAll(escaped, "'", `'\''`)
+	return "'" + escaped + "'"
+}
+
+// KeyCode presses an Android keycode (Enter, Backspace, arrows…).
+func (e *AndroidEngine) KeyCode(code int) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.adapter.PressKeyCode(code)
+}
+
+// ScreenSize reports the device's pixel dimensions, cached after the
+// first query (wm size never changes on an emulator session).
+func (e *AndroidEngine) ScreenSize() (int, int, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.screenSizeLocked()
+}
+
+// screenSizeLocked is ScreenSize for callers already holding e.mu.
+func (e *AndroidEngine) screenSizeLocked() (int, int, error) {
+	if e.screenW != 0 {
+		return e.screenW, e.screenH, nil
+	}
+	out, err := e.dev.Shell("wm size")
+	if err != nil {
+		return 0, 0, fmt.Errorf("wm size: %w", err)
+	}
+	w, h, err := parseWmSize(out)
+	if err != nil {
+		return 0, 0, err
+	}
+	e.screenW, e.screenH = w, h
+	return w, h, nil
+}
+
+// parseWmSize extracts dimensions from `wm size` output, preferring the
+// override line (active resolution) over the physical one.
+func parseWmSize(out string) (int, int, error) {
+	var w, h int
+	for _, line := range strings.Split(out, "\n") {
+		if _, err := fmt.Sscanf(strings.TrimSpace(line), "Override size: %dx%d", &w, &h); err == nil {
+			return w, h, nil
+		}
+		_, _ = fmt.Sscanf(strings.TrimSpace(line), "Physical size: %dx%d", &w, &h)
+	}
+	if w == 0 || h == 0 {
+		return 0, 0, fmt.Errorf("unparseable wm size output: %q", out)
+	}
+	return w, h, nil
 }
 
 // androidTypes maps Android widget classes (by simple name) onto the
@@ -125,15 +231,29 @@ var androidTypes = map[string]string{
 // identifier = resource-id suffix (what Maestro id: matches and React
 // Native testID becomes), label = content-desc, value = text,
 // placeholder = hint.
-func convertAndroidElements(in []*dlandroid.ParsedElement) []Node {
+//
+// A synthetic full-screen root is prepended as the mirror's scale
+// reference: element bounds are screen-absolute, but the app's own root
+// view shrinks under adjustResize when the keyboard opens — scaling
+// against it would shift every rendered element (and thus every click)
+// downward by the keyboard's height.
+func convertAndroidElements(in []*dlandroid.ParsedElement, screenW, screenH int) []Node {
 	indexOf := make(map[*dlandroid.ParsedElement]int, len(in))
 	for i, e := range in {
-		indexOf[e] = i
+		indexOf[e] = i + 1
 	}
-	out := make([]Node, len(in))
+	root := 0
+	out := make([]Node, len(in)+1)
+	out[0] = Node{
+		Index:    0,
+		Type:     "Application",
+		Frame:    Rect{Width: float64(screenW), Height: float64(screenH)},
+		Enabled:  true,
+		Hittable: true,
+	}
 	for i, e := range in {
 		n := Node{
-			Index:       i,
+			Index:       i + 1,
 			Type:        androidType(e.ClassName),
 			Label:       e.ContentDesc,
 			Identifier:  resourceIDSuffix(e.ResourceID),
@@ -143,18 +263,19 @@ func convertAndroidElements(in []*dlandroid.ParsedElement) []Node {
 				X: float64(e.Bounds.X), Y: float64(e.Bounds.Y),
 				Width: float64(e.Bounds.Width), Height: float64(e.Bounds.Height),
 			},
-			Enabled:  e.Enabled,
-			Focused:  e.Focused,
-			Selected: e.Selected,
-			Hittable: e.Displayed,
-			Depth:    e.Depth,
+			Enabled:     e.Enabled,
+			Focused:     e.Focused,
+			Selected:    e.Selected,
+			Hittable:    e.Displayed,
+			Depth:       e.Depth + 1,
+			ParentIndex: &root,
 		}
 		if e.Parent != nil {
 			if pi, ok := indexOf[e.Parent]; ok {
 				n.ParentIndex = &pi
 			}
 		}
-		out[i] = n
+		out[i+1] = n
 	}
 	return out
 }

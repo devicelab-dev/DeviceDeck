@@ -212,6 +212,21 @@ func (s *Engines) engine(ctx context.Context, udid string) (engineAPI, error) {
 	return e, nil
 }
 
+// AndroidInjector returns the input injector for an Android serial,
+// starting (or reusing) its engine — input rides the same session as
+// the tree, so the first tap on a cold device pays engine startup once.
+func (s *Engines) AndroidInjector(ctx context.Context, udid string) (*AndroidEngine, error) {
+	e, err := s.engine(ctx, udid)
+	if err != nil {
+		return nil, err
+	}
+	ae, ok := e.(*AndroidEngine)
+	if !ok {
+		return nil, fmt.Errorf("device %s is not an Android engine", udid)
+	}
+	return ae, nil
+}
+
 // StopAll shuts down every cached engine.
 func (s *Engines) StopAll(ctx context.Context) {
 	s.mu.Lock()

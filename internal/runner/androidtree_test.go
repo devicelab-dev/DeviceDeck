@@ -28,17 +28,23 @@ func TestConvertAndroidElements(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParsePageSource: %v", err)
 	}
-	nodes := convertAndroidElements(elems)
-	if len(nodes) != 6 {
-		t.Fatalf("got %d nodes, want 6", len(nodes))
+	nodes := convertAndroidElements(elems, 1080, 2340)
+	if len(nodes) != 7 {
+		t.Fatalf("got %d nodes, want synthetic root + 6", len(nodes))
 	}
 
+	// The synthetic root is the mirror's scale reference: always the full
+	// screen, even when the app's own root shrinks under adjustResize.
 	root := nodes[0]
-	if root.Depth != 0 || root.Frame.Width != 1080 || root.Frame.Height != 2340 {
-		t.Errorf("root = %+v, want full-screen frame at depth 0 (the mirror's scale reference)", root)
+	if root.Depth != 0 || root.Frame.Width != 1080 || root.Frame.Height != 2340 || root.Type != "Application" {
+		t.Errorf("root = %+v, want synthetic full-screen Application at depth 0", root)
+	}
+	appRoot := nodes[1]
+	if appRoot.Type != "FrameLayout" || appRoot.Depth != 1 || appRoot.ParentIndex == nil || *appRoot.ParentIndex != 0 {
+		t.Errorf("app root = %+v, want real root parented to synthetic root", appRoot)
 	}
 
-	username := nodes[1]
+	username := nodes[2]
 	if username.Type != "TextField" || username.Identifier != "username-input" ||
 		username.Placeholder != "Username" || !username.Focused {
 		t.Errorf("username = %+v, want TextField with stripped resource-id and hint", username)
@@ -46,31 +52,31 @@ func TestConvertAndroidElements(t *testing.T) {
 	if username.Frame != (Rect{X: 80, Y: 900, Width: 920, Height: 130}) {
 		t.Errorf("username frame = %+v", username.Frame)
 	}
-	if username.ParentIndex == nil || *username.ParentIndex != 0 {
-		t.Errorf("username parent = %v, want root", username.ParentIndex)
+	if username.ParentIndex == nil || *username.ParentIndex != 1 {
+		t.Errorf("username parent = %v, want the app root", username.ParentIndex)
 	}
 
-	welcome := nodes[2]
+	welcome := nodes[3]
 	if welcome.Type != "StaticText" || welcome.Value != "Welcome Back" || welcome.Label != "" {
 		t.Errorf("welcome = %+v, want text carried in Value", welcome)
 	}
 
-	login := nodes[3]
+	login := nodes[4]
 	if login.Type != "Button" || login.Label != "Sign In" || login.Enabled ||
 		login.Identifier != "login-button" {
 		t.Errorf("login = %+v, want disabled Button labeled from content-desc, bare id kept", login)
 	}
 
-	list := nodes[4]
-	if list.Type != "CollectionView" || list.Depth != 1 {
+	list := nodes[5]
+	if list.Type != "CollectionView" || list.Depth != 2 {
 		t.Errorf("list = %+v, want androidx RecyclerView mapped by simple name", list)
 	}
 
-	check := nodes[5]
-	if check.Type != "CheckBox" || !check.Selected || check.Depth != 2 {
+	check := nodes[6]
+	if check.Type != "CheckBox" || !check.Selected || check.Depth != 3 {
 		t.Errorf("check = %+v", check)
 	}
-	if check.ParentIndex == nil || *check.ParentIndex != 4 {
+	if check.ParentIndex == nil || *check.ParentIndex != 5 {
 		t.Errorf("check parent = %v, want the RecyclerView", check.ParentIndex)
 	}
 }
