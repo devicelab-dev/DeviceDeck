@@ -72,6 +72,13 @@ func StartAndroidEngine(_ context.Context, serial string) (*AndroidEngine, error
 	if err := adapter.SetAppiumSettings(map[string]interface{}{"waitForIdleTimeout": 50}); err != nil {
 		slog.Warn("android driver: setting waitForIdleTimeout failed", "error", err)
 	}
+	// Keep the soft keyboard down: text lands via key injection, and the
+	// IME opening reshapes the layout mid-flow, which races every click
+	// that follows typing. Best-effort — a failure only risks flakier
+	// geometry, not a broken session.
+	if _, err := dev.Shell("settings put secure show_ime_with_hard_keyboard 0"); err != nil {
+		slog.Warn("android driver: disabling soft keyboard failed", "error", err)
+	}
 	return &AndroidEngine{dev: dev, client: client, adapter: adapter}, nil
 }
 
