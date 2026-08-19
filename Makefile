@@ -32,6 +32,10 @@ lint:
 release: sidecar
 	go build -ldflags "$(LDFLAGS)" -o $(DIST)/$(BINARY) ./cmd/devicedeck
 	cp sidecar/.build/release/devicedeck-hid sidecar/.build/release/devicedeck-video $(DIST)/
+	# The archive is a distribution, so it carries the terms with it:
+	# Apache-2.0 asks that recipients get the licence, and the upstream
+	# notices travel with the sidecars they describe.
+	cp LICENSE ATTRIBUTION.md README.md $(DIST)/
 	cd dist && tar czf $(notdir $(DIST)).tar.gz $(notdir $(DIST))
 	@echo "packaged $(DIST).tar.gz"
 
