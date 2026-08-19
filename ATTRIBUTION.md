@@ -1,6 +1,7 @@
 # Attribution
 
-DeviceDeck includes work derived from the following open-source projects.
+DeviceDeck is licensed under the Apache License 2.0 (see `LICENSE`), and
+includes work derived from the following open-source projects.
 Their reverse-engineering of SimulatorKit's private HID pipeline is what
 makes host-side input injection possible; we gratefully build on it.
 

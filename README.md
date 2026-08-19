@@ -110,9 +110,16 @@ on durable selectors.
 - **Nothing refuses a second driver** on the same device yet.
 - Relaunching an app does not reset its state.
 
+## Licence
+
+Apache License 2.0 — see `LICENSE`.
+
 ## Built on
 
 [maestro-runner](https://github.com/devicelab-dev/maestro-runner) for device drivers and flow
-replay, with attribution for reused code in `ATTRIBUTION.md`.
+replay, both Apache-2.0. The Swift sidecars derive from
+[baguette](https://github.com/tddworks/baguette) (Apache-2.0) and
+[tapflow](https://github.com/jo-duchan/tapflow) (MIT); `ATTRIBUTION.md` records what was reused
+and where it lives.
 
 Built by [DeviceLab.dev](https://devicelab.dev)
