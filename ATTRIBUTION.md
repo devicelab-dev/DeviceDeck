@@ -39,5 +39,15 @@ Derived material in `sidecar/`:
   keyboard-service primary / HIDArbitrary-fallback key path —
   `SimKit.swift`, `Injector.swift`.
 
-Both licenses permit this use with attribution; this file, alongside the
-upstream license texts in their repositories, satisfies that requirement.
+Both licences permit this use with attribution.
+
+Upstream copyright notices, retained here as those licences ask:
+
+- baguette — Copyright the baguette authors, Apache License 2.0.
+  https://github.com/tddworks/baguette/blob/main/LICENSE
+  (checked 2026-08-19: baguette ships no NOTICE file, so Apache-2.0
+  section 4(d) adds nothing further to propagate.)
+- tapflow — Copyright (c) 2026 tapflow contributors, MIT License.
+  https://github.com/jo-duchan/tapflow/blob/main/LICENSE
+
+DeviceDeck itself is Apache-2.0; see `LICENSE`.
