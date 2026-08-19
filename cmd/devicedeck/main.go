@@ -5,6 +5,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/devicelab-dev/DeviceDeck/internal/version"
@@ -28,5 +29,45 @@ func main() {
 		}
 		return
 	}
-	fmt.Fprintln(os.Stdout, version.Line())
+	switch arg(1) {
+	case "version", "--version", "-version", "-v":
+		fmt.Fprintln(os.Stdout, version.Line())
+	case "", "help", "--help", "-help", "-h":
+		usage(os.Stdout)
+	default:
+		fmt.Fprintf(os.Stderr, "devicedeck: unknown command %q\n\n", os.Args[1])
+		usage(os.Stderr)
+		os.Exit(2)
+	}
+}
+
+// arg returns os.Args[i], or "" when it was not given, so the dispatch
+// reads the same whether or not a command was typed.
+func arg(i int) string {
+	if len(os.Args) > i {
+		return os.Args[i]
+	}
+	return ""
+}
+
+// usage is what someone sees when they run the binary with no idea what
+// it does — which, for a tool distributed as a tarball, is most first
+// contacts. It names the one command that matters and where to go next.
+func usage(w io.Writer) {
+	fmt.Fprintf(w, `%s
+
+Streams iOS Simulators and Android emulators to a browser, and turns a
+session driven by hand into a replayable test.
+
+Usage:
+  devicedeck serve [flags]    start the server and console
+  devicedeck version          print the version
+  devicedeck help             print this message
+
+Run "devicedeck serve --help" for the server's flags.
+
+Once running, open the console at the address it prints (by default
+http://127.0.0.1:8787) to pick a device. Point your own tests at
+/device/{udid} and drive it with ordinary web selectors.
+`, version.Line())
 }

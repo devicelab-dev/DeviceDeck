@@ -118,7 +118,24 @@ func defaultRunnerHome() {
 // Swift build output (developer setup).
 func resolveBinary(name, explicit string) (string, error) {
 	envVar := strings.ToUpper(strings.ReplaceAll(name, "-", "_")) // devicedeck-hid → DEVICEDECK_HID
-	candidates := []string{explicit, os.Getenv(envVar)}
+	// A path given deliberately must be honoured or refused, never
+	// quietly replaced: falling through to a different binary than the
+	// one someone named turns a typo into a mystery, and it would run
+	// the wrong build without ever saying so.
+	for _, named := range []struct{ source, path string }{
+		{"--sidecar/--video-sidecar", explicit},
+		{envVar, os.Getenv(envVar)},
+	} {
+		if named.path == "" {
+			continue
+		}
+		if info, err := os.Stat(named.path); err != nil || info.IsDir() {
+			return "", fmt.Errorf("%s points at %q, which is not an executable file (%s)",
+				named.source, named.path, name)
+		}
+		return named.path, nil
+	}
+	var candidates []string
 	if exe, err := os.Executable(); err == nil {
 		candidates = append(candidates, filepath.Join(filepath.Dir(exe), name))
 	}

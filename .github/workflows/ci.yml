@@ -1,0 +1,47 @@
+# Go build, vet, format and tests. Deliberately not the device suites:
+# those need a booted simulator and an emulator, which no hosted runner
+# has — so this covers what can honestly be checked without hardware,
+# and the device work stays a local gate.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  go:
+    # macOS because the sidecars and the simulator paths are macOS-only,
+    # even though this job does not boot a device.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Format
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "these files need gofmt:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./... -race -coverprofile=coverage.out
+
+      - name: Coverage
+        run: go tool cover -func=coverage.out | tail -1
+
+  sidecar:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the Swift sidecars
+        run: make sidecar
+      - name: Sidecar tests
+        run: make sidecar-test
