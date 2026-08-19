@@ -109,6 +109,15 @@ function nodeKey(node, parentKey, counts) {
   return `${scoped}#${n}`;
 }
 
+// FIELD_TYPES name themselves from their placeholder rather than their
+// label — see the note in syncNode.
+const FIELD_TYPES = new Set(["TextField", "SecureTextField", "SearchField"]);
+
+function accessibleName(node) {
+  if (FIELD_TYPES.has(node.type) && node.placeholder) return node.placeholder;
+  return node.label || node.placeholder || "";
+}
+
 function setOrRemove(el, attr, value) {
   if (value) el.setAttribute(attr, value);
   else el.removeAttribute(attr);
@@ -127,8 +136,17 @@ function syncNode(el, node, anchorFrame) {
   setOrRemove(el, "role", ROLES[node.type] || "");
   setOrRemove(el, "data-testid", node.identifier || "");
   // Accessible name: label first, placeholder as fallback so unnamed
-  // fields still read as `textbox "Username"` in aria snapshots.
-  setOrRemove(el, "aria-label", node.label || node.placeholder || "");
+  // elements still read as `textbox "Username"` in aria snapshots.
+  //
+  // Text fields invert that order, because the platforms report a
+  // field's current contents as its label. Naming from it renames the
+  // field on every keystroke: getByRole("textbox", {name: "Username"})
+  // and getByLabel("Username") stop matching the moment a user types,
+  // and any handle held on the element — including the refs an AI agent
+  // addresses it by — is invalidated. A field is named by what it asks
+  // for, not by what has been entered; the contents stay reachable as
+  // the element's text.
+  setOrRemove(el, "aria-label", accessibleName(node));
   setOrRemove(el, "aria-placeholder", node.placeholder || "");
   // Always explicit, never removed. aria-disabled is inherited down the
   // ancestor chain, and a native container frequently reports disabled
