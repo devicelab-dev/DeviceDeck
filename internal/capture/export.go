@@ -34,6 +34,7 @@ func writeStep(b *strings.Builder, s Step) {
 		} else {
 			fmt.Fprintf(b, "- %s:\n    text: %s\n", s.Kind, quote(s.Text))
 		}
+		writeQualifiers(b, s)
 	case "tapOnPoint":
 		fmt.Fprintf(b, "- tapOn:\n    point: \"%s,%s\"\n", percent(s.StartX), percent(s.StartY))
 	case "inputText":
@@ -43,6 +44,18 @@ func writeStep(b *strings.Builder, s Step) {
 	case "swipe":
 		fmt.Fprintf(b, "- swipe:\n    start: \"%s, %s\"\n    end: \"%s, %s\"\n",
 			percent(s.StartX), percent(s.StartY), percent(s.EndX), percent(s.EndY))
+	}
+}
+
+// writeQualifiers narrows a selector that would otherwise match more
+// than one element. Only one is ever emitted: qualify prefers an
+// ancestor and falls back to position.
+func writeQualifiers(b *strings.Builder, s Step) {
+	switch {
+	case s.ChildOfID != "":
+		fmt.Fprintf(b, "    childOf:\n      id: %s\n", quote(s.ChildOfID))
+	case s.Index > 0:
+		fmt.Fprintf(b, "    index: %d\n", s.Index)
 	}
 }
 

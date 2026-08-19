@@ -41,6 +41,12 @@ type Step struct {
 	// Selector for tapOn/longPressOn: exactly one of ID/Text set.
 	ID   string `json:"id,omitempty"`
 	Text string `json:"text,omitempty"`
+	// Qualifiers, set only when the selector would otherwise match more
+	// than one element — see qualify. ChildOfID names an ancestor;
+	// Index is a position among matches and is the weaker of the two,
+	// so at most one is ever set.
+	ChildOfID string `json:"childOfId,omitempty"`
+	Index     int    `json:"index,omitempty"`
 	// Input for inputText / key name for pressKey.
 	Input string `json:"input,omitempty"`
 	// Normalized coordinates for swipe / tapOnPoint fallback.
@@ -267,10 +273,10 @@ func (r *Recorder) resolveTap(kind string, x, y float64) Step {
 	if node := hitTest(r.tree, x, y); node != nil {
 		bounds := normalizedBounds(r.tree, node)
 		if node.Identifier != "" {
-			return Step{Kind: kind, ID: node.Identifier, Bounds: bounds}
+			return qualify(r.tree, node, Step{Kind: kind, ID: node.Identifier, Bounds: bounds})
 		}
 		if node.Label != "" {
-			return Step{Kind: kind, Text: node.Label, Bounds: bounds}
+			return qualify(r.tree, node, Step{Kind: kind, Text: node.Label, Bounds: bounds})
 		}
 	}
 	return Step{Kind: "tapOnPoint", StartX: x, StartY: y}
