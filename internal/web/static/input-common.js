@@ -59,10 +59,13 @@ function keyEventFrame(e) {
 const PENDING_MAX = 256;
 const PENDING_STALE_MS = 2000;
 const RECONNECT_MS = 1500;
+// 1008: the server refused this connection on policy grounds — for a
+// device that means someone else is already driving it.
+const WS_POLICY_VIOLATION = 1008;
 
 // createInputSocket keeps one reconnecting input socket for a device.
 // now is injectable so tests can drive the staleness cutoff.
-function createInputSocket(url, { now = Date.now } = {}) {
+function createInputSocket(url, { now = Date.now, onRefused } = {}) {
   let ws = null;
   let closed = false;
   const pending = [];
@@ -80,7 +83,18 @@ function createInputSocket(url, { now = Date.now } = {}) {
     ws = new WebSocket(url);
     ws.binaryType = "arraybuffer";
     ws.onopen = flush;
-    ws.onclose = () => { if (!closed) setTimeout(connect, RECONNECT_MS); };
+    ws.onclose = (event) => {
+      // A refusal is final: the server is telling us another client is
+      // driving this device. Reconnecting would spin silently and turn
+      // an explained refusal back into a mystery.
+      if (event.code === WS_POLICY_VIOLATION) {
+        closed = true;
+        pending.length = 0;
+        onRefused?.(event.reason);
+        return;
+      }
+      if (!closed) setTimeout(connect, RECONNECT_MS);
+    };
   }
 
   connect();

@@ -273,3 +273,96 @@ func TestHeldTouchObserveIgnoresNonContactFrames(t *testing.T) {
 		t.Fatalf("release point not tracked through move: %x", got)
 	}
 }
+
+// A device drives one client at a time. The second connection is refused
+// with an explanation rather than silently interleaving its touches with
+// the first — which is what test runners produce by default, since they
+// parallelise across files.
+func TestInputWSRefusesSecondDriver(t *testing.T) {
+	backend := &fakeBackend{}
+	srv := wsServer(t, backend, &fakeVideo{frames: make(chan []byte)})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	first, _, err := websocket.Dial(ctx, wsAddr(srv, "/api/devices/AAA/input"), nil)
+	if err != nil {
+		t.Fatalf("first dial: %v", err)
+	}
+	defer first.Close(websocket.StatusNormalClosure, "")
+	// Drive one frame so the first connection is unambiguously established.
+	if err := first.Write(ctx, websocket.MessageBinary,
+		input.Touch(input.TouchDown, 0.5, 0.5, input.EdgeNone)); err != nil {
+		t.Fatal(err)
+	}
+	for len(backend.sentFrames()) < 1 {
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	second, _, err := websocket.Dial(ctx, wsAddr(srv, "/api/devices/AAA/input"), nil)
+	if err != nil {
+		t.Fatalf("second dial: %v", err)
+	}
+	defer second.Close(websocket.StatusInternalError, "")
+	_, _, readErr := second.Read(ctx)
+	if readErr == nil {
+		t.Fatal("second driver was accepted")
+	}
+	if status := websocket.CloseStatus(readErr); status != websocket.StatusPolicyViolation {
+		t.Errorf("close status = %v, want policy violation: %v", status, readErr)
+	}
+	if !strings.Contains(readErr.Error(), "one driver at a time") {
+		t.Errorf("refusal does not explain itself: %v", readErr)
+	}
+
+	// A different device stays available.
+	other, _, err := websocket.Dial(ctx, wsAddr(srv, "/api/devices/BBB/input"), nil)
+	if err != nil {
+		t.Fatalf("other device refused: %v", err)
+	}
+	other.Close(websocket.StatusNormalClosure, "")
+}
+
+// Releasing the device has to happen on disconnect, or one crashed
+// client locks a device until the server restarts.
+func TestInputWSReleasesOnDisconnect(t *testing.T) {
+	backend := &fakeBackend{}
+	srv := wsServer(t, backend, &fakeVideo{frames: make(chan []byte)})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	first, _, err := websocket.Dial(ctx, wsAddr(srv, "/api/devices/AAA/input"), nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	if err := first.Write(ctx, websocket.MessageBinary,
+		input.Touch(input.TouchDown, 0.5, 0.5, input.EdgeNone)); err != nil {
+		t.Fatal(err)
+	}
+	for len(backend.sentFrames()) < 1 {
+		time.Sleep(5 * time.Millisecond)
+	}
+	first.CloseNow()
+
+	deadline := time.After(5 * time.Second)
+	for {
+		next, _, err := websocket.Dial(ctx, wsAddr(srv, "/api/devices/AAA/input"), nil)
+		if err == nil {
+			// Dial succeeds either way; prove it was not immediately closed.
+			werr := next.Write(ctx, websocket.MessageBinary,
+				input.Touch(input.TouchDown, 0.1, 0.1, input.EdgeNone))
+			if werr == nil {
+				if _, _, rerr := next.Read(ctx); rerr == nil ||
+					websocket.CloseStatus(rerr) != websocket.StatusPolicyViolation {
+					next.Close(websocket.StatusNormalClosure, "")
+					return
+				}
+			}
+			next.CloseNow()
+		}
+		select {
+		case <-deadline:
+			t.Fatal("device never became available after the driver disconnected")
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}

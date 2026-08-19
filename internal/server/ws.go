@@ -4,11 +4,33 @@ import (
 	"context"
 	"net/http"
 	"time"
+	"unicode/utf8"
 
 	"github.com/coder/websocket"
 
 	"github.com/devicelab-dev/DeviceDeck/internal/input"
 )
+
+// wsCloseReasonMax is the WebSocket close-reason limit: the control
+// frame carries at most 125 bytes, of which 2 are the status code.
+const wsCloseReasonMax = 123
+
+// truncateReason fits a message into a close frame. Writing an oversized
+// reason fails the close outright, which would replace an explanatory
+// refusal with a silent drop — the exact outcome this is here to avoid.
+func truncateReason(reason string) string {
+	if len(reason) <= wsCloseReasonMax {
+		return reason
+	}
+	const ellipsis = "…" // three bytes, not one
+	cut := wsCloseReasonMax - len(ellipsis)
+	// Never split a multi-byte rune: an invalid tail would make the
+	// frame unreadable rather than merely shortened.
+	for cut > 0 && !utf8.RuneStart(reason[cut]) {
+		cut--
+	}
+	return reason[:cut] + ellipsis
+}
 
 // VideoSource attaches viewers to a device's H.264 stream.
 type VideoSource interface {
@@ -62,6 +84,16 @@ func (s *Server) handleInputWS(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	udid := r.PathValue("udid")
+
+	// One driver per device — see inputOwners. The refusal carries who
+	// holds it, because the failure it prevents is otherwise silent.
+	release, err := s.inputs.claim(udid, r.RemoteAddr)
+	if err != nil {
+		conn.Close(websocket.StatusPolicyViolation, truncateReason(err.Error()))
+		return
+	}
+	defer release()
+
 	var held heldTouch
 	// Closure, not a direct defer: deferred arguments evaluate at defer
 	// time, when nothing is held yet.

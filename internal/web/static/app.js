@@ -260,7 +260,11 @@ function connectVideo() {
 
 function connectInput() {
   if (input) input.close();
-  input = createInputSocket(wsURL(`/api/devices/${udid}/input`));
+  input = createInputSocket(wsURL(`/api/devices/${udid}/input`), {
+    onRefused: (reason) => {
+      status.textContent = reason || "another client is driving this device";
+    },
+  });
 }
 
 // Pointer and toolbar handlers stay bound while the library view is

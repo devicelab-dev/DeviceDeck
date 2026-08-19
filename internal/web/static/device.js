@@ -37,7 +37,14 @@ function connectVideo() {
 }
 
 function connectInput() {
-  input = createInputSocket(wsURL(`/api/devices/${udid}/input`));
+  input = createInputSocket(wsURL(`/api/devices/${udid}/input`), {
+    // Surfaced in the title so a driver that cannot drive says so
+    // somewhere a test's failure message will show it.
+    onRefused: (reason) => {
+      document.title = `DeviceDeck — ${reason || "device busy"}`;
+      mirror.setAttribute("data-dd-input-refused", reason || "device busy");
+    },
+  });
 }
 
 // ---------- DOM mirror ----------

@@ -72,6 +72,8 @@ type Server struct {
 	video       VideoSource
 	capture     CaptureService
 	console     http.Handler
+	// inputs enforces one driver per device.
+	inputs *inputOwners
 	// sleep paces multi-frame gestures; injected so tests run instantly.
 	sleep func(time.Duration)
 }
@@ -87,6 +89,7 @@ func New(devices DeviceLister, boot DeviceBooter, launch AppLauncher, screenshot
 		trees:       trees,
 		video:       video,
 		capture:     cap,
+		inputs:      newInputOwners(),
 		sleep:       time.Sleep,
 	}
 }
