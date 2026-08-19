@@ -344,3 +344,16 @@ main { flex: 1; display: flex; min-height: 0; }
   padding: 0 24px;
 }
 #video.connecting { visibility: hidden; }
+
+/* An armed assertion is a mode: the next tap does not reach the device,
+   so it has to look different from ordinary driving. */
+#btn-assert.armed {
+  background: #1d7a3c;
+  color: #fff;
+  border-color: #1d7a3c;
+}
+
+#video.asserting {
+  cursor: crosshair;
+  outline: 2px solid #1d7a3c;
+}

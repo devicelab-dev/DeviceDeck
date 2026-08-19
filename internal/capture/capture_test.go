@@ -3,6 +3,7 @@ package capture
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -355,5 +356,67 @@ func TestKeyRuneCoverage(t *testing.T) {
 	}
 	if _, ok := keyRune(0x52, false); ok { // arrow key: not a character
 		t.Error("arrow key must not map to a rune")
+	}
+}
+
+// An assertion turns a recording into a test: without one, a replay
+// proves the steps executed, not that the journey worked.
+func TestAssertRecordsVisibilityWithoutTouching(t *testing.T) {
+	tree := []runner.Node{
+		{Index: 0, Type: "Application", Frame: runner.Rect{Width: 100, Height: 200}},
+		{Index: 1, Type: "Button", Identifier: "products-screen", Depth: 1,
+			Frame: runner.Rect{X: 10, Y: 20, Width: 50, Height: 30}},
+	}
+	r := &Recorder{now: time.Now, tree: tree, treeAt: time.Now(), appID: "com.example"}
+	if !r.Assert(0.35, 0.175) {
+		t.Fatal("Assert should resolve the button")
+	}
+	steps := r.Steps()
+	if len(steps) != 1 {
+		t.Fatalf("steps = %+v", steps)
+	}
+	if steps[0].Kind != "assertVisible" || steps[0].ID != "products-screen" {
+		t.Errorf("step = %+v", steps[0])
+	}
+	if steps[0].Pre == "" {
+		t.Error("assertion should carry the screen it was taken against")
+	}
+	yaml := ExportMaestro("com.example", steps)
+	if !strings.Contains(yaml, "- assertVisible:\n    id: \"products-screen\"") {
+		t.Errorf("yaml missing assertion:\n%s", yaml)
+	}
+	if _, err := runner.ValidateFlow([]byte(yaml)); err != nil {
+		t.Fatalf("assertion flow does not parse under the runner: %v\n%s", err, yaml)
+	}
+}
+
+// Asserting on empty space would be a lie — it would claim only that the
+// screen has pixels there — so it is refused rather than degraded to a
+// coordinate.
+func TestAssertRefusesUnresolvablePoint(t *testing.T) {
+	tree := []runner.Node{{Index: 0, Type: "Application", Frame: runner.Rect{Width: 100, Height: 200}}}
+	r := &Recorder{now: time.Now, tree: tree, treeAt: time.Now(), appID: "com.example"}
+	if r.Assert(0.5, 0.5) {
+		t.Fatal("Assert should refuse a point with nothing selectable")
+	}
+	if len(r.Steps()) != 0 {
+		t.Errorf("nothing should have been recorded: %+v", r.Steps())
+	}
+}
+
+// Text typed but not yet flushed must land before the assertion, or the
+// flow asserts on a screen it has not finished producing.
+func TestAssertFlushesPendingText(t *testing.T) {
+	tree := []runner.Node{
+		{Index: 0, Type: "Application", Frame: runner.Rect{Width: 100, Height: 200}},
+		{Index: 1, Type: "Button", Identifier: "ok", Depth: 1, Frame: runner.Rect{X: 0, Y: 0, Width: 50, Height: 30}},
+	}
+	r := &Recorder{now: time.Now, tree: tree, treeAt: time.Now(), appID: "com.example", text: []rune("hi")}
+	if !r.Assert(0.25, 0.075) {
+		t.Fatal("Assert should resolve")
+	}
+	steps := r.Steps()
+	if len(steps) != 2 || steps[0].Kind != "inputText" || steps[1].Kind != "assertVisible" {
+		t.Fatalf("expected inputText then assertVisible, got %+v", steps)
 	}
 }

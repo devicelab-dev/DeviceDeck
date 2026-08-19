@@ -166,6 +166,31 @@ func (r *Recorder) appendStep(s Step) {
 	r.steps = append(r.steps, s)
 }
 
+// Assert records an assertion that the element at a normalized point is
+// visible, without touching the device.
+//
+// A captured flow made only of actions proves that its steps executed,
+// not that the journey worked — the 50x replay gate can pass while the
+// app quietly fails, because tapping a button that does nothing is
+// indistinguishable from tapping one that does. An assertion is what
+// turns the recording into a test. It resolves through the same
+// hit-test as a tap, so it inherits the same durable selector.
+//
+// Returns false when the point resolves to nothing selectable: a
+// coordinate assertion would be a lie, since it asserts only that the
+// screen has pixels there.
+func (r *Recorder) Assert(x, y float64) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.flushTextLocked()
+	step := r.resolveTap("assertVisible", x, y)
+	if step.Kind != "assertVisible" {
+		return false
+	}
+	r.appendStep(step)
+	return true
+}
+
 // Steps returns a copy of what has been recorded so far.
 func (r *Recorder) Steps() []Step {
 	r.mu.Lock()

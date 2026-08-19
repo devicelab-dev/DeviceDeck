@@ -73,3 +73,29 @@ func TestServiceStartFailsWhenTreeUnavailable(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+// Assert is refused when the device is not recording, and when the point
+// resolves to nothing durable.
+func TestServiceAssert(t *testing.T) {
+	svc := NewService(&fakeTrees{tree: []runner.Node{
+		{Index: 0, Type: "Application", Frame: runner.Rect{Width: 100, Height: 200}},
+		{Index: 1, Type: "Button", Identifier: "ok", Depth: 1,
+			Frame: runner.Rect{X: 0, Y: 0, Width: 50, Height: 30}},
+	}})
+	if err := svc.Assert("UDID-1", 0.25, 0.075); err == nil {
+		t.Fatal("assert without a recording must fail")
+	}
+	if err := svc.Start(context.Background(), "UDID-1", "com.example"); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := svc.Assert("UDID-1", 0.25, 0.075); err != nil {
+		t.Fatalf("Assert: %v", err)
+	}
+	if err := svc.Assert("UDID-1", 0.9, 0.9); err == nil {
+		t.Fatal("assert on empty space must fail rather than record a coordinate")
+	}
+	_, _, steps, err := svc.Stop("UDID-1")
+	if err != nil || len(steps) != 1 || steps[0].Kind != "assertVisible" {
+		t.Fatalf("steps = %+v (err %v)", steps, err)
+	}
+}

@@ -70,6 +70,22 @@ func (s *Service) Stop(udid string) (yaml, guard string, steps []Step, err error
 	return ExportMaestro(rec.AppID(), steps), ExportGuard(rec.AppID(), steps), steps, nil
 }
 
+// Assert records a visibility assertion at a normalized point on udid's
+// recording. Fails when the device is not recording, or when the point
+// resolves to nothing durable enough to assert on.
+func (s *Service) Assert(udid string, x, y float64) error {
+	s.mu.Lock()
+	rec, ok := s.recorders[udid]
+	s.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("not recording %s", udid)
+	}
+	if !rec.Assert(x, y) {
+		return fmt.Errorf("nothing to assert on at %.3f,%.3f: no element with an identifier or text", x, y)
+	}
+	return nil
+}
+
 // Status reports whether udid is recording and the steps so far.
 func (s *Service) Status(udid string) (bool, []Step) {
 	s.mu.Lock()

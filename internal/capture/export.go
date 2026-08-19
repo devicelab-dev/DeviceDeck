@@ -20,6 +20,14 @@ func ExportMaestro(appID string, steps []Step) string {
 
 func writeStep(b *strings.Builder, s Step) {
 	switch s.Kind {
+	case "assertVisible":
+		// Same selector shape as a tap: whatever the recorder could
+		// resolve durably, it asserts on.
+		if s.ID != "" {
+			fmt.Fprintf(b, "- assertVisible:\n    id: %s\n", quote(s.ID))
+		} else {
+			fmt.Fprintf(b, "- assertVisible:\n    text: %s\n", quote(s.Text))
+		}
 	case "tapOn", "longPressOn":
 		if s.ID != "" {
 			fmt.Fprintf(b, "- %s:\n    id: %s\n", s.Kind, quote(s.ID))

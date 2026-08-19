@@ -93,3 +93,15 @@ func TestQuoteEscapesControlCharacters(t *testing.T) {
 		t.Errorf("round trip changed the selector:\n got %q\nwant %q", got, label)
 	}
 }
+
+// An element with no identifier is asserted by its text, the same
+// fallback a tap uses.
+func TestExportAssertVisibleByText(t *testing.T) {
+	yaml := ExportMaestro("com.example", []Step{{Kind: "assertVisible", Text: "Welcome Back"}})
+	if !strings.Contains(yaml, "- assertVisible:\n    text: \"Welcome Back\"") {
+		t.Errorf("text assertion missing:\n%s", yaml)
+	}
+	if _, err := runner.ValidateFlow([]byte(yaml)); err != nil {
+		t.Fatalf("assertion flow invalid: %v\n%s", err, yaml)
+	}
+}

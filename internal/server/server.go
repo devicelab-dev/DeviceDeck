@@ -50,6 +50,7 @@ type TreeSource interface {
 type CaptureService interface {
 	Start(ctx context.Context, udid, appID string) error
 	Stop(udid string) (yaml, guard string, steps []capture.Step, err error)
+	Assert(udid string, x, y float64) error
 	Status(udid string) (recording bool, steps []capture.Step)
 	OnFrame(udid string, frame []byte)
 }
@@ -114,6 +115,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/devices/{udid}/button", s.handleButton)
 	mux.HandleFunc("POST /api/devices/{udid}/capture/start", s.handleCaptureStart)
 	mux.HandleFunc("POST /api/devices/{udid}/capture/stop", s.handleCaptureStop)
+	mux.HandleFunc("POST /api/devices/{udid}/capture/assert", s.handleCaptureAssert)
 	mux.HandleFunc("GET /api/devices/{udid}/capture", s.handleCaptureStatus)
 	if s.console != nil {
 		mux.Handle("GET /", s.console)
@@ -354,6 +356,25 @@ func (s *Server) handleCaptureStop(w http.ResponseWriter, r *http.Request) {
 		steps = []capture.Step{}
 	}
 	writeJSON(w, map[string]any{"ok": true, "yaml": yaml, "guard": guard, "steps": steps})
+}
+
+// handleCaptureAssert records an assertion instead of an interaction:
+// the point is resolved to an element and asserted visible, and the
+// device is never touched.
+func (s *Server) handleCaptureAssert(w http.ResponseWriter, r *http.Request) {
+	var req tapRequest
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	if !validNorm(req.X) || !validNorm(req.Y) {
+		httpError(w, http.StatusBadRequest, fmt.Errorf("x and y must be normalized 0-1"))
+		return
+	}
+	if err := s.capture.Assert(r.PathValue("udid"), req.X, req.Y); err != nil {
+		httpError(w, http.StatusConflict, err)
+		return
+	}
+	writeJSON(w, okResponse("capture-assert"))
 }
 
 func (s *Server) handleCaptureStatus(w http.ResponseWriter, r *http.Request) {

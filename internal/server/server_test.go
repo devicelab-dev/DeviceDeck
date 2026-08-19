@@ -95,6 +95,8 @@ type fakeCapture struct {
 	frames    [][]byte
 	yaml      string
 	steps     []capture.Step
+	assertErr error
+	asserted  [][2]float64
 }
 
 func (f *fakeCapture) Start(_ context.Context, udid, appID string) error {
@@ -116,6 +118,16 @@ func (f *fakeCapture) Stop(udid string) (string, string, []capture.Step, error) 
 	}
 	f.recording = false
 	return f.yaml, capture.ExportGuard("com.example", f.steps), f.steps, nil
+}
+
+func (f *fakeCapture) Assert(udid string, x, y float64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.assertErr != nil {
+		return f.assertErr
+	}
+	f.asserted = append(f.asserted, [2]float64{x, y})
+	return nil
 }
 
 func (f *fakeCapture) Status(udid string) (bool, []capture.Step) {
@@ -457,5 +469,41 @@ func TestHelpers(t *testing.T) {
 	}
 	if validNorm(-0.01) || validNorm(1.01) || !validNorm(0) || !validNorm(1) {
 		t.Error("validNorm bounds")
+	}
+}
+
+// Recording an assertion resolves a point to an element; it must never
+// touch the device, or the recording would alter what it is asserting.
+func TestCaptureAssert(t *testing.T) {
+	fc := &fakeCapture{}
+	backend := &fakeBackend{}
+	s := newTestServerWithCapture(backend, fc)
+	rec := do(t, s, "POST", "/api/devices/AAA/capture/assert", `{"x":0.25,"y":0.75}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("assert: %d %s", rec.Code, rec.Body)
+	}
+	if len(fc.asserted) != 1 || fc.asserted[0] != [2]float64{0.25, 0.75} {
+		t.Errorf("asserted = %v", fc.asserted)
+	}
+	if frames := backend.sentFrames(); len(frames) != 0 {
+		t.Errorf("assertion touched the device: %x", frames)
+	}
+}
+
+func TestCaptureAssertValidation(t *testing.T) {
+	s := newTestServerWithCapture(&fakeBackend{}, &fakeCapture{})
+	if rec := do(t, s, "POST", "/api/devices/AAA/capture/assert", `{"x":2,"y":0.5}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("out-of-range point: %d", rec.Code)
+	}
+	if rec := do(t, s, "POST", "/api/devices/AAA/capture/assert", `{`); rec.Code != http.StatusBadRequest {
+		t.Errorf("bad json: %d", rec.Code)
+	}
+	failing := &fakeCapture{assertErr: errors.New("nothing to assert on")}
+	if rec := do(t, s, "POST", "/api/devices/AAA/capture/assert", `{"x":0.5,"y":0.5}`); rec.Code != http.StatusOK {
+		_ = rec
+	}
+	s2 := newTestServerWithCapture(&fakeBackend{}, failing)
+	if rec := do(t, s2, "POST", "/api/devices/AAA/capture/assert", `{"x":0.5,"y":0.5}`); rec.Code != http.StatusConflict {
+		t.Errorf("unresolvable point should conflict: %d", rec.Code)
 	}
 }

@@ -282,6 +282,9 @@ function normalized(event) {
 canvas.addEventListener("pointerdown", (e) => {
   canvas.focus();
   canvas.setPointerCapture(e.pointerId);
+  // While an assertion is armed the tap must not reach the device: the
+  // recording would then alter the very screen it is asserting on.
+  if (asserting) return;
   pointerDown = true;
   const { x, y } = normalized(e);
   send(touchFrame(PHASE.down, x, y));
@@ -294,6 +297,10 @@ canvas.addEventListener("pointermove", (e) => {
 });
 
 canvas.addEventListener("pointerup", (e) => {
+  if (asserting) {
+    recordAssertion(normalized(e));
+    return;
+  }
   if (!pointerDown) return;
   pointerDown = false;
   const { x, y } = normalized(e);
@@ -322,8 +329,34 @@ $("btn-inspect").addEventListener("click", toggleInspector);
 
 let recording = false;
 let capturePoll = null;
+// asserting arms the next tap to record an assertion rather than drive
+// the device. One assertion per arming, so a mis-armed click cannot
+// silently swallow a whole session's taps.
+let asserting = false;
 
 $("btn-record").addEventListener("click", toggleRecord);
+$("btn-assert").addEventListener("click", () => setAsserting(!asserting));
+
+function setAsserting(on) {
+  asserting = on;
+  $("btn-assert").classList.toggle("armed", on);
+  canvas.classList.toggle("asserting", on);
+  if (on) status.textContent = "tap the element to assert is visible";
+}
+
+// recordAssertion resolves the tapped point server-side, where the tree
+// already lives, and appends an assertVisible step to the recording.
+async function recordAssertion({ x, y }) {
+  setAsserting(false);
+  const res = await fetch(`/api/devices/${udid}/capture/assert`, {
+    method: "POST",
+    body: JSON.stringify({ x, y }),
+  });
+  const body = await res.json();
+  status.textContent = res.ok
+    ? "assertion recorded"
+    : `assert: ${body.error}`;
+}
 
 async function toggleRecord() {
   if (!recording) {
@@ -347,6 +380,7 @@ async function toggleRecord() {
     seenSteps = 0;
     $("btn-record").classList.add("recording");
     $("btn-record").innerHTML = "&#9632; Stop";
+    $("btn-assert").hidden = false;
     capturePoll = setInterval(pollCapture, 700);
     status.textContent = "recording — drive the device";
   } else {
@@ -354,6 +388,8 @@ async function toggleRecord() {
     const res = await fetch(`/api/devices/${udid}/capture/stop`, { method: "POST", body: "{}" });
     const body = await res.json();
     recording = false;
+    setAsserting(false);
+    $("btn-assert").hidden = true;
     $("btn-record").classList.remove("recording");
     $("btn-record").innerHTML = "&#9679; Record";
     if (!res.ok) {
