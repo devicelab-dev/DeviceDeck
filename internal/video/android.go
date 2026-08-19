@@ -50,6 +50,15 @@ func RunAndroidCapture(serial string, in io.Reader, out io.Writer) error {
 	go c.readCommands(in)
 	go watchOrphaned()
 
+	// DEVICEDECK_ANDROID_CAPTURE forces a path, for comparing them on a
+	// given emulator: "screenrecord" skips gRPC entirely, "grpc" refuses
+	// to fall back so a gRPC failure is visible instead of silently
+	// papered over.
+	forced := os.Getenv("DEVICEDECK_ANDROID_CAPTURE")
+	if forced == "screenrecord" {
+		return c.runScreenrecordLoop()
+	}
+
 	// Preferred path: the emulator's host-side gRPC screenshot stream —
 	// no adb, no 3-minute cap, current frame on subscribe. screenrecord
 	// below is the fallback for devices without a discovery file.
@@ -57,6 +66,9 @@ func RunAndroidCapture(serial string, in io.Reader, out io.Writer) error {
 		gerr := c.streamViaGRPC(ep)
 		if gerr == nil {
 			return nil
+		}
+		if forced == "grpc" {
+			return gerr
 		}
 		fmt.Fprintf(os.Stderr, "devicedeck: emulator grpc capture failed (%v); falling back to screenrecord\n", gerr)
 	}

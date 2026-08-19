@@ -118,12 +118,21 @@ func (c *androidCapture) streamViaGRPC(ep emulatorEndpoint) error {
 	}
 }
 
+// Note: ImageFormat.Width/Height are documented as server-side scaling
+// knobs, and they would be the obvious fix for the frame rate — a
+// 1080x2340 panel costs ~168KB of PNG per frame and holds scrolling to
+// ~3fps. Measured on this emulator, setting Width stops frame delivery
+// entirely rather than scaling: zero frames, no error. Left unset
+// deliberately.
+
 // pumpScreenshotStream forwards one streamScreenshot session's frames.
 func (c *androidCapture) pumpScreenshotStream(client emugrpc.EmulatorControllerClient) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	c.setCancel(cancel)
-	stream, err := client.StreamScreenshot(ctx, &emugrpc.ImageFormat{Format: emugrpc.ImageFormat_PNG})
+	stream, err := client.StreamScreenshot(ctx, &emugrpc.ImageFormat{
+		Format: emugrpc.ImageFormat_PNG,
+	})
 	if err != nil {
 		return err
 	}

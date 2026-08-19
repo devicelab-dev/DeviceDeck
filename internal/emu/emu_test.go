@@ -70,3 +70,30 @@ func TestScreenshot(t *testing.T) {
 		t.Fatalf("Screenshot = %q, %v", png, err)
 	}
 }
+
+// -no-window is not cosmetic: macOS throttles an occluded window's
+// rendering, and the emulator's window is occluded whenever DeviceDeck is
+// being used, because the screen the user watches is the browser. Losing
+// this flag drops the device's own frame production by roughly 4x, which
+// looks like a broken console.
+func TestBootArgsRunHeadless(t *testing.T) {
+	got := bootCommand("avd:e2e_emulator")
+	if got[0] != "-avd" || got[1] != "e2e_emulator" {
+		t.Fatalf("avd prefix not stripped: %v", got)
+	}
+	want := map[string]bool{"-no-window": false, "-no-snapshot-save": false, "-no-audio": false}
+	for _, arg := range got {
+		if _, ok := want[arg]; ok {
+			want[arg] = true
+		}
+	}
+	for arg, present := range want {
+		if !present {
+			t.Errorf("emulator boot is missing %s: %v", arg, got)
+		}
+	}
+	// An id without the prefix is passed through unchanged.
+	if bare := bootCommand("e2e_emulator"); bare[1] != "e2e_emulator" {
+		t.Errorf("bare id mangled: %v", bare)
+	}
+}

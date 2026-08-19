@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -141,5 +142,26 @@ func TestAndroidCaptureGivesUpWhenADBFails(t *testing.T) {
 	err := RunAndroidCapture("emulator-0000", stdinR, io.Discard)
 	if err == nil {
 		t.Fatal("expected failure after repeated fast adb exits")
+	}
+}
+
+// DEVICEDECK_ANDROID_CAPTURE forces one capture path, so the two can be
+// compared on a given emulator instead of gRPC silently winning and its
+// failures being papered over by a fallback.
+func TestForcedCapturePath(t *testing.T) {
+	t.Setenv("DEVICEDECK_ANDROID_CAPTURE", "screenrecord")
+	old := discoverEndpoint
+	called := false
+	discoverEndpoint = func(string) (emulatorEndpoint, error) {
+		called = true
+		return emulatorEndpoint{}, nil
+	}
+	defer func() { discoverEndpoint = old }()
+
+	// screenrecord will fail without a device; all that matters is that
+	// gRPC discovery was never consulted.
+	_ = RunAndroidCapture("emulator-9999", strings.NewReader(""), io.Discard)
+	if called {
+		t.Error("screenrecord was forced but gRPC discovery still ran")
 	}
 }

@@ -98,11 +98,34 @@ func (c *Client) All(ctx context.Context) ([]sim.Device, error) {
 	return running, nil
 }
 
+// bootArgs are the emulator flags DeviceDeck boots with.
+//
+// -no-window is the load-bearing one. macOS throttles an occluded
+// window's rendering, and the emulator's own window is occluded exactly
+// when DeviceDeck is in use, because the screen the user is watching is
+// the browser. Measured on an M4 Pro with the same scroll workload, the
+// guest's own encoder produced 4.0 frames a second with the window
+// buried and 15.8 with it frontmost — so the device stops producing
+// frames for any transport to carry, and the console looks broken for a
+// reason that has nothing to do with the console. Headless removes the
+// window that could be occluded: 13.4 fps at the guest, 18 delivered to
+// the browser, against 3 before.
+var bootArgs = []string{"-no-snapshot-save", "-no-audio", "-no-window"}
+
+// bootCommand builds the emulator invocation for an AVD id, which may
+// carry the list's "avd:" prefix.
+func bootCommand(id string) []string {
+	return append([]string{"-avd", strings.TrimPrefix(id, AVDPrefix)}, bootArgs...)
+}
+
 // Boot launches a stopped AVD detached from this process; it appears in
-// adb (and the device list) once Android finishes booting.
+// adb (and the device list) once Android finishes booting. Only the
+// process spawn is untested here — it needs a real emulator on PATH;
+// the arguments it spawns with are covered via bootCommand.
 func (c *Client) Boot(ctx context.Context, id string) error {
-	name := strings.TrimPrefix(id, AVDPrefix)
-	cmd := exec.Command("emulator", "-avd", name, "-no-snapshot-save", "-no-audio")
+	args := bootCommand(id)
+	name := args[1]
+	cmd := exec.Command("emulator", args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("launch emulator %s: %w", name, err)
