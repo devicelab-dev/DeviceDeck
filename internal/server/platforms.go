@@ -62,6 +62,20 @@ func (r BootRouter) Boot(ctx context.Context, id string) error {
 	return r.IOS.Boot(ctx, id)
 }
 
+// LaunchRouter picks the platform's app-launch backend per device.
+type LaunchRouter struct {
+	IOS     AppLauncher
+	Android AppLauncher
+}
+
+// LaunchApp implements AppLauncher with platform routing.
+func (r LaunchRouter) LaunchApp(ctx context.Context, udid, appID string) error {
+	if platform.IsAndroidSerial(udid) {
+		return r.Android.LaunchApp(ctx, udid, appID)
+	}
+	return r.IOS.LaunchApp(ctx, udid, appID)
+}
+
 // ScreenshotRouter picks the platform's screenshot backend per device.
 type ScreenshotRouter struct {
 	IOS     Screenshotter

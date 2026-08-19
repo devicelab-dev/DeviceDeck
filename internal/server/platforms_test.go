@@ -57,3 +57,24 @@ func TestScreenshotRouter(t *testing.T) {
 		t.Errorf("ios screenshot routed to %q", png)
 	}
 }
+
+func TestLaunchRouter(t *testing.T) {
+	ios, android := &recordingLauncher{}, &recordingLauncher{}
+	r := LaunchRouter{IOS: ios, Android: android}
+	if err := r.LaunchApp(context.Background(), "emulator-5554", "com.example"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.LaunchApp(context.Background(), "EB69B42A-4763", "com.example"); err != nil {
+		t.Fatal(err)
+	}
+	if len(android.calls) != 1 || len(ios.calls) != 1 {
+		t.Errorf("routing wrong: ios=%v android=%v", ios.calls, android.calls)
+	}
+}
+
+type recordingLauncher struct{ calls []string }
+
+func (l *recordingLauncher) LaunchApp(_ context.Context, udid, appID string) error {
+	l.calls = append(l.calls, udid+"/"+appID)
+	return nil
+}

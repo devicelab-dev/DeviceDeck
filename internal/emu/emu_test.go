@@ -97,3 +97,46 @@ func TestBootArgsRunHeadless(t *testing.T) {
 		t.Errorf("bare id mangled: %v", bare)
 	}
 }
+
+func TestLaunchApp(t *testing.T) {
+	c := &Client{run: fixture(map[string]string{
+		"adb -s emulator-5554 shell am force-stop com.example":                                   "",
+		"adb -s emulator-5554 shell monkey -p com.example -c android.intent.category.LAUNCHER 1": "Events injected: 1\n",
+	})}
+	if err := c.LaunchApp(context.Background(), "emulator-5554", "com.example"); err != nil {
+		t.Fatalf("LaunchApp: %v", err)
+	}
+}
+
+// monkey reports a missing package on stdout and still exits zero, so the
+// error has to be read out of the output rather than the exit code.
+func TestLaunchAppDetectsMissingActivity(t *testing.T) {
+	c := &Client{run: fixture(map[string]string{
+		"adb -s emulator-5554 shell am force-stop com.nope":                                   "",
+		"adb -s emulator-5554 shell monkey -p com.nope -c android.intent.category.LAUNCHER 1": "** No activities found to run, monkey aborted.",
+	})}
+	err := c.LaunchApp(context.Background(), "emulator-5554", "com.nope")
+	if err == nil || !strings.Contains(err.Error(), "no launchable activity") {
+		t.Fatalf("expected a launchable-activity error, got %v", err)
+	}
+}
+
+// A force-stop failure means it was not running; only the launch matters.
+func TestLaunchAppIgnoresForceStopFailure(t *testing.T) {
+	c := &Client{run: fixture(map[string]string{
+		"adb -s emulator-5554 shell monkey -p com.example -c android.intent.category.LAUNCHER 1": "Events injected: 1\n",
+	})}
+	if err := c.LaunchApp(context.Background(), "emulator-5554", "com.example"); err != nil {
+		t.Errorf("force-stop failure should not fail the launch: %v", err)
+	}
+}
+
+// adb itself failing is distinct from monkey reporting no activity.
+func TestLaunchAppReportsAdbFailure(t *testing.T) {
+	c := &Client{run: fixture(map[string]string{
+		"adb -s emulator-5554 shell am force-stop com.example": "",
+	})}
+	if err := c.LaunchApp(context.Background(), "emulator-5554", "com.example"); err == nil {
+		t.Error("a failed monkey invocation must be reported")
+	}
+}

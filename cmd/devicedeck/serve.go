@@ -66,6 +66,7 @@ func runServe(args []string) error {
 	srv := server.New(
 		server.MultiLister{simClient, emuClient},
 		server.BootRouter{IOS: simClient, Android: emuClient},
+		server.LaunchRouter{IOS: simClient, Android: emuClient},
 		server.ScreenshotRouter{IOS: simClient, Android: emuClient},
 		frames, engines, videos, captures)
 	srv.SetConsole(web.Handler())

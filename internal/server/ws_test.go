@@ -30,7 +30,7 @@ func (f *fakeVideo) Subscribe(_ context.Context, udid string) (<-chan []byte, fu
 
 func wsServer(t *testing.T, backend *fakeBackend, videoSrc VideoSource) *httptest.Server {
 	t.Helper()
-	s := New(backend, backend, backend, backend, backend, videoSrc, &fakeCapture{})
+	s := New(backend, backend, backend, backend, backend, backend, videoSrc, &fakeCapture{})
 	s.sleep = func(time.Duration) {}
 	srv := httptest.NewServer(s.Handler())
 	t.Cleanup(srv.Close)

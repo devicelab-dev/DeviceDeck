@@ -10,6 +10,15 @@ import { test, expect } from '@playwright/test';
 const UDID = process.env.DEVICEDECK_UDID || 'booted';
 const APP = 'dev.devicelab.testhive';
 
+// Each spec begins from the app's first screen. Without this they share
+// one device and the second to run inherits wherever the first left it —
+// which is exactly how running the suite together failed while each spec
+// passed alone.
+test.beforeEach(async ({ request }) => {
+  await request.post(`/api/devices/${UDID}/app/launch`, { data: { app: APP } });
+  await new Promise((r) => setTimeout(r, 2500));
+});
+
 test('drives TestHive by role, label and text', async ({ page }) => {
   await page.goto(`/device/${UDID}?app=${APP}`);
 
@@ -24,11 +33,20 @@ test('drives TestHive by role, label and text', async ({ page }) => {
   // Prove the field accepts input before typing into it: a freshly
   // launched app is in the accessibility tree about a second before it
   // takes touches, and reports itself hittable and stable throughout.
+  // Relaunching does not reset app state — the field can still hold what
+  // a previous session typed — so clear it, then prove the app is taking
+  // input at all. A freshly launched app is in the accessibility tree
+  // about a second before it accepts touches, and reports itself
+  // hittable and stable throughout, so there is nothing to wait on but
+  // the effect itself.
   await expect(async () => {
     await username.click();
+    for (let i = 0; i < 40 && (await username.textContent()); i++) {
+      await page.keyboard.press('Backspace');
+    }
     await page.keyboard.press('x');
     await expect(username).toHaveText('x');
-  }).toPass({ timeout: 20_000 });
+  }).toPass({ timeout: 30_000 });
   await page.keyboard.press('Backspace');
 
   await page.keyboard.type('devicelab', { delay: 150 });

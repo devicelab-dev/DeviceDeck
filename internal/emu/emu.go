@@ -56,6 +56,25 @@ func (c *Client) Booted(ctx context.Context) ([]sim.Device, error) {
 	return devices, nil
 }
 
+// LaunchApp starts appID fresh on serial, stopping it first if it is
+// already running — the Android counterpart of the simulator's launch.
+// monkey is used rather than `am start` because it needs only the
+// package name, not the activity, which a caller naming an app by its
+// bundle id does not have.
+func (c *Client) LaunchApp(ctx context.Context, serial, appID string) error {
+	_, _ = c.run(ctx, "adb", "-s", serial, "shell", "am", "force-stop", appID)
+	out, err := c.run(ctx, "adb", "-s", serial, "shell", "monkey", "-p", appID,
+		"-c", "android.intent.category.LAUNCHER", "1")
+	if err != nil {
+		return fmt.Errorf("launch %s on %s: %w", appID, serial, err)
+	}
+	// monkey reports a missing package on stdout with a zero exit code.
+	if strings.Contains(string(out), "No activities found") {
+		return fmt.Errorf("launch %s on %s: no launchable activity (is it installed?)", appID, serial)
+	}
+	return nil
+}
+
 // Screenshot captures a PNG of the emulator's screen.
 func (c *Client) Screenshot(ctx context.Context, serial string) ([]byte, error) {
 	return c.run(ctx, "adb", "-s", serial, "exec-out", "screencap", "-p")

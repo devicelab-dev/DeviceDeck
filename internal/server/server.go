@@ -31,6 +31,12 @@ type DeviceBooter interface {
 	Boot(ctx context.Context, id string) error
 }
 
+// AppLauncher starts an app fresh on a device — terminating it first so
+// a caller can rely on beginning at the app's first screen.
+type AppLauncher interface {
+	LaunchApp(ctx context.Context, udid, appID string) error
+}
+
 // Screenshotter captures a device's screen as PNG bytes.
 type Screenshotter interface {
 	Screenshot(ctx context.Context, udid string) ([]byte, error)
@@ -59,6 +65,7 @@ type CaptureService interface {
 type Server struct {
 	devices     DeviceLister
 	boot        DeviceBooter
+	launch      AppLauncher
 	screenshots Screenshotter
 	frames      FrameSender
 	trees       TreeSource
@@ -70,10 +77,11 @@ type Server struct {
 }
 
 // New wires a Server.
-func New(devices DeviceLister, boot DeviceBooter, screenshots Screenshotter, frames FrameSender, trees TreeSource, video VideoSource, cap CaptureService) *Server {
+func New(devices DeviceLister, boot DeviceBooter, launch AppLauncher, screenshots Screenshotter, frames FrameSender, trees TreeSource, video VideoSource, cap CaptureService) *Server {
 	return &Server{
 		devices:     devices,
 		boot:        boot,
+		launch:      launch,
 		screenshots: screenshots,
 		frames:      frames,
 		trees:       trees,
@@ -104,6 +112,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/devices", s.handleDevices)
 	mux.HandleFunc("POST /api/devices/{udid}/boot", s.handleBoot)
+	mux.HandleFunc("POST /api/devices/{udid}/app/launch", s.handleLaunchApp)
 	mux.HandleFunc("GET /api/devices/{udid}/screenshot", s.handleScreenshot)
 	mux.HandleFunc("GET /api/devices/{udid}/tree", s.handleTree)
 	mux.HandleFunc("GET /api/devices/{udid}/video", s.handleVideoWS)
@@ -141,6 +150,28 @@ func (s *Server) handleBoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"ok": true, "action": "boot"})
+}
+
+type launchRequest struct {
+	App string `json:"app"`
+}
+
+// handleLaunchApp starts an app fresh, so a caller can begin from a
+// known screen rather than inheriting whatever the last session left.
+func (s *Server) handleLaunchApp(w http.ResponseWriter, r *http.Request) {
+	var req launchRequest
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	if req.App == "" {
+		httpError(w, http.StatusBadRequest, fmt.Errorf("app bundle id is required"))
+		return
+	}
+	if err := s.launch.LaunchApp(r.Context(), r.PathValue("udid"), req.App); err != nil {
+		httpError(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, okResponse("launch"))
 }
 
 func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {

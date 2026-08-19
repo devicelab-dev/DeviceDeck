@@ -107,3 +107,44 @@ func TestNewClientRunsRealCommands(t *testing.T) {
 	}
 	_ = fmt.Sprintf("%v", c) // keep vet happy about unused import styles
 }
+
+// LaunchApp starts fresh: a caller relying on the app's first screen
+// cannot inherit whatever the last session left running.
+func TestLaunchAppTerminatesFirst(t *testing.T) {
+	var calls []string
+	c := &Client{run: func(_ context.Context, name string, args ...string) ([]byte, error) {
+		calls = append(calls, name+" "+strings.Join(args, " "))
+		return nil, nil
+	}}
+	if err := c.LaunchApp(context.Background(), "UDID-1", "com.example"); err != nil {
+		t.Fatalf("LaunchApp: %v", err)
+	}
+	if len(calls) != 2 ||
+		!strings.Contains(calls[0], "terminate UDID-1 com.example") ||
+		!strings.Contains(calls[1], "launch UDID-1 com.example") {
+		t.Fatalf("calls = %v", calls)
+	}
+}
+
+// A terminate failure means it was not running, which is the state we
+// wanted; only the launch itself can fail the call.
+func TestLaunchAppIgnoresTerminateFailure(t *testing.T) {
+	c := &Client{run: func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if len(args) > 1 && args[1] == "terminate" {
+			return nil, errors.New("not running")
+		}
+		return nil, nil
+	}}
+	if err := c.LaunchApp(context.Background(), "UDID-1", "com.example"); err != nil {
+		t.Errorf("terminate failure should not fail the launch: %v", err)
+	}
+	failing := &Client{run: func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if len(args) > 1 && args[1] == "launch" {
+			return nil, errors.New("no such app")
+		}
+		return nil, nil
+	}}
+	if err := failing.LaunchApp(context.Background(), "UDID-1", "com.example"); err == nil {
+		t.Error("a failed launch must be reported")
+	}
+}

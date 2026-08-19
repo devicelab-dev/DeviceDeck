@@ -29,6 +29,8 @@ type fakeBackend struct {
 	framesErr  error
 	booted     []string
 	bootErr    error
+	launched   []string
+	launchErr  error
 	// failAfter, when > 0, makes SendFrame fail once that many frames
 	// have been accepted — exercises mid-gesture sidecar death.
 	failAfter int
@@ -61,6 +63,13 @@ func (f *fakeBackend) All(context.Context) ([]sim.Device, error) {
 func (f *fakeBackend) Boot(context.Context, string) error {
 	f.booted = append(f.booted, "boot")
 	return f.bootErr
+}
+
+func (f *fakeBackend) LaunchApp(_ context.Context, udid, appID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.launched = append(f.launched, udid+"/"+appID)
+	return f.launchErr
 }
 
 func (f *fakeBackend) Screenshot(_ context.Context, udid string) ([]byte, error) {
@@ -153,7 +162,7 @@ func newTestServer(f *fakeBackend) *Server {
 }
 
 func newTestServerWithCapture(f *fakeBackend, c *fakeCapture) *Server {
-	s := New(f, f, f, f, f, &fakeVideo{frames: make(chan []byte)}, c)
+	s := New(f, f, f, f, f, f, &fakeVideo{frames: make(chan []byte)}, c)
 	s.sleep = func(time.Duration) {}
 	return s
 }
@@ -505,5 +514,32 @@ func TestCaptureAssertValidation(t *testing.T) {
 	s2 := newTestServerWithCapture(&fakeBackend{}, failing)
 	if rec := do(t, s2, "POST", "/api/devices/AAA/capture/assert", `{"x":0.5,"y":0.5}`); rec.Code != http.StatusConflict {
 		t.Errorf("unresolvable point should conflict: %d", rec.Code)
+	}
+}
+
+// Launching an app fresh is what lets a caller — a spec, a flow, a
+// person — begin from the app's first screen instead of inheriting
+// whatever the previous session left on the device.
+func TestLaunchApp(t *testing.T) {
+	f := &fakeBackend{}
+	rec := do(t, newTestServer(f), "POST", "/api/devices/AAA/app/launch", `{"app":"com.example"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("launch: %d %s", rec.Code, rec.Body)
+	}
+	if len(f.launched) != 1 || f.launched[0] != "AAA/com.example" {
+		t.Errorf("launched = %v", f.launched)
+	}
+}
+
+func TestLaunchAppValidation(t *testing.T) {
+	if rec := do(t, newTestServer(&fakeBackend{}), "POST", "/api/devices/AAA/app/launch", `{}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("missing app: %d", rec.Code)
+	}
+	if rec := do(t, newTestServer(&fakeBackend{}), "POST", "/api/devices/AAA/app/launch", `{`); rec.Code != http.StatusBadRequest {
+		t.Errorf("bad json: %d", rec.Code)
+	}
+	failing := &fakeBackend{launchErr: errors.New("no such app")}
+	if rec := do(t, newTestServer(failing), "POST", "/api/devices/AAA/app/launch", `{"app":"com.example"}`); rec.Code != http.StatusBadGateway {
+		t.Errorf("launch failure: %d", rec.Code)
 	}
 }

@@ -57,6 +57,20 @@ func (c *Client) Boot(ctx context.Context, udid string) error {
 }
 
 // Booted returns every currently booted simulator.
+// LaunchApp starts appID fresh on udid, terminating it first if it is
+// already running. Fresh rather than foreground: a flow — or an example
+// spec — that assumes it begins at the app's first screen is otherwise
+// at the mercy of whatever the last session left behind.
+func (c *Client) LaunchApp(ctx context.Context, udid, appID string) error {
+	// A terminate failure means it was not running, which is the state
+	// we wanted anyway.
+	_, _ = c.run(ctx, "xcrun", "simctl", "terminate", udid, appID)
+	if _, err := c.run(ctx, "xcrun", "simctl", "launch", udid, appID); err != nil {
+		return fmt.Errorf("launch %s on %s: %w", appID, udid, err)
+	}
+	return nil
+}
+
 func (c *Client) Booted(ctx context.Context) ([]Device, error) {
 	all, err := c.list(ctx)
 	if err != nil {
