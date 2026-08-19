@@ -116,3 +116,45 @@ func TestBucketNonFinite(t *testing.T) {
 		t.Fatalf("bucket boundaries wrong: %d %d %d", bucket(15.9), bucket(16), bucket(-1))
 	}
 }
+
+// Moving focus between fields changes nothing on screen, so ScreenHash
+// cannot see it — which is right for a settle signal and wrong for
+// judging whether a tap did anything.
+func TestInteractionHashSeesFocusMoves(t *testing.T) {
+	field := func(id string, focused bool) Node {
+		return Node{Index: 1, Type: "TextField", Identifier: id, Depth: 1, Enabled: true,
+			Frame: Rect{X: 0, Y: 0, Width: 100, Height: 40}, Focused: focused}
+	}
+	app := Node{Index: 0, Type: "Application", Depth: 0, Frame: Rect{Width: 100, Height: 200}}
+	before := []Node{app, field("user", true), field("pass", false)}
+	after := []Node{app, field("user", false), field("pass", true)}
+
+	if ScreenHash(before) != ScreenHash(after) {
+		t.Fatal("precondition: focus must be invisible to ScreenHash")
+	}
+	if InteractionHash(before) == InteractionHash(after) {
+		t.Error("a focus move is an effect and must change InteractionHash")
+	}
+}
+
+func TestInteractionHashFollowsTheScreen(t *testing.T) {
+	app := Node{Index: 0, Type: "Application", Depth: 0, Frame: Rect{Width: 100, Height: 200}}
+	one := []Node{app, {Index: 1, Type: "Button", Label: "Log in", Depth: 1, Enabled: true,
+		Frame: Rect{Width: 50, Height: 20}}}
+	two := []Node{app, {Index: 1, Type: "Button", Label: "Log out", Depth: 1, Enabled: true,
+		Frame: Rect{Width: 50, Height: 20}}}
+	if InteractionHash(one) == InteractionHash(two) {
+		t.Error("a screen change must still change InteractionHash")
+	}
+	if InteractionHash(one) != InteractionHash(one) {
+		t.Error("InteractionHash must be deterministic")
+	}
+	// A focused element that only moved is the same focus.
+	moved := []Node{app, {Index: 1, Type: "TextField", Identifier: "user", Depth: 1, Enabled: true,
+		Frame: Rect{Y: 400, Width: 50, Height: 20}, Focused: true}}
+	same := []Node{app, {Index: 1, Type: "TextField", Identifier: "user", Depth: 1, Enabled: true,
+		Frame: Rect{Y: 400, Width: 50, Height: 20}, Focused: true}}
+	if InteractionHash(moved) != InteractionHash(same) {
+		t.Error("identical trees must hash identically")
+	}
+}

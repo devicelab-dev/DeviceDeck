@@ -154,7 +154,7 @@ func (r *Recorder) OnEvent(ev input.Event) {
 // appendStep records a step against the screen it was performed on. Every
 // step goes through here so no path can forget the fingerprint.
 func (r *Recorder) appendStep(s Step) {
-	hash := runner.ScreenHash(r.tree)
+	hash := runner.InteractionHash(r.tree)
 	// Close out the previous step if nothing has yet. Only touches
 	// schedule a settle refresh, so typing and key presses would
 	// otherwise never learn what they produced — and the screen we are
@@ -359,7 +359,7 @@ func (r *Recorder) scheduleRefreshLocked() {
 			r.treeAt = r.now()
 			// The screen has settled: close out the step that caused it.
 			if n := len(r.steps); n > 0 && r.steps[n-1].Post == "" {
-				r.steps[n-1].Post = runner.ScreenHash(tree)
+				r.steps[n-1].Post = runner.InteractionHash(tree)
 			}
 		}
 	}()

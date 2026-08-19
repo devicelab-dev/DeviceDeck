@@ -18,6 +18,34 @@ const geometryBucketPt = 8
 // minute for reasons that have nothing to do with the app.
 const statusBarType = "StatusBar"
 
+// InteractionHash fingerprints a screen for the purpose of judging
+// whether an action did anything.
+//
+// It is ScreenHash plus which element holds focus. Focus is deliberately
+// absent from ScreenHash, because a keyboard opening flips it without
+// the screen having changed and a settle signal must not be held open by
+// that. But an action's effect is a different question: moving from one
+// field to the next changes nothing on screen and is still exactly what
+// the user meant to do, so judging it by ScreenHash alone reports the
+// most common interaction in any form as having done nothing.
+func InteractionHash(nodes []Node) string {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(ScreenHash(nodes)))
+	_, _ = h.Write([]byte{0})
+	for _, n := range nodes {
+		if !n.Focused {
+			continue
+		}
+		// Identity, not position: a focused field that moves because the
+		// keyboard opened is still the same focus.
+		for _, s := range []string{n.Type, n.Identifier, n.Label, n.Placeholder} {
+			_, _ = h.Write([]byte(s))
+			_, _ = h.Write([]byte{0})
+		}
+	}
+	return strconv.FormatUint(h.Sum64(), 16)
+}
+
 // ScreenHash fingerprints what is on screen and what state it is in, so a
 // caller can tell "the screen changed" from "the snapshot differs".
 //
