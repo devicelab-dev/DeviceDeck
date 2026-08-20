@@ -107,7 +107,10 @@ on durable selectors.
   the effect. Tests should prove the app is taking input before relying on it.
 - **Two-finger gestures are dropped on Android.** They work on iOS; there is no mapping for them
   in the Android driver, and they are discarded rather than guessed at.
-- **Nothing refuses a second driver** on the same device yet.
+- **A device serves one driver at a time**, and a second claim is refused rather than shared.
+  That includes the console: a browser tab left open on a device will refuse your test run,
+  and only the refused side is told why. There is no keepalive yet, so a client that dies
+  without closing its socket holds the device until the server restarts.
 - Relaunching an app does not reset its state.
 
 ## Licence

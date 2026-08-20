@@ -6,10 +6,10 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: './tests',
   // A device serves one driver at a time. Playwright parallelises across
-  // files by default, which points two specs at the same simulator and
-  // has them fight over it — each passes alone and the pair fails
-  // together. DeviceDeck does not yet refuse a second claim, so the
-  // constraint has to be honoured here.
+  // files by default, which points two specs at the same simulator;
+  // DeviceDeck refuses the second claim, so the run fails loudly rather
+  // than interleaving touches into nonsense. Loud is better than silent,
+  // but it still fails — so keep the worker count at one.
   workers: 1,
   fullyParallel: false,
   timeout: 60_000,
