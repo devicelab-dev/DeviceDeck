@@ -87,6 +87,12 @@ main { flex: 1; display: flex; min-height: 0; }
 #overlay {
   position: absolute;
   pointer-events: none;
+  /* Clipped to the device, and to its corners. Native frames routinely
+     extend past the screen — a horizontally scrollable row, list content
+     below the fold — and drawn unclipped those boxes float in the black
+     beside the device, describing elements nobody can point at. */
+  overflow: hidden;
+  border-radius: 24px;
 }
 
 #overlay .node {

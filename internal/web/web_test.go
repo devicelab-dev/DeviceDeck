@@ -73,3 +73,31 @@ func TestConsoleHeaderWraps(t *testing.T) {
 		t.Error("the app-id input must be allowed to shrink")
 	}
 }
+
+// The device page is a test target, so it must contain nothing but the
+// device. Any control of ours living there would appear in an agent's
+// snapshot beside the app's own elements — indistinguishable from them —
+// and an agent told to "tap the button" could drive DeviceDeck instead
+// of the app under test. The console is where our controls belong.
+func TestDevicePageCarriesNoControlsOfOurOwn(t *testing.T) {
+	body := get(t, "/device/EB69B42A-4763-4A33-AF0F-CD233F721951").Body.String()
+	// Everything between <body> and the scripts is the test target.
+	start := strings.Index(body, "<body>")
+	end := strings.Index(body, "<script")
+	if start < 0 || end < 0 {
+		t.Fatal("device page shape changed; this guard needs updating")
+	}
+	markup := body[start:end]
+	for _, forbidden := range []string{"<button", "<input", "<select", "<textarea", "<a "} {
+		if strings.Contains(markup, forbidden) {
+			t.Errorf("device page carries %q — an agent would see it as part of the app:\n%s",
+				forbidden, markup)
+		}
+	}
+	// The mirror and the video are the only things that belong.
+	for _, want := range []string{`id="video"`, `id="mirror"`} {
+		if !strings.Contains(markup, want) {
+			t.Errorf("device page is missing %s", want)
+		}
+	}
+}

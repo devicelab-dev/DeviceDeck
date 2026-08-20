@@ -502,6 +502,10 @@ function renderOverlay(nodes) {
     const f = node.frame;
     if (node.depth === 0 || f.width <= 0 || f.height <= 0) continue;
     if (!node.identifier && !node.label && !node.hittable) continue;
+    // Wholly off-screen: a recycled list cell parked below the fold, or
+    // a scrollable row's overflow. It is in the tree and cannot be
+    // pointed at, so drawing it only adds boxes with nothing under them.
+    if (f.x >= app.width || f.y >= app.height || f.x + f.width <= 0 || f.y + f.height <= 0) continue;
     const el = document.createElement("div");
     el.className = "node";
     el.style.left = `${(f.x / app.width) * 100}%`;
