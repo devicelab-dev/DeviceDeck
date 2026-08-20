@@ -56,3 +56,20 @@ func TestConsoleWiresSharedModules(t *testing.T) {
 		}
 	}
 }
+
+// The console header must be able to wrap. Wider than the window, it is
+// not merely clipped: focusing a control near its right edge scrolls the
+// page sideways, and the device and its inspector overlay slide
+// off-centre together, which reads as broken scaling rather than as a
+// header that did not fit.
+func TestConsoleHeaderWraps(t *testing.T) {
+	css := get(t, "/style.css").Body.String()
+	header := css[strings.Index(css, "header {"):]
+	header = header[:strings.Index(header, "}")]
+	if !strings.Contains(header, "flex-wrap: wrap") {
+		t.Errorf("header must wrap rather than overflow:\n%s", header)
+	}
+	if !strings.Contains(css, "input#app") || !strings.Contains(css, "min-width: 110px") {
+		t.Error("the app-id input must be allowed to shrink")
+	}
+}

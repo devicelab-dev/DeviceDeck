@@ -28,6 +28,12 @@ header {
   padding: 8px 12px;
   background: var(--panel);
   border-bottom: 1px solid var(--edge);
+  /* Wrap rather than overflow. A header wider than the window is not
+     merely clipped: focusing a control near its right edge scrolls the
+     whole page sideways, and the device and its inspector overlay slide
+     off-centre together — which reads as broken scaling rather than as
+     a layout that did not fit. */
+  flex-wrap: wrap;
 }
 
 .brand { font-weight: 700; letter-spacing: 0.02em; margin-right: 8px; }
@@ -42,7 +48,8 @@ select, input, button {
   font: inherit;
 }
 
-input#app { width: 230px; }
+/* Roomy when there is space, shrinkable when there is not. */
+input#app { width: 230px; flex: 0 1 230px; min-width: 110px; }
 button { cursor: pointer; }
 button:hover { border-color: var(--accent); }
 button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
