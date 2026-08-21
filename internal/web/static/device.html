@@ -3,7 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>DeviceDeck Device</title>
+  <!-- The title is the one place a hint reaches an agent without putting
+       our words inside the app's own content: a snapshot prints the page
+       title above the tree, and nothing else we could attach survives —
+       data-testid, aria-description and title on an element were each
+       measured to be invisible there. The device's hardware keys have no
+       buttons on this page, deliberately, so an agent has no way to
+       discover them; this is where they are advertised. -->
+  <title>DeviceDeck Device — hardware keys have no buttons here; call window.devicedeck.gesture('home'|'appSwitcher'|'notificationCenter'|'lockScreen')</title>
   <!-- Explicit icon: without it browsers request /favicon.ico, and the
        404 surfaces as a console error in every automation client. -->
   <link rel="icon" href="/favicon.svg">
