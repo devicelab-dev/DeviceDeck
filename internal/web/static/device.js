@@ -270,6 +270,36 @@ function twinOf(parentAnchor, node) {
   return same ? prev : null;
 }
 
+// dropRepeatedName strips a name from a container that only echoes the
+// node beneath it.
+//
+// Native accessibility trees aggregate upward: one button's label also
+// names its wrapper, that wrapper's wrapper, and so on to the window. A
+// snapshot then prints the string once per level — and twice per level
+// for a container that has element children, because its own text node
+// prints alongside its name. Three levels of wrapper read as six
+// identical entries, all with the same box, and an agent has no way to
+// tell which one it is meant to click. That is not a hypothetical: a
+// captured snapshot of the login screen spent its first eleven lines
+// saying "Typing Predictions" and "Passwords" over and over before
+// reaching the one button that existed.
+//
+// The echo is stripped from the container, never from the node that
+// earned it: a container carrying a mapped role is a real control and
+// keeps its name, as does the innermost wrapper of a chain, which
+// nothing beneath it repeats. On the captured chain that takes the
+// snapshot from twelve lines to four — a stripped wrapper carries
+// neither name nor text, and the reader folds it away. Not every
+// anonymous generic disappears, so this buys a smaller snapshot, not an
+// empty one; mirror-noise.spec.ts holds the measurement.
+function dropRepeatedName(el, name) {
+  if (!name || el.hasAttribute("role")) return;
+  if (el.getAttribute("aria-label") !== name) return;
+  el.removeAttribute("aria-label");
+  const first = el.firstChild;
+  if (first && first.nodeType === Node.TEXT_NODE && first.data === name) first.remove();
+}
+
 // A node earns a mirror element only if something can find it: an
 // identifier, visible text, or a mapped role. Zero-size nodes never do.
 function mirrorable(node) {
@@ -310,6 +340,40 @@ function acquireEl(existing, key, node) {
   return el;
 }
 
+// renderNode places one node's element under its nearest rendered
+// ancestor. pass carries what a single refresh shares between nodes:
+// the elements left from last time, the sibling counters that key them,
+// and the anchors that children position against.
+function renderNode(node, pass) {
+  const parentAnchor =
+    (node.parentIndex != null && pass.anchors.get(node.parentIndex)) || pass.root;
+  if (!mirrorable(node)) {
+    pass.anchors.set(node.index, parentAnchor); // children inherit the anchor
+    return;
+  }
+  // One control, two nodes: platforms routinely split a control's
+  // identifier onto a wrapper and its label and role onto a twin with
+  // the same frame — Flutter does it for every merged-semantics
+  // widget. Left as siblings they overlap exactly, the later one
+  // paints on top, and a click aimed at the identifier is refused as
+  // intercepted by its own twin. Nested, the twin is a descendant,
+  // which is what a hit test accepts, so both selectors resolve to
+  // something clickable.
+  const anchor = twinOf(parentAnchor, node) || parentAnchor;
+  const key = nodeKey(node, anchor.key, pass.counts);
+  const el = acquireEl(pass.existing, key, node);
+  syncNode(el, node, anchor.frame);
+  // Never the root: the mirror's own name is the screen fingerprint,
+  // which belongs to no node and must survive every refresh.
+  if (anchor !== pass.root) dropRepeatedName(anchor.el, baseName(node));
+  // Append-or-move keeps DOM order tracking native order; moving
+  // (including across parents) preserves element identity.
+  anchor.el.appendChild(el);
+  const rendered = { el, frame: node.frame, key, lastChild: null };
+  anchor.lastChild = rendered;
+  pass.anchors.set(node.index, rendered);
+}
+
 function renderMirror(nodes) {
   const json = JSON.stringify(nodes);
   if (json === lastTreeJSON) return;
@@ -329,41 +393,20 @@ function renderMirror(nodes) {
   for (const el of mirror.querySelectorAll("[data-dd-key]")) {
     existing.set(el.getAttribute("data-dd-key"), el);
   }
-  const counts = new Map();
   // The mirror nests like the native tree: a node's element is appended
   // under its nearest *rendered* ancestor. Nesting is what makes a text
   // child a legitimate hit target for clicks aimed at its container
   // (Playwright's actionability check), and native paint order becomes
-  // plain DOM order — no z-index arithmetic. anchors[i] carries the
-  // container element + frame that node i's children position against.
-  const anchors = new Map();
-  const rootAnchor = { el: mirror, frame: app, key: "", lastChild: null };
-  for (const node of nodes) {
-    const parentAnchor =
-      (node.parentIndex != null && anchors.get(node.parentIndex)) || rootAnchor;
-    if (!mirrorable(node)) {
-      anchors.set(node.index, parentAnchor); // children inherit the anchor
-      continue;
-    }
-    // One control, two nodes: platforms routinely split a control's
-    // identifier onto a wrapper and its label and role onto a twin with
-    // the same frame — Flutter does it for every merged-semantics
-    // widget. Left as siblings they overlap exactly, the later one
-    // paints on top, and a click aimed at the identifier is refused as
-    // intercepted by its own twin. Nested, the twin is a descendant,
-    // which is what a hit test accepts, so both selectors resolve to
-    // something clickable.
-    const anchor = twinOf(parentAnchor, node) || parentAnchor;
-    const key = nodeKey(node, anchor.key, counts);
-    const el = acquireEl(existing, key, node);
-    syncNode(el, node, anchor.frame);
-    // Append-or-move keeps DOM order tracking native order; moving
-    // (including across parents) preserves element identity.
-    anchor.el.appendChild(el);
-    const rendered = { el, frame: node.frame, key, lastChild: null };
-    anchor.lastChild = rendered;
-    anchors.set(node.index, rendered);
-  }
+  // plain DOM order — no z-index arithmetic. An anchor carries the
+  // container element + frame that a node's children position against.
+  const pass = {
+    existing,
+    counts: new Map(),
+    anchors: new Map(),
+    root: { el: mirror, frame: app, key: "", lastChild: null },
+  };
+  for (const node of nodes) renderNode(node, pass);
+  // Whatever no node claimed this pass is gone from the device.
   for (const el of existing.values()) el.remove();
 }
 
