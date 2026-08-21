@@ -61,7 +61,11 @@ func (t *TreeClient) Snapshot(ctx context.Context, appBundleID string) ([]Node, 
 	if data == nil {
 		return nil, fmt.Errorf("runner snapshot: empty response")
 	}
-	return convertNodes(data.Nodes), nil
+	// Culled here rather than in the browser: the console, the device
+	// page and Flow Capture all read this tree, and a flow recorded
+	// against a screen nobody can see is the failure that survives to
+	// real hardware.
+	return OnScreen(convertNodes(data.Nodes)), nil
 }
 
 func convertNodes(in []dlios.SnapshotNode) []Node {

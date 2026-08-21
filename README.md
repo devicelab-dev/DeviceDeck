@@ -84,6 +84,11 @@ Arm **Assert** and the next tap records an assertion instead of tapping. A point
 to nothing addressable is refused rather than recorded as a coordinate — "there are pixels here"
 is not worth putting in a flow.
 
+**Only the screen you are on is mirrored.** iOS keeps a screen in the hierarchy after the app
+navigates away from it, so the tree reports views nobody can see — a login form, credentials
+still in its fields, present on every screen that follows. Those are culled, because a selector
+that resolves to an invisible screen fails silently here and again on real hardware.
+
 **Text fields are real `<input>` elements**, so `fill()`, `inputValue()` and `toHaveValue()` work
 as they would on any page — and so does the `browser_type` an AI agent reaches for first. A
 field's contents live in its value, not its text, which is the one place the mirror departs from
