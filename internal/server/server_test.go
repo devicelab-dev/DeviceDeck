@@ -595,3 +595,36 @@ func TestTreeCarriesInteractionHash(t *testing.T) {
 		t.Errorf("tree body missing interaction hash: %s", body)
 	}
 }
+
+// An empty ?after= asks only for quiet: first contact, before the
+// client has any hash to compare against. It must answer, not hang.
+func TestTreeHeldForQuietAlone(t *testing.T) {
+	nodes := []runner.Node{{Index: 0, Type: "Button", Label: "Log in"}}
+	rec := do(t, newTestServer(&fakeBackend{nodes: nodes}), "GET", "/api/devices/AAA/tree?after=", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), `"hash":"`+runner.ScreenHash(nodes)+`"`) {
+		t.Errorf("quiet-held tree missing its hash: %s", rec.Body)
+	}
+}
+
+// FirstTree is what the device page inlines: the settled tree with both
+// hashes, or the engine's error.
+func TestFirstTree(t *testing.T) {
+	nodes := []runner.Node{{Index: 0, Type: "Button", Label: "Log in"}}
+	f := &fakeBackend{nodes: nodes}
+	out, err := newTestServer(f).FirstTree(context.Background(), "AAA", "com.example")
+	if err != nil {
+		t.Fatalf("first tree: %v", err)
+	}
+	if !strings.Contains(string(out), `"hash":"`+runner.ScreenHash(nodes)+`"`) || !strings.Contains(string(out), `"interaction":"`) {
+		t.Errorf("first tree payload: %s", out)
+	}
+	if f.treeApp != "com.example" {
+		t.Errorf("scoped to %q", f.treeApp)
+	}
+	if _, err := newTestServer(&fakeBackend{nodesErr: errors.New("runner down")}).FirstTree(context.Background(), "AAA", ""); err == nil {
+		t.Error("engine error swallowed")
+	}
+}

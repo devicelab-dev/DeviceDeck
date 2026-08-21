@@ -234,20 +234,35 @@ func (s *Server) handleTree(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadGateway, err)
 		return
 	}
+	writeJSON(w, treePayload(nodes))
+}
+
+// treePayload is the tree as every consumer receives it. The hashes
+// travel with it so a caller can tell "the screen changed" from "the
+// snapshot differs" without re-deriving the exclusions client-side:
+// "hash" is the screen, for settledness and the fingerprint;
+// "interaction" adds focus, and is what a client hands back as ?after=
+// so that moving between fields counts as a change.
+func treePayload(nodes []runner.Node) map[string]any {
 	if nodes == nil {
 		nodes = []runner.Node{}
 	}
-	// The hash travels with the tree so a caller can tell "the screen
-	// changed" from "the snapshot differs" without re-deriving the
-	// exclusions (geometry noise, the status bar clock) client-side.
-	// Both hashes travel: "hash" is the screen, for settledness and the
-	// fingerprint; "interaction" adds focus, and is what a client hands
-	// back as ?after= so that moving between fields counts as a change.
-	writeJSON(w, map[string]any{
+	return map[string]any{
 		"nodes":       nodes,
 		"hash":        runner.ScreenHash(nodes),
 		"interaction": runner.InteractionHash(nodes),
-	})
+	}
+}
+
+// FirstTree is the settled tree for a device page, ready to inline. It
+// waits for quiet alone — there is no earlier screen to have moved on
+// from — under the same cap as any other held tree.
+func (s *Server) FirstTree(ctx context.Context, udid, app string) ([]byte, error) {
+	nodes, err := runner.Settle(ctx, s.snapshotter(udid, app), "", s.settle)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(treePayload(nodes))
 }
 
 type tapRequest struct {

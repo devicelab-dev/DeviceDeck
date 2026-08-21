@@ -69,7 +69,7 @@ func runServe(args []string) error {
 		server.LaunchRouter{IOS: simClient, Android: emuClient},
 		server.ScreenshotRouter{IOS: simClient, Android: emuClient},
 		frames, engines, videos, captures)
-	srv.SetConsole(web.Handler())
+	srv.SetConsole(web.Handler(srv.FirstTree))
 	httpServer := &http.Server{Addr: *addr, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 
 	errCh := make(chan error, 1)

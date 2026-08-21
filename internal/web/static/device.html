@@ -146,6 +146,10 @@
     <div id="mirror" role="application" aria-label="device"></div>
     <div id="notice" aria-hidden="true"></div>
   </div>
+  <!-- The first tree rides in the page, so the mirror is complete when
+       load fires — an agent's navigate waits for nothing else. Filled by
+       the server; empty when the tree could not be fetched in time. -->
+  <script id="dd-first-tree" type="application/json"></script>
   <script src="/video-common.js"></script>
   <script src="/input-common.js"></script>
   <script src="/device.js"></script>

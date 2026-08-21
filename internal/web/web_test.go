@@ -1,6 +1,8 @@
 package web
 
 import (
+	"context"
+	"errors"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -8,8 +10,13 @@ import (
 
 func get(t *testing.T, path string) *httptest.ResponseRecorder {
 	t.Helper()
+	return getWith(t, path, nil)
+}
+
+func getWith(t *testing.T, path string, first FirstTree) *httptest.ResponseRecorder {
+	t.Helper()
 	rec := httptest.NewRecorder()
-	Handler().ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+	Handler(first).ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
 	return rec
 }
 
@@ -214,6 +221,51 @@ func TestControlsStayClickableEvenWithChildren(t *testing.T) {
 	for _, role := range []string{"list", "navigation", "listitem"} {
 		if strings.Contains(body, `[role="`+role+`"] { pointer-events: auto`) {
 			t.Errorf("role %q is exempted; it spans its children and will swallow their clicks", role)
+		}
+	}
+}
+
+// The device page carries its first tree, so the mirror is complete
+// when load fires — the one event an agent's navigate waits for.
+func TestDevicePageInlinesFirstTree(t *testing.T) {
+	var gotUDID, gotApp string
+	first := func(ctx context.Context, udid, app string) ([]byte, error) {
+		gotUDID, gotApp = udid, app
+		return []byte(`{"nodes":[],"hash":"abc"}`), nil
+	}
+	body := getWith(t, "/device/AAA?app=com.example", first).Body.String()
+	if !strings.Contains(body, `<script id="dd-first-tree" type="application/json">{"nodes":[],"hash":"abc"}</script>`) {
+		t.Errorf("first tree not inlined: %s", body)
+	}
+	if gotUDID != "AAA" || gotApp != "com.example" {
+		t.Errorf("first tree asked for %q/%q", gotUDID, gotApp)
+	}
+	if ct := getWith(t, "/device/AAA", first).Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("content type %q", ct)
+	}
+}
+
+// A label can carry the one sequence that ends a script element early.
+func TestDevicePageEscapesTreeForScriptSlot(t *testing.T) {
+	first := func(context.Context, string, string) ([]byte, error) {
+		return []byte(`{"nodes":[{"label":"</script><b>x"}]}`), nil
+	}
+	body := getWith(t, "/device/AAA", first).Body.String()
+	if strings.Contains(body, `"label":"</script>`) {
+		t.Errorf("raw </script> inside the slot: %s", body)
+	}
+	if !strings.Contains(body, `<\/script><b>x`) {
+		t.Errorf("slash not escaped: %s", body)
+	}
+}
+
+// No tree, no slot filled: the page fetches as it always did.
+func TestDevicePageWithoutFirstTree(t *testing.T) {
+	failing := func(context.Context, string, string) ([]byte, error) { return nil, errors.New("engine down") }
+	for name, first := range map[string]FirstTree{"nil": nil, "failing": failing} {
+		body := getWith(t, "/device/AAA", first).Body.String()
+		if !strings.Contains(body, firstTreeSlot) {
+			t.Errorf("%s: empty slot expected in page: %s", name, body)
 		}
 	}
 }

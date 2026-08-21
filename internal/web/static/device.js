@@ -533,7 +533,11 @@ let fetchInFlight = false;
 // once, so anything else that happens to fall inside a tool's wait
 // window costs nothing.
 let lastInteraction = "";
-let holdNext = false;
+// The first fetch is held too, for quiet alone — there is no hash to
+// have moved on from yet. An agent's navigate waits on it, so its first
+// snapshot is the settled screen rather than an empty mirror: measured
+// as one ref and no fields, on a page whose app was fully up.
+let holdNext = true;
 // An action taken while a held fetch is still open aborts it: the new
 // action's barrier has to be issued promptly, and the old hold was
 // waiting for a screen the user has already moved past.
@@ -542,7 +546,7 @@ let inFlight = null;
 function treeURL() {
   const params = new URLSearchParams();
   if (appId) params.set("app", appId);
-  const held = holdNext && !!lastInteraction;
+  const held = holdNext;
   if (held) params.set("after", lastInteraction);
   holdNext = false;
   const query = params.toString();
@@ -957,9 +961,24 @@ window.devicedeck = {
 
 window.addEventListener("resize", positionMirror);
 
+// renderFirstTree renders the tree the server put in the page, so the
+// mirror is complete before the load event. Synchronous on purpose: an
+// agent's navigate waits for load and nothing after it. A page served
+// without one — the server could not get the tree in time — falls back
+// to the first poll, held for quiet.
+function renderFirstTree() {
+  const slot = document.getElementById("dd-first-tree");
+  if (!slot || !slot.textContent.trim()) return;
+  try {
+    applyTree(JSON.parse(slot.textContent), true);
+    holdNext = false;
+  } catch {}
+}
+
 // "booted" is a convenience alias; resolve it to the actual UDID up
 // front — the tree engine needs a concrete device.
 async function start() {
+  renderFirstTree();
   if (udid === "booted") {
     try {
       const { devices } = await (await fetch("/api/devices")).json();
