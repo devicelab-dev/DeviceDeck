@@ -76,6 +76,10 @@ type Server struct {
 	inputs *inputOwners
 	// sleep paces multi-frame gestures; injected so tests run instantly.
 	sleep func(time.Duration)
+	// Timings for the settle barrier and the launch wait. Zero means the
+	// measured defaults; tests shrink them so a wait takes microseconds.
+	settle    runner.SettleOptions
+	launching runner.LaunchOptions
 }
 
 // New wires a Server.
@@ -170,11 +174,28 @@ func (s *Server) handleLaunchApp(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, fmt.Errorf("app bundle id is required"))
 		return
 	}
-	if err := s.launch.LaunchApp(r.Context(), r.PathValue("udid"), req.App); err != nil {
+	udid := r.PathValue("udid")
+	if err := s.launch.LaunchApp(r.Context(), udid, req.App); err != nil {
+		httpError(w, http.StatusBadGateway, err)
+		return
+	}
+	// Return when the app is taking input, not when the launch command
+	// did. A freshly launched app swallows taps for a measured window
+	// after its screen is already in the tree, and no client can see
+	// that window — so the launch call waits it out for all of them.
+	if err := runner.AwaitLaunched(r.Context(), s.snapshotter(udid, req.App), s.launching); err != nil {
 		httpError(w, http.StatusBadGateway, err)
 		return
 	}
 	writeJSON(w, okResponse("launch"))
+}
+
+// snapshotter binds the tree source to one device and app, which is the
+// shape the settle logic wants.
+func (s *Server) snapshotter(udid, app string) runner.Snapshotter {
+	return func(ctx context.Context) ([]runner.Node, error) {
+		return s.trees.Snapshot(ctx, udid, app)
+	}
 }
 
 func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
@@ -189,7 +210,20 @@ func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleTree(w http.ResponseWriter, r *http.Request) {
 	udid := r.PathValue("udid")
-	nodes, err := s.trees.Snapshot(r.Context(), udid, r.URL.Query().Get("app"))
+	snap := s.snapshotter(udid, r.URL.Query().Get("app"))
+	var nodes []runner.Node
+	var err error
+	// ?after=<interaction hash> turns the poll into a barrier: the
+	// response is held until the screen has moved on from that hash and
+	// come to rest, or the cap passes. A client that fires this fetch
+	// right after an action gets the settled screen back, and a tool
+	// that waits on the page's own requests — playwright-mcp does —
+	// waits for the device without knowing it.
+	if after, held := r.URL.Query()["after"]; held {
+		nodes, err = runner.Settle(r.Context(), snap, after[0], s.settle)
+	} else {
+		nodes, err = snap(r.Context())
+	}
 	if err != nil {
 		// Logged, not just returned: a failed snapshot reaches the page
 		// as an empty mirror, and every consumer then reports a missing
@@ -206,7 +240,14 @@ func (s *Server) handleTree(w http.ResponseWriter, r *http.Request) {
 	// The hash travels with the tree so a caller can tell "the screen
 	// changed" from "the snapshot differs" without re-deriving the
 	// exclusions (geometry noise, the status bar clock) client-side.
-	writeJSON(w, map[string]any{"nodes": nodes, "hash": runner.ScreenHash(nodes)})
+	// Both hashes travel: "hash" is the screen, for settledness and the
+	// fingerprint; "interaction" adds focus, and is what a client hands
+	// back as ?after= so that moving between fields counts as a change.
+	writeJSON(w, map[string]any{
+		"nodes":       nodes,
+		"hash":        runner.ScreenHash(nodes),
+		"interaction": runner.InteractionHash(nodes),
+	})
 }
 
 type tapRequest struct {

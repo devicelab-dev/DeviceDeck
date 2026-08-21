@@ -164,6 +164,10 @@ func newTestServer(f *fakeBackend) *Server {
 func newTestServerWithCapture(f *fakeBackend, c *fakeCapture) *Server {
 	s := New(f, f, f, f, f, f, &fakeVideo{frames: make(chan []byte)}, c)
 	s.sleep = func(time.Duration) {}
+	// The waits are exercised for their logic in the runner package;
+	// here they only need to not take real time.
+	s.settle = runner.SettleOptions{Interval: time.Microsecond, Quiet: 2, Cap: 20 * time.Millisecond}
+	s.launching = runner.LaunchOptions{Window: time.Microsecond, Appear: 20 * time.Millisecond, Interval: time.Microsecond}
 	return s
 }
 
@@ -521,7 +525,7 @@ func TestCaptureAssertValidation(t *testing.T) {
 // person — begin from the app's first screen instead of inheriting
 // whatever the previous session left on the device.
 func TestLaunchApp(t *testing.T) {
-	f := &fakeBackend{}
+	f := &fakeBackend{nodes: []runner.Node{{Type: "Button", Label: "Sign In", Enabled: true}}}
 	rec := do(t, newTestServer(f), "POST", "/api/devices/AAA/app/launch", `{"app":"com.example"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("launch: %d %s", rec.Code, rec.Body)
@@ -541,5 +545,53 @@ func TestLaunchAppValidation(t *testing.T) {
 	failing := &fakeBackend{launchErr: errors.New("no such app")}
 	if rec := do(t, newTestServer(failing), "POST", "/api/devices/AAA/app/launch", `{"app":"com.example"}`); rec.Code != http.StatusBadGateway {
 		t.Errorf("launch failure: %d", rec.Code)
+	}
+}
+
+// Launch returns when the app is taking input, not when the launch
+// command did: an app that never shows anything to act on is a failed
+// launch, and says so, rather than an OK followed by every tap vanishing.
+func TestLaunchAppWaitsForTheAppToAppear(t *testing.T) {
+	f := &fakeBackend{}
+	rec := do(t, newTestServer(f), "POST", "/api/devices/AAA/app/launch", `{"app":"com.example"}`)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("launch of an app that never appears: %d %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), "actionable screen") {
+		t.Errorf("reason not surfaced: %s", rec.Body)
+	}
+	if f.treeApp != "com.example" {
+		t.Errorf("readiness polled app %q, want com.example", f.treeApp)
+	}
+}
+
+// ?after= holds the tree response until the screen has moved on from
+// that hash and come to rest. With a backend that never changes, the
+// hold runs to its cap and the unchanged tree comes back — the caller's
+// signal that nothing happened.
+func TestTreeHeldUntilSettled(t *testing.T) {
+	nodes := []runner.Node{{Index: 0, Type: "Button", Label: "Log in"}}
+	f := &fakeBackend{nodes: nodes}
+	before := runner.InteractionHash(nodes)
+	rec := do(t, newTestServer(f), "GET", "/api/devices/AAA/tree?after="+before, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), `"interaction":"`+before+`"`) {
+		t.Errorf("held tree should report the unchanged interaction hash: %s", rec.Body)
+	}
+	rec = do(t, newTestServer(&fakeBackend{nodesErr: errors.New("runner down")}), "GET", "/api/devices/AAA/tree?after=x", "")
+	if rec.Code != http.StatusBadGateway {
+		t.Errorf("held tree error status = %d", rec.Code)
+	}
+}
+
+// A plain poll is unchanged by the barrier: no ?after=, no hold, and the
+// interaction hash rides along so the next poll can hand it back.
+func TestTreeCarriesInteractionHash(t *testing.T) {
+	nodes := []runner.Node{{Index: 0, Type: "TextField", Focused: true}}
+	body := do(t, newTestServer(&fakeBackend{nodes: nodes}), "GET", "/api/devices/AAA/tree", "").Body.String()
+	if !strings.Contains(body, `"interaction":"`+runner.InteractionHash(nodes)+`"`) {
+		t.Errorf("tree body missing interaction hash: %s", body)
 	}
 }

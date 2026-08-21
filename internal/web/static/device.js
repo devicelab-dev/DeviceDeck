@@ -524,6 +524,30 @@ function noteSettle(hash) {
 let syncTimer = null;
 let fetchInFlight = false;
 
+// The barrier. An action marks the next fetch as "held": it carries the
+// interaction hash of the screen the action was taken on, and the server
+// does not answer until the screen has moved on from it and come to
+// rest. That one request is what playwright-mcp waits on after every
+// action, so an agent gets the settled screen without knowing it asked
+// for it. Only the post-action fetch is held — idle polls answer at
+// once, so anything else that happens to fall inside a tool's wait
+// window costs nothing.
+let lastInteraction = "";
+let holdNext = false;
+// An action taken while a held fetch is still open aborts it: the new
+// action's barrier has to be issued promptly, and the old hold was
+// waiting for a screen the user has already moved past.
+let inFlight = null;
+
+function treeURL() {
+  const params = new URLSearchParams();
+  if (appId) params.set("app", appId);
+  if (holdNext && lastInteraction) params.set("after", lastInteraction);
+  holdNext = false;
+  const query = params.toString();
+  return `/api/devices/${udid}/tree${query ? `?${query}` : ""}`;
+}
+
 async function syncTree() {
   // One fetch at a time: tree dumps serialize on the device side, and a
   // pile-up would queue input calls behind them for seconds.
@@ -533,18 +557,24 @@ async function syncTree() {
   }
   fetchInFlight = true;
   const seq = ++syncSeq;
+  const ctl = new AbortController();
+  inFlight = ctl;
   try {
-    const url = `/api/devices/${udid}/tree${appId ? `?app=${encodeURIComponent(appId)}` : ""}`;
-    const res = await fetch(url);
+    const res = await fetch(treeURL(), { signal: ctl.signal });
     if (res.ok && seq === syncSeq) {
       const before = lastTreeJSON;
       const payload = await res.json();
       renderMirror(payload.nodes);
       nameScreen(payload.hash);
+      lastInteraction = payload.interaction || "";
       if (lastTreeJSON !== before) lastActivity = Date.now();
       noteSettle(payload.hash);
     }
   } catch {}
+  // An aborted fetch owns nothing any more: the action that aborted it
+  // has already released the in-flight state and armed its own timer.
+  if (ctl.signal.aborted) return;
+  inFlight = null;
   fetchInFlight = false;
   scheduleSync(Date.now() - lastActivity < 5000 ? FAST_MS : IDLE_MS);
 }
@@ -558,6 +588,12 @@ function scheduleSync(delay) {
 
 function noteActivity() {
   lastActivity = Date.now();
+  holdNext = true;
+  if (inFlight) {
+    inFlight.abort();
+    inFlight = null;
+    fetchInFlight = false;
+  }
   scheduleSync(ACTIVE_MS);
 }
 
