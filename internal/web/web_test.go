@@ -190,3 +190,30 @@ func TestMirroredFieldsPaintNothing(t *testing.T) {
 		}
 	}
 }
+
+// Container nodes are click-through so they stop swallowing clicks aimed
+// at the leaves inside them — but a control that happens to contain
+// something else is still a control. Without the exception the cart
+// button became unclickable the moment it grew a badge, and an agent
+// could only reach it through the child image. Only tappable roles are
+// exempt: a list or a navigation bar spans its children and would go
+// straight back to swallowing them.
+func TestControlsStayClickableEvenWithChildren(t *testing.T) {
+	body := get(t, "/device/EB69B42A-4763-4A33-AF0F-CD233F721951").Body.String()
+	if !strings.Contains(body, `:not(:has([data-dd-node])) { pointer-events: auto; }`) {
+		t.Error("leaf nodes are no longer clickable; every click would hit a container")
+	}
+	for _, role := range []string{"button", "link", "textbox", "searchbox"} {
+		want := `[role="` + role + `"]`
+		if !strings.Contains(body, want) {
+			t.Errorf("role %q is not exempted from click-through, so such a control "+
+				"becomes unclickable as soon as it contains anything", role)
+		}
+	}
+	// The roles that must NOT be exempt, because they span their children.
+	for _, role := range []string{"list", "navigation", "listitem"} {
+		if strings.Contains(body, `[role="`+role+`"] { pointer-events: auto`) {
+			t.Errorf("role %q is exempted; it spans its children and will swallow their clicks", role)
+		}
+	}
+}

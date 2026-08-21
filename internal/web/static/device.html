@@ -38,6 +38,23 @@
       pointer-events: none;
     }
     #mirror [data-dd-node]:not(:has([data-dd-node])) { pointer-events: auto; }
+    /* A control that happens to contain something else is still a control.
+       Culling every parent made the cart button unclickable the moment it
+       grew a badge — an agent could only reach it through the child image,
+       and the button itself vanished from what a snapshot offers as
+       actionable. Only the roles that represent something a person taps
+       are listed: a role-bearing *container* like a list or a navigation
+       bar spans its children and would go back to swallowing their
+       clicks. A control's own children stay clickable and, being on top,
+       still win a hit test aimed at them. */
+    #mirror [data-dd-node][role="button"],
+    #mirror [data-dd-node][role="link"],
+    #mirror [data-dd-node][role="textbox"],
+    #mirror [data-dd-node][role="searchbox"],
+    #mirror [data-dd-node][role="checkbox"],
+    #mirror [data-dd-node][role="radio"],
+    #mirror [data-dd-node][role="switch"],
+    #mirror [data-dd-node][role="tab"] { pointer-events: auto; }
     /* A div paints nothing by default; an <input> paints a border, an
        opaque background and a caret. Mirrored fields are inputs so that
        fill() works, which made two white boxes float over the video and
