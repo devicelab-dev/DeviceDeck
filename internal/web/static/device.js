@@ -638,6 +638,74 @@ mirror.addEventListener("pointerup", (e) => {
   noteActivity();
 });
 
+// ---------- scrolling ----------
+
+// A wheel event becomes a finger drag. This is what page.mouse.wheel(),
+// Puppeteer's mouse.wheel(), Selenium's scroll actions and a trackpad
+// in the console all produce, and without it none of them did anything
+// — the mirror has no scrollable box, so the event fell on the page and
+// the device never heard of it. Tools that write scrollTop directly
+// (Cypress's scrollTo, scrollIntoView before a click) dispatch no event
+// and are a separate problem.
+//
+// A trackpad emits a burst of small deltas; they are coalesced over a
+// short window into one gesture rather than one drag per tick. The
+// drag is deliberately slow and ends with the finger held still: a
+// quick flick keeps scrolling after it lifts, and "scroll by 300 pixels"
+// would land somewhere different every run.
+const WHEEL_COALESCE_MS = 40;
+const DRAG_STEPS = 12;
+const DRAG_STEP_MS = 16;
+const DRAG_HOLD_MS = 90;
+let wheelAccum = { x: 0, y: 0, clientX: 0, clientY: 0 };
+let wheelTimer = null;
+
+document.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  wheelAccum.x += e.deltaX;
+  wheelAccum.y += e.deltaY;
+  wheelAccum.clientX = e.clientX;
+  wheelAccum.clientY = e.clientY;
+  clearTimeout(wheelTimer);
+  wheelTimer = setTimeout(flushWheel, WHEEL_COALESCE_MS);
+}, { passive: false });
+
+// flushWheel turns the accumulated delta into one drag under the
+// pointer — or from the device's centre when the pointer is off the
+// device, which is where a page-level scroll would act anyway.
+function flushWheel() {
+  const { x: dx, y: dy, clientX, clientY } = wheelAccum;
+  wheelAccum = { x: 0, y: 0, clientX: 0, clientY: 0 };
+  const rect = canvas.getBoundingClientRect();
+  const inside =
+    clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+  const from = inside
+    ? { x: clientX, y: clientY }
+    : { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  // Wheel down means the content moves up, which is a finger moving up.
+  dragGesture(from, { x: from.x - dx, y: from.y - dy });
+}
+
+// dragGesture moves a finger from one page point to another in timed
+// steps, then lets go. Points are clamped to the device, so a drag
+// that would run off the edge scrolls as far as the edge allows.
+function dragGesture(from, to) {
+  const at = (p) => normalized({ clientX: p.x, clientY: p.y });
+  const start = at(from);
+  const end = at(to);
+  input.send(touchFrame(PHASE.down, start.x, start.y));
+  for (let i = 1; i <= DRAG_STEPS; i++) {
+    const t = i / DRAG_STEPS;
+    setTimeout(() => {
+      input.send(touchFrame(PHASE.move, start.x + (end.x - start.x) * t, start.y + (end.y - start.y) * t));
+    }, i * DRAG_STEP_MS);
+  }
+  setTimeout(() => {
+    input.send(touchFrame(PHASE.up, end.x, end.y));
+    noteActivity();
+  }, DRAG_STEPS * DRAG_STEP_MS + DRAG_HOLD_MS);
+}
+
 document.addEventListener("keydown", (e) => {
   // A focused mirror field types itself: the browser writes the character
   // into the <input>, the input listener below diffs the value and sends
