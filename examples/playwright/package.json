@@ -2,6 +2,7 @@
   "name": "devicedeck-playwright-example",
   "private": true,
   "devDependencies": {
+    "@playwright/mcp": "^0.0.79",
     "@playwright/test": "^1.49.0"
   },
   "scripts": {
