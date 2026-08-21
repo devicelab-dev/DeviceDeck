@@ -690,19 +690,30 @@ const POINTER_FOCUS_MS = 600;
 let focusTapAt = 0;
 let pointerAt = 0;
 
-mirror.addEventListener("focusin", (e) => {
-  if (!(e.target instanceof HTMLInputElement)) return;
-  if (Date.now() - pointerAt < POINTER_FOCUS_MS) return;
-  tapField(e.target);
-  focusTapAt = Date.now();
-  noteActivity();
-});
-
 // Edits run one at a time, in order. Each used to wait out the settle
 // window on its own timer, and because those delays differed, a later
 // keystroke could fire before an earlier one — "devicelab" reached the
 // device as "vxdicelab". A chain keeps the order the typist produced.
+//
+// The focus tap is on the same chain, for the same reason one step
+// further out: fill() on one field and then fill() on the next fires
+// two focus taps back to back while the first field's keystrokes are
+// still waiting out their settle window. Tapped immediately, the second
+// field had focus by the time the first field's text arrived, and both
+// values landed in it — eighteen bullets in the password field. A tap
+// that queues behind the pending edits lands after them, as typed.
 let editChain = Promise.resolve();
+
+mirror.addEventListener("focusin", (e) => {
+  if (!(e.target instanceof HTMLInputElement)) return;
+  if (Date.now() - pointerAt < POINTER_FOCUS_MS) return;
+  const el = e.target;
+  editChain = editChain.then(() => {
+    tapField(el);
+    focusTapAt = Date.now();
+  });
+  noteActivity();
+});
 
 mirror.addEventListener("input", (e) => {
   const el = e.target;

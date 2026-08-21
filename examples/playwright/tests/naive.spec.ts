@@ -17,10 +17,6 @@ test.beforeEach(async ({ request }) => {
 });
 
 test('logs in and adds a product to the cart', async ({ page }) => {
-  // Expected to fail until the product keeps the promise: fill() runs
-  // inside the app's post-launch window and its focus tap is swallowed.
-  // When this flips to an unexpected pass, delete the annotation.
-  test.fail(true, 'post-launch tap window: see /app/launch readiness');
   await page.goto(`/device/${UDID}?app=${APP}`);
 
   await page.getByRole('textbox', { name: 'Username' }).fill('devicelab');
