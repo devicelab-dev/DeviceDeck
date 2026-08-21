@@ -136,3 +136,31 @@ func TestDeviceNoticeIsHiddenFromAutomation(t *testing.T) {
 		t.Errorf("notice carries text in the DOM, which getByText would match: %.60s", body)
 	}
 }
+
+// The mirror is invisible to the eye but must stay visible to every
+// machine that reads the page. That rests on one detail: the nodes are
+// unpainted, not hidden. color:transparent leaves a real box in layout,
+// so Chrome exposes the element and Playwright can click it — measured at
+// 160 exposed nodes with none ignored. Switching to opacity:0 or
+// visibility:hidden would look identical on screen and silently empty the
+// accessibility tree, which is the one failure that would make DeviceDeck
+// useless while appearing to work.
+func TestMirrorHidesFromTheEyeAndNotFromTheMachine(t *testing.T) {
+	body := get(t, "/device/EB69B42A-4763-4A33-AF0F-CD233F721951").Body.String()
+	rule := "#mirror [data-dd-node] {"
+	start := strings.Index(body, rule)
+	if start < 0 {
+		t.Fatal("mirror node rule not found; this guard needs updating")
+	}
+	end := strings.Index(body[start:], "}") + start
+	css := body[start:end]
+	for _, banned := range []string{"opacity: 0", "opacity:0", "visibility: hidden", "visibility:hidden"} {
+		if strings.Contains(css, banned) {
+			t.Errorf("mirror nodes use %q, which removes them from the accessibility tree: %s",
+				banned, css)
+		}
+	}
+	if !strings.Contains(css, "color: transparent") {
+		t.Error("mirror nodes no longer rely on color:transparent; confirm they are still exposed to automation")
+	}
+}
