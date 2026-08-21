@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { clearField, fillField, launchApp, openDevice } from './support/device';
 
 // The device page's whole promise is that ordinary web selectors work
 // against a native app. Our other specs use getByTestId, which exercises
@@ -7,21 +8,17 @@ import { test, expect } from '@playwright/test';
 // single test noticing. This spec drives the same journey using the
 // query styles a real user reaches for first.
 
-const UDID = process.env.DEVICEDECK_UDID || 'booted';
-const APP = 'dev.devicelab.testhive';
-
-// Each spec begins from the app's first screen. Without this they share
-// one device and the second to run inherits wherever the first left it —
-// which is exactly how running the suite together failed while each spec
-// passed alone.
 test.beforeEach(async ({ request }) => {
-  await request.post(`/api/devices/${UDID}/app/launch`, { data: { app: APP } });
-  await new Promise((r) => setTimeout(r, 2500));
+  await launchApp(request);
 });
 
 test('drives TestHive by role, label and text', async ({ page }) => {
-  await page.goto(`/device/${UDID}?app=${APP}`);
+  await openDevice(page);
 
+  // A control's identifier is folded into its accessible name, so a name
+  // query matches on the part the app author wrote. getByRole matches a
+  // substring by default, which is what keeps "Username" working against
+  // "Username (username-input)".
   const username = page.getByRole('textbox', { name: 'Username' });
   await expect(username).toBeVisible({ timeout: 30_000 });
 
@@ -30,32 +27,14 @@ test('drives TestHive by role, label and text', async ({ page }) => {
   const signIn = page.getByRole('button', { name: 'Sign In' });
   await expect(signIn).toBeDisabled();
 
-  // Prove the field accepts input before typing into it: a freshly
-  // launched app is in the accessibility tree about a second before it
-  // takes touches, and reports itself hittable and stable throughout.
-  // Relaunching does not reset app state — the field can still hold what
-  // a previous session typed — so clear it, then prove the app is taking
-  // input at all. A freshly launched app is in the accessibility tree
-  // about a second before it accepts touches, and reports itself
-  // hittable and stable throughout, so there is nothing to wait on but
-  // the effect itself.
-  await expect(async () => {
-    await username.click();
-    for (let i = 0; i < 40 && (await username.inputValue()); i++) {
-      await page.keyboard.press('Backspace');
-    }
-    await page.keyboard.press('x');
-    await expect(username).toHaveValue('x');
-  }).toPass({ timeout: 30_000 });
-  await page.keyboard.press('Backspace');
+  await clearField(page, username);
+  await fillField(page, username, 'devicelab');
 
-  await page.keyboard.type('devicelab', { delay: 150 });
   // The name must survive typing: it comes from what the field asks for,
   // never from what has been entered.
   await expect(page.getByRole('textbox', { name: 'Username' })).toHaveCount(1);
 
-  await page.getByRole('textbox', { name: 'Password' }).click();
-  await page.keyboard.type('robustest', { delay: 150 });
+  await fillField(page, page.getByRole('textbox', { name: 'Password' }), 'robustest');
 
   await expect(signIn).toBeEnabled();
   await signIn.click();
