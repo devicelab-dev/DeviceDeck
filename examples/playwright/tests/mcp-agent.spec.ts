@@ -31,6 +31,12 @@ test.describe('an agent driving the device over MCP', () => {
     expect(nav).toContain('window.devicedeck.gesture');
 
     const login = await mcp.snapshotUntil(/textbox "Username/);
+    // Refs are minted only for nodes that are visible and receive pointer
+    // events. A mirror that renders but is not hit-testable hands the
+    // agent a full tree with nothing clickable, and it fails silently —
+    // so count the refs, not just the nodes.
+    const refs = (login.match(/\[ref=e\d+\]/g) || []).length;
+    expect(refs, 'the login screen should offer several actionable refs').toBeGreaterThanOrEqual(6);
     await mcp.call('browser_type', {
       element: 'Username field', target: refFor(login, /textbox "Username/), text: 'devicelab',
     });
