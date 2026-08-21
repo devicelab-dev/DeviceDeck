@@ -30,7 +30,9 @@ test('logs into TestHive on a real simulator', async ({ page, request }) => {
   // Assert against the device, not the mirror: the mirror showing text
   // the device never received is the exact failure this suite exists to
   // catch, and it is invisible to a check that reads the input back.
-  expect(await deviceValue(request, 'username-input')).toBe('devicelab');
+  // Polled, because fill() returns when the mirror has the text and the
+  // keystrokes are still on their way to the device behind it.
+  await expect.poll(() => deviceValue(request, 'username-input')).toBe('devicelab');
 
   await page.getByTestId('login-button').click();
 
