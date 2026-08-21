@@ -392,6 +392,22 @@ const SETTLE_POLLS = 3;
 let quietPolls = 0;
 let lastHash = null;
 
+// nameScreen puts the screen's fingerprint into the mirror root's name.
+//
+// An agent has no way to tell which screen it is on: the tree carries no
+// title, no heading and no landmark, and the container names an app
+// happens to expose are unreliable — one screen here reports itself as
+// "testtube.2", an icon asset name. Asked directly, an agent said it
+// inferred the screen every time and never read it. The fingerprint does
+// not say what the screen is, but it says when it is no longer the same
+// one, which is what an agent needs to know that an action landed. It
+// goes in the root's name because a name is the only thing a snapshot
+// carries, and the root is ours — putting it anywhere else would add our
+// words to the app's own content.
+function nameScreen(hash) {
+  mirror.setAttribute("aria-label", hash ? `device screen ${hash.slice(0, 8)}` : "device");
+}
+
 // The server decides what counts as a change — it excludes geometry noise
 // and the status-bar clock, which would otherwise stop any screen from
 // ever looking quiet. Comparing raw snapshots here would re-derive those
@@ -420,6 +436,7 @@ async function syncTree() {
       const before = lastTreeJSON;
       const payload = await res.json();
       renderMirror(payload.nodes);
+      nameScreen(payload.hash);
       if (lastTreeJSON !== before) lastActivity = Date.now();
       noteSettle(payload.hash);
     }
