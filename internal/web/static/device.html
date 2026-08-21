@@ -22,7 +22,35 @@
     html, body { height: 100%; background: #000; }
     #stage { position: relative; height: 100%; display: flex; align-items: center; justify-content: center; }
     #video { max-width: 100%; max-height: 100%; background: #000; }
-    #mirror { position: absolute; }
+    /* The mirror is a scroll container that never visibly scrolls.
+
+       XCUITest reports rows below the fold with their real frames, so
+       the mirror holds elements past its own bottom edge. Unclipped,
+       those were hit-testable below the device: a click on one went
+       through, the tap coordinate clamped to the device's edge, and the
+       wrong element was tapped — silently. overflow:hidden clips them,
+       and it keeps the element programmatically scrollable, which is the
+       point: scrollIntoView before a click (Playwright and Cypress both do
+       it) and a direct scrollTop write (cy.scrollTo) land here as scroll
+       events, and device.js turns each one into a finger drag and resets
+       the offset. The native list moves; the mirror never does. */
+    #mirror { position: absolute; overflow: hidden; }
+    /* While an action's barrier is open — from the action until the
+       settled tree has been rendered — the mirror is never still.
+       Playwright refuses to click an element whose box moves between two
+       frames and retries until it holds, so a click aimed mid-animation
+       waits for the screen to come to rest instead of landing on the
+       bounds of a screen that has already moved on. The movement is two
+       points on a transparent layer: nothing to see, and every frame's
+       box differs from the last. Instability is the one actionability
+       check that costs nothing else — taking pointer events away was
+       tried first, and an agent's snapshot lost every ref with them,
+       because refs are minted only for nodes that receive them. */
+    @keyframes dd-unsettled {
+      from { transform: translateY(0); }
+      to { transform: translateY(2px); }
+    }
+    #mirror[data-dd-settled="false"] { animation: dd-unsettled 160ms linear infinite alternate; }
     #mirror [data-dd-node] {
       position: absolute;
       /* Real, visible-to-Playwright elements that add no pixels: no
@@ -45,6 +73,13 @@
       pointer-events: none;
     }
     #mirror [data-dd-node]:not(:has([data-dd-node])) { pointer-events: auto; }
+    /* Containers must not clip. Rows below the fold sit inside the list
+       inside the window, and a window that clips to the screen takes
+       them out of the mirror's scrollable overflow, so nothing is left
+       for scrollIntoView to scroll. The mirror is the one that clips.
+       Leaves keep overflow:hidden: a 13-point icon labelled "Favourite"
+       would otherwise spill its text, and the spill is hit-testable. */
+    #mirror [data-dd-node]:has([data-dd-node]) { overflow: visible; }
     /* A control that happens to contain something else is still a control.
        Culling every parent made the cart button unclickable the moment it
        grew a badge — an agent could only reach it through the child image,

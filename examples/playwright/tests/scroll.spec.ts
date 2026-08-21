@@ -35,3 +35,23 @@ test('the wheel scrolls a native list', async ({ page }) => {
   // list snaps and overshoots, so exact equality is not the contract.
   await expect.poll(async () => Math.abs((await first.boundingBox())!.y - before.y)).toBeLessThan(40);
 });
+
+test('a click on a row below the fold scrolls it into view first', async ({ page }) => {
+  await page.goto(`/device/${UDID}?app=${APP}`);
+  await page.getByRole('textbox', { name: 'Username' }).fill('devicelab');
+  await page.getByRole('textbox', { name: 'Password' }).fill('robustest');
+  await page.getByRole('button', { name: 'Sign In' }).click();
+  await expect(page.getByText('Hello, devicelab!')).toBeVisible();
+
+  // The last product starts below the screen. A web test just clicks
+  // it; the scroll-into-view Playwright does first is what brings it on.
+  const device = (await page.locator('#mirror').boundingBox())!;
+  const last = page.getByTestId('product-name-6');
+  expect((await last.boundingBox())!.y).toBeGreaterThan(device.y + device.height);
+
+  await last.click();
+
+  const after = (await last.boundingBox())!;
+  expect(after.y).toBeGreaterThanOrEqual(device.y);
+  expect(after.y + after.height).toBeLessThanOrEqual(device.y + device.height + 1);
+});

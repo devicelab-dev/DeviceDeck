@@ -542,10 +542,11 @@ let inFlight = null;
 function treeURL() {
   const params = new URLSearchParams();
   if (appId) params.set("app", appId);
-  if (holdNext && lastInteraction) params.set("after", lastInteraction);
+  const held = holdNext && !!lastInteraction;
+  if (held) params.set("after", lastInteraction);
   holdNext = false;
   const query = params.toString();
-  return `/api/devices/${udid}/tree${query ? `?${query}` : ""}`;
+  return { url: `/api/devices/${udid}/tree${query ? `?${query}` : ""}`, held };
 }
 
 async function syncTree() {
@@ -560,16 +561,9 @@ async function syncTree() {
   const ctl = new AbortController();
   inFlight = ctl;
   try {
-    const res = await fetch(treeURL(), { signal: ctl.signal });
-    if (res.ok && seq === syncSeq) {
-      const before = lastTreeJSON;
-      const payload = await res.json();
-      renderMirror(payload.nodes);
-      nameScreen(payload.hash);
-      lastInteraction = payload.interaction || "";
-      if (lastTreeJSON !== before) lastActivity = Date.now();
-      noteSettle(payload.hash);
-    }
+    const { url, held } = treeURL();
+    const res = await fetch(url, { signal: ctl.signal });
+    if (res.ok && seq === syncSeq) applyTree(await res.json(), held);
   } catch {}
   // An aborted fetch owns nothing any more: the action that aborted it
   // has already released the in-flight state and armed its own timer.
@@ -577,6 +571,28 @@ async function syncTree() {
   inFlight = null;
   fetchInFlight = false;
   scheduleSync(Date.now() - lastActivity < 5000 ? FAST_MS : IDLE_MS);
+}
+
+// applyTree renders a tree payload and updates everything derived from
+// it: the fingerprint, the hash the next barrier compares against, the
+// scroll offset, and settledness.
+function applyTree(payload, held) {
+  const before = lastTreeJSON;
+  renderMirror(payload.nodes);
+  nameScreen(payload.hash);
+  lastInteraction = payload.interaction || "";
+  if (lastTreeJSON !== before) lastActivity = Date.now();
+  if (payload.hash !== lastHash) resetScroll();
+  // A held response is the settled screen by construction — the server
+  // verified it — so the barrier closes here rather than after three
+  // more polls, and whoever was waiting on it is released.
+  if (held) {
+    quietPolls = SETTLE_POLLS;
+    const waiters = settledWaiters;
+    settledWaiters = [];
+    for (const resolve of waiters) resolve();
+  }
+  noteSettle(payload.hash);
 }
 
 // scheduleSync (re)arms the single sync timer; a shorter pending delay
@@ -589,6 +605,10 @@ function scheduleSync(delay) {
 function noteActivity() {
   lastActivity = Date.now();
   holdNext = true;
+  // The gate: nothing in the mirror takes a click until the settled
+  // tree is back. See the rule on #mirror[data-dd-settled="false"].
+  quietPolls = 0;
+  mirror.setAttribute("data-dd-settled", "false");
   if (inFlight) {
     inFlight.abort();
     inFlight = null;
@@ -599,6 +619,8 @@ function noteActivity() {
 
 // ---------- interaction forwarding ----------
 
+// normalized maps a page point onto the device screen, 0..1 each way,
+// clamped to the edges. Screen space: what a finger can touch.
 function normalized(event) {
   const rect = canvas.getBoundingClientRect();
   const clamp = (v) => Math.min(1, Math.max(0, v));
@@ -608,20 +630,52 @@ function normalized(event) {
   };
 }
 
+// contentPoint maps a page point onto the mirror's content, unclamped.
+//
+// The mirror is a scroll container, and tools scroll it: Playwright
+// aligns an element before clicking — with alternating alignments when
+// it retries, even for an element already in view — and Cypress does the
+// same. That scroll is a view transform the tool is entitled to apply,
+// and it is undone here: the point a click lands on, plus the offset the
+// mirror is scrolled by, is where that element sits on the device. A
+// result inside 0..1 is a place a finger can touch. A result past 1 is a
+// row below the fold, which XCUITest reports with its real frame and the
+// mirror holds past its own edge — see tapOffscreen.
+function contentPoint(clientX, clientY) {
+  const rect = mirror.getBoundingClientRect();
+  return {
+    x: (clientX - rect.left + mirror.scrollLeft) / rect.width,
+    y: (clientY - rect.top + mirror.scrollTop) / rect.height,
+  };
+}
+
+function onDevice(p) {
+  return p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1;
+}
+
 // Clicks land wherever the pointer is — the mirror node under it exists
 // for *finding*; the device receives the true coordinates, exactly like
 // a finger.
 let pointerDown = false;
+// A click on a row below the fold is taken over entirely: the device is
+// scrolled and the row tapped once it is on screen. The up that follows
+// belongs to that click and must not become a stray touch.
+let pointerDeferred = false;
 mirror.addEventListener("pointerdown", (e) => {
-  pointerDown = true;
   // Stamped on the way down, not up: focus lands on pointerdown, so the
   // focus handler must already be able to see that a click caused it.
   pointerAt = Date.now();
+  const at = contentPoint(e.clientX, e.clientY);
+  if (!onDevice(at)) {
+    pointerDeferred = true;
+    tapOffscreen(e.target, at);
+    return;
+  }
+  pointerDown = true;
   // Synthetic events (Cypress, jsdom) may carry no capturable pointerId;
   // capture is an optimization for drags, never a precondition.
   try { mirror.setPointerCapture(e.pointerId); } catch {}
-  const { x, y } = normalized(e);
-  input.send(touchFrame(PHASE.down, x, y));
+  input.send(touchFrame(PHASE.down, at.x, at.y));
   noteActivity();
 });
 mirror.addEventListener("pointermove", (e) => {
@@ -630,11 +684,18 @@ mirror.addEventListener("pointermove", (e) => {
   input.send(touchFrame(PHASE.move, x, y));
 });
 mirror.addEventListener("pointerup", (e) => {
+  if (pointerDeferred) {
+    pointerDeferred = false;
+    return;
+  }
   if (!pointerDown) return;
   pointerDown = false;
   pointerAt = Date.now();
+  const at = contentPoint(e.clientX, e.clientY);
   const { x, y } = normalized(e);
-  input.send(touchFrame(PHASE.up, x, y));
+  // A drag that runs past the edge ends at the edge; a click's up lands
+  // where its down did.
+  input.send(touchFrame(PHASE.up, onDevice(at) ? at.x : x, onDevice(at) ? at.y : y));
   noteActivity();
 });
 
@@ -686,6 +747,55 @@ function flushWheel() {
   dragGesture(from, { x: from.x - dx, y: from.y - dy });
 }
 
+// The mirror's scroll offset is a view transform, never a gesture. It
+// is put back to zero when the screen changes, because the tree that
+// arrives then is laid out against the real screen, and a stale offset
+// would shift every click on it.
+function resetScroll() {
+  if (mirror.scrollTop || mirror.scrollLeft) mirror.scrollTo(0, 0);
+}
+
+// settledRender resolves the next time a held tree — the settled screen
+// after an action — has been rendered.
+let settledWaiters = [];
+function settledRender() {
+  return new Promise((resolve) => settledWaiters.push(resolve));
+}
+
+// How far down the screen a row is brought when the device has to be
+// scrolled to reach it: clear of the bottom edge, clear of any tab bar.
+const REVEAL_AT = 0.75;
+const REVEAL_TRIES = 4;
+
+// tapOffscreen taps a row the mirror holds below the device's edge. The
+// device is dragged until the row is on screen, then it is tapped where
+// the settled tree says it now is. Identity survives by key — that is
+// what the reconciliation keeps stable — so it is the same row even
+// though every frame on screen has changed. A tool's click returns
+// before any of this lands, which is already how typing works here:
+// fill() returns when the mirror has the text and the keystrokes follow.
+async function tapOffscreen(el, at) {
+  const key = el.closest("[data-dd-key]")?.getAttribute("data-dd-key");
+  if (!key) return;
+  for (let i = 0; i < REVEAL_TRIES; i++) {
+    const rect = canvas.getBoundingClientRect();
+    const from = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    const dy = (at.y - REVEAL_AT) * rect.height;
+    const dx = (at.x > 1 ? at.x - 0.5 : at.x < 0 ? at.x - 0.5 : 0) * rect.width;
+    dragGesture(from, { x: from.x - dx, y: from.y - dy });
+    await settledRender();
+    resetScroll();
+    const found = mirror.querySelector(`[data-dd-key="${CSS.escape(key)}"]`);
+    if (!found) return;
+    at = centreOf(found);
+    if (onDevice(at)) break;
+  }
+  if (!onDevice(at)) return;
+  input.send(touchFrame(PHASE.down, at.x, at.y));
+  input.send(touchFrame(PHASE.up, at.x, at.y));
+  noteActivity();
+}
+
 // dragGesture moves a finger from one page point to another in timed
 // steps, then lets go. Points are clamped to the device, so a drag
 // that would run off the edge scrolls as far as the edge allows.
@@ -693,6 +803,9 @@ function dragGesture(from, to) {
   const at = (p) => normalized({ clientX: p.x, clientY: p.y });
   const start = at(from);
   const end = at(to);
+  // Opened here as well as on release: a click aimed at a row while the
+  // finger is still moving would land on bounds the screen has left.
+  noteActivity();
   input.send(touchFrame(PHASE.down, start.x, start.y));
   for (let i = 1; i <= DRAG_STEPS; i++) {
     const t = i / DRAG_STEPS;
@@ -738,12 +851,17 @@ function editsAField(e) {
 // ever clicking, so the device's own field would still be unfocused and
 // every keystroke would land on whatever was focused before.
 function tapField(el) {
+  const at = centreOf(el);
+  if (!onDevice(at)) return tapOffscreen(el, at);
+  input.send(touchFrame(PHASE.down, at.x, at.y));
+  input.send(touchFrame(PHASE.up, at.x, at.y));
+  return Promise.resolve();
+}
+
+// centreOf is an element's centre in content space.
+function centreOf(el) {
   const r = el.getBoundingClientRect();
-  const m = mirror.getBoundingClientRect();
-  const x = (r.left + r.width / 2 - m.left) / m.width;
-  const y = (r.top + r.height / 2 - m.top) / m.height;
-  input.send(touchFrame(PHASE.down, x, y));
-  input.send(touchFrame(PHASE.up, x, y));
+  return contentPoint(r.left + r.width / 2, r.top + r.height / 2);
 }
 
 // The device needs a moment to raise its keyboard and place the caret
@@ -776,8 +894,8 @@ mirror.addEventListener("focusin", (e) => {
   if (!(e.target instanceof HTMLInputElement)) return;
   if (Date.now() - pointerAt < POINTER_FOCUS_MS) return;
   const el = e.target;
-  editChain = editChain.then(() => {
-    tapField(el);
+  editChain = editChain.then(async () => {
+    await tapField(el);
     focusTapAt = Date.now();
   });
   noteActivity();

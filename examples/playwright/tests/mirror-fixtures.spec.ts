@@ -134,3 +134,55 @@ test('an identifier the app genuinely repeats is left alone', async ({ page }) =
   // and the mirror must not paper over it.
   await expect(page.getByTestId('star.fill')).toHaveCount(6);
 });
+
+test('a row below the fold is in the mirror but clipped, not clickable off the device', async ({ page }) => {
+  await serveMirror(page, 'products');
+  // XCUITest reports rows below the screen with real frames. Unclipped,
+  // this one was hit-testable below the device and a click on it tapped
+  // the device's bottom edge instead.
+  const below = page.getByTestId('product-name-6');
+  await expect(below).toBeAttached();
+  const mirror = (await page.locator('#mirror').boundingBox())!;
+  const box = (await below.boundingBox())!;
+  expect(box.y).toBeGreaterThan(mirror.y + mirror.height);
+  // The mirror clips it: nothing at that point belongs to the mirror.
+  const hit = await page.evaluate(([x, y]) =>
+    document.elementFromPoint(x, y)?.closest('#mirror') !== null, [box.x + 1, box.y + 1] as [number, number]);
+  expect(hit).toBe(false);
+});
+
+test('the mirror really scrolls, and forgets the offset when the screen changes', async ({ page }) => {
+  const products = await serveMirror(page, 'products');
+  const mirror = page.locator('#mirror');
+  const below = page.getByTestId('product-name-6');
+  const box = (await mirror.boundingBox())!;
+  expect((await below.boundingBox())!.y).toBeGreaterThan(box.y + box.height);
+
+  // What scrollIntoView and cy.scrollTo do: write the offset. The
+  // mirror keeps it — it is the tool's view transform — and the row
+  // below the fold is now inside the box, where a tool can hit-test it.
+  await below.scrollIntoViewIfNeeded();
+  expect(await page.evaluate(() => document.getElementById('mirror')!.scrollTop)).toBeGreaterThan(0);
+  const scrolled = (await below.boundingBox())!;
+  expect(scrolled.y + scrolled.height).toBeLessThanOrEqual(box.y + box.height + 1);
+
+  // A new screen arrives laid out against the real device, so the
+  // offset goes back to zero rather than shifting every click on it.
+  const cart = fixture('cart');
+  expect(cart.hash).not.toBe(products.hash);
+  await page.route('**/api/devices/*/tree*', (r) => r.fulfill({ json: cart }));
+  await expect.poll(() => page.evaluate(() => document.getElementById('mirror')!.scrollTop), { timeout: 15_000 }).toBe(0);
+});
+
+test('nothing takes a click while the barrier is open', async ({ page }) => {
+  await serveMirror(page, 'login');
+  const signIn = page.getByTestId('forgot-password-button');
+  await page.evaluate(() => document.getElementById('mirror')!.setAttribute('data-dd-settled', 'false'));
+  // Playwright refuses to click an element whose box is moving and
+  // retries until it holds still — which is the whole mechanism. The
+  // snapshot is untouched: the element keeps its ref throughout.
+  await expect(signIn.click({ timeout: 800 })).rejects.toThrow(/not stable/);
+  expect(await page.locator('#stage').ariaSnapshot({ mode: 'ai' })).toMatch(/button "Forgot Password[^"]*" \[ref=/);
+  await page.evaluate(() => document.getElementById('mirror')!.setAttribute('data-dd-settled', 'true'));
+  await signIn.click({ timeout: 2000 });
+});
