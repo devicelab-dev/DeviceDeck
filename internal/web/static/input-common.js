@@ -41,6 +41,29 @@ const KEY_USAGE = (() => {
   return map;
 })();
 
+// Characters a US keyboard only reaches with shift held, mapped to the
+// unshifted key that produces them.
+const SHIFTED_CHARS = {
+  "!": "1", "@": "2", "#": "3", "$": "4", "%": "5", "^": "6", "&": "7",
+  "*": "8", "(": "9", ")": "0", _: "-", "+": "=", "{": "[", "}": "]",
+  "|": "\\", ":": ";", '"': "'", "~": "`", "<": ",", ">": ".", "?": "/",
+};
+const MOD_SHIFT = 0x02;
+
+// keyFrameForChar encodes one character of text as the keystroke that
+// types it. A value set in one go — fill(), or an agent's browser_type —
+// arrives as a finished string rather than as key events, so the
+// keystrokes have to be reconstructed from it. Returns null for anything
+// with no HID equivalent: an emoji has no key that types it, and sending
+// nothing is better than sending the wrong one.
+function keyFrameForChar(ch) {
+  if (ch >= "A" && ch <= "Z") return keyFrame(MOD_SHIFT, KEY_USAGE[ch.toLowerCase()]);
+  const shifted = SHIFTED_CHARS[ch];
+  if (shifted) return keyFrame(MOD_SHIFT, KEY_USAGE[shifted]);
+  const usage = KEY_USAGE[ch];
+  return usage ? keyFrame(0, usage) : null;
+}
+
 // keyEventFrame encodes a KeyboardEvent, or returns null when the key
 // has no HID equivalent (the caller then leaves the event alone).
 function keyEventFrame(e) {

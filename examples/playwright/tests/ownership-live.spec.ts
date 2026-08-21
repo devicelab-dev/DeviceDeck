@@ -31,9 +31,9 @@ test('a second driver is refused on a real device', async ({ browser, request })
   await expect(async () => {
     await field.click();
     await first.keyboard.press('q');
-    await expect(field).toHaveText(/q/);
+    await expect(field).toHaveValue(/q/);
   }).toPass({ timeout: 25_000 });
-  console.log('FIRST PAGE still drives, field =', JSON.stringify(await field.textContent()));
+  console.log('FIRST PAGE still drives, field =', JSON.stringify(await field.inputValue()));
 
   await second.close();
   await first.close();

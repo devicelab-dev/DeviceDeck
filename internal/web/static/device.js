@@ -188,6 +188,12 @@ function syncNode(el, node, anchorFrame) {
   // which makes it unusable as a pointer-events signal.
   el.setAttribute("data-dd-enabled", node.enabled === false ? "false" : "true");
   el.setAttribute("data-dd-hittable", node.hittable ? "true" : "false");
+  // An <input> holds its contents in .value and can have no children, so
+  // it takes neither the text node below nor anything nested.
+  if (el.tagName === "INPUT") {
+    syncField(el, node);
+    return;
+  }
   // Text for getByText: label, else value, painted transparent. Kept in
   // a dedicated leading text node — assigning textContent would destroy
   // the nested child elements.
@@ -201,6 +207,18 @@ function syncNode(el, node, anchorFrame) {
   } else {
     el.insertBefore(document.createTextNode(text), el.firstChild);
   }
+}
+
+// syncField mirrors the device's own contents into the input — except
+// while it holds focus. The tree lags a keystroke behind, so writing its
+// value back mid-edit would delete characters as fast as they are typed.
+// ddValue records what the device has already been told, and is the
+// baseline the next edit is diffed against.
+function syncField(el, node) {
+  const value = node.value || "";
+  if (el !== document.activeElement && el.value !== value) el.value = value;
+  el.dataset.ddValue = el.value;
+  setOrRemove(el, "placeholder", node.placeholder || "");
 }
 
 // twinOf returns the immediately preceding rendered sibling when it
@@ -226,14 +244,33 @@ function mirrorable(node) {
   return !!(node.identifier || node.label || node.value || ROLES[node.type]);
 }
 
-// Reuse the keyed element from a previous render when one exists.
-function acquireEl(existing, key) {
+// A text field is mirrored as a real <input>, every other node as a div.
+// The reason is what the tools refuse: fill(), and the browser_type an AI
+// agent reaches for first, both reject anything that is not an <input>,
+// <textarea> or [contenteditable]. Against a div-based field an agent
+// cannot type at all — it reports the page as broken and stops. Every
+// example shipped here drives a field with click + keyboard.type, which
+// is why the gap survived until an agent was actually pointed at it.
+//
+// The node's type is part of its key, so a node that changes type gets a
+// new key and therefore a correctly-tagged new element.
+function acquireEl(existing, key, node) {
   const found = existing.get(key);
   if (found) {
     existing.delete(key);
     return found;
   }
-  const el = document.createElement("div");
+  const el = document.createElement(FIELD_TYPES.has(node.type) ? "input" : "div");
+  if (el.tagName === "INPUT") {
+    // type=text even for secure fields: the role attribute below already
+    // says textbox, and type=password invites the browser's own password
+    // manager into a page that is meant to contain nothing but the app.
+    // The device reports a secure field's contents as bullets, so the
+    // value stays honest about its length either way.
+    el.type = "text";
+    el.autocomplete = "off";
+    el.spellcheck = false;
+  }
   el.setAttribute("data-dd-node", "");
   el.setAttribute("data-dd-key", key);
   return el;
@@ -284,7 +321,7 @@ function renderMirror(nodes) {
     // something clickable.
     const anchor = twinOf(parentAnchor, node) || parentAnchor;
     const key = nodeKey(node, anchor.key, counts);
-    const el = acquireEl(existing, key);
+    const el = acquireEl(existing, key, node);
     syncNode(el, node, anchor.frame);
     // Append-or-move keeps DOM order tracking native order; moving
     // (including across parents) preserves element identity.
@@ -386,6 +423,9 @@ function normalized(event) {
 let pointerDown = false;
 mirror.addEventListener("pointerdown", (e) => {
   pointerDown = true;
+  // Stamped on the way down, not up: focus lands on pointerdown, so the
+  // focus handler must already be able to see that a click caused it.
+  pointerAt = Date.now();
   // Synthetic events (Cypress, jsdom) may carry no capturable pointerId;
   // capture is an optimization for drags, never a precondition.
   try { mirror.setPointerCapture(e.pointerId); } catch {}
@@ -401,18 +441,110 @@ mirror.addEventListener("pointermove", (e) => {
 mirror.addEventListener("pointerup", (e) => {
   if (!pointerDown) return;
   pointerDown = false;
+  pointerAt = Date.now();
   const { x, y } = normalized(e);
   input.send(touchFrame(PHASE.up, x, y));
   noteActivity();
 });
 
 document.addEventListener("keydown", (e) => {
+  // A focused mirror field types itself: the browser writes the character
+  // into the <input>, the input listener below diffs the value and sends
+  // the keystroke. Taking this path too would send it twice, and the
+  // preventDefault would stop the value ever changing in the first place.
+  // Keys that leave the value alone still belong here.
+  if (editsAField(e)) return;
   const frame = keyEventFrame(e);
   if (!frame) return;
   e.preventDefault();
   input.send(frame);
   noteActivity();
 });
+
+// ---------- typing into a mirrored field ----------
+
+// editsAField reports whether this keystroke will change a mirrored
+// input's value, and so will arrive as an input event instead.
+function editsAField(e) {
+  const el = e.target;
+  return (
+    el instanceof HTMLInputElement &&
+    el.hasAttribute("data-dd-node") &&
+    (e.key.length === 1 || e.key === "Backspace" || e.key === "Delete")
+  );
+}
+
+// tapField taps the device where el sits. Focus is not enough on its own:
+// fill() and browser_type focus the element and write the value without
+// ever clicking, so the device's own field would still be unfocused and
+// every keystroke would land on whatever was focused before.
+function tapField(el) {
+  const r = el.getBoundingClientRect();
+  const m = mirror.getBoundingClientRect();
+  const x = (r.left + r.width / 2 - m.left) / m.width;
+  const y = (r.top + r.height / 2 - m.top) / m.height;
+  input.send(touchFrame(PHASE.down, x, y));
+  input.send(touchFrame(PHASE.up, x, y));
+}
+
+// The device needs a moment to raise its keyboard and place the caret
+// after that tap. Text sent inside the window would be typed into a field
+// that is not yet listening, so an edit that follows a focus waits it out.
+const FOCUS_SETTLE_MS = 400;
+// A click focuses the field on its way through, and the pointer handlers
+// have already tapped the device at that point. Tapping again on focus
+// would make it a double tap, which selects a word instead of placing a
+// caret — measured as scrambled text when a test clicked and then typed.
+const POINTER_FOCUS_MS = 600;
+let focusTapAt = 0;
+let pointerAt = 0;
+
+mirror.addEventListener("focusin", (e) => {
+  if (!(e.target instanceof HTMLInputElement)) return;
+  if (Date.now() - pointerAt < POINTER_FOCUS_MS) return;
+  tapField(e.target);
+  focusTapAt = Date.now();
+  noteActivity();
+});
+
+// Edits run one at a time, in order. Each used to wait out the settle
+// window on its own timer, and because those delays differed, a later
+// keystroke could fire before an earlier one — "devicelab" reached the
+// device as "vxdicelab". A chain keeps the order the typist produced.
+let editChain = Promise.resolve();
+
+mirror.addEventListener("input", (e) => {
+  const el = e.target;
+  if (!(el instanceof HTMLInputElement)) return;
+  const before = el.dataset.ddValue ?? "";
+  const after = el.value;
+  el.dataset.ddValue = after;
+  editChain = editChain.then(async () => {
+    const wait = Math.max(0, FOCUS_SETTLE_MS - (Date.now() - focusTapAt));
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    sendEdit(before, after);
+  });
+  noteActivity();
+});
+
+// sendEdit turns a value change into the keystrokes that would produce
+// it: backspaces for what was removed, characters for what was added.
+// fill() replaces the whole value in a single event, so diffing is the
+// only way to know what the device actually has to be told.
+function sendEdit(before, after) {
+  let shared = 0;
+  while (shared < before.length && shared < after.length &&
+         before[shared] === after[shared]) {
+    shared++;
+  }
+  for (let n = before.length - shared; n > 0; n--) {
+    input.send(keyFrame(0, KEY_USAGE.Backspace));
+  }
+  for (const ch of after.slice(shared)) {
+    const frame = keyFrameForChar(ch);
+    if (frame) input.send(frame);
+  }
+}
 
 // ---------- scripting escape hatch ----------
 

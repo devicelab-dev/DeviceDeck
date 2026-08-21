@@ -79,6 +79,11 @@ func TestConsoleHeaderWraps(t *testing.T) {
 // snapshot beside the app's own elements — indistinguishable from them —
 // and an agent told to "tap the button" could drive DeviceDeck instead
 // of the app under test. The console is where our controls belong.
+// This checks the page as served. The mirror does create <input> elements
+// at runtime, one per native text field, and those are the point — they
+// are the app's controls, not ours. What must never appear is a control
+// authored here: an agent cannot tell our button from the app's, and
+// "tap the button" would drive DeviceDeck instead of the app under test.
 func TestDevicePageCarriesNoControlsOfOurOwn(t *testing.T) {
 	body := get(t, "/device/EB69B42A-4763-4A33-AF0F-CD233F721951").Body.String()
 	// Everything between <body> and the scripts is the test target.

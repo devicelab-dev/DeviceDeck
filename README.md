@@ -11,8 +11,8 @@ drive it with no mobile-specific code and no Appium:
 
 ```ts
 await page.goto(`/device/${udid}?app=dev.devicelab.testhive`);
-await page.getByRole('textbox', { name: 'Username' }).click();
-await page.keyboard.type('devicelab');
+await page.getByRole('textbox', { name: 'Username' }).fill('devicelab');
+await page.getByRole('textbox', { name: 'Password' }).fill('robustest');
 await page.getByRole('button', { name: 'Sign In' }).click();
 await expect(page.getByText('Hello, devicelab!')).toBeVisible();
 ```
@@ -83,6 +83,11 @@ appId: com.testhiveapp
 Arm **Assert** and the next tap records an assertion instead of tapping. A point that resolves
 to nothing addressable is refused rather than recorded as a coordinate — "there are pixels here"
 is not worth putting in a flow.
+
+**Text fields are real `<input>` elements**, so `fill()`, `inputValue()` and `toHaveValue()` work
+as they would on any page — and so does the `browser_type` an AI agent reaches for first. A
+field's contents live in its value, not its text, which is the one place the mirror departs from
+"every native node is a div".
 
 **Your own tests** point at `/device/{udid}?app={bundleId}` and use ordinary selectors.
 `examples/` has runnable Playwright, Cypress and Puppeteer projects, and `examples/captured/`

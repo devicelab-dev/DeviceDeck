@@ -41,11 +41,11 @@ test('drives TestHive by role, label and text', async ({ page }) => {
   // the effect itself.
   await expect(async () => {
     await username.click();
-    for (let i = 0; i < 40 && (await username.textContent()); i++) {
+    for (let i = 0; i < 40 && (await username.inputValue()); i++) {
       await page.keyboard.press('Backspace');
     }
     await page.keyboard.press('x');
-    await expect(username).toHaveText('x');
+    await expect(username).toHaveValue('x');
   }).toPass({ timeout: 30_000 });
   await page.keyboard.press('Backspace');
 
