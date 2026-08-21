@@ -36,6 +36,22 @@ function connectVideo() {
   ws.onclose = () => setTimeout(connectVideo, 1500);
 }
 
+// showNotice puts a human-readable reason on screen. The text goes into
+// an attribute and is painted by CSS generated content, so the page gains
+// no text node a locator could match — see device.html for why aria-hidden
+// alone was not enough.
+function showNotice(text) {
+  const notice = document.getElementById("notice");
+  notice.setAttribute("data-reason", text);
+  notice.setAttribute("data-shown", "");
+}
+
+// The server's reason travels in a close frame, which holds 123 bytes —
+// so the remedy is exactly the part that gets truncated away. The page
+// knows the remedy without being told, so it says it itself.
+const REFUSAL_REMEDY =
+  "Close the other DeviceDeck tab or test run for this device, then reload.";
+
 function connectInput() {
   input = createInputSocket(wsURL(`/api/devices/${udid}/input`), {
     // Surfaced in the title so a driver that cannot drive says so
@@ -43,6 +59,7 @@ function connectInput() {
     onRefused: (reason) => {
       document.title = `DeviceDeck — ${reason || "device busy"}`;
       mirror.setAttribute("data-dd-input-refused", reason || "device busy");
+      showNotice(`${reason || "Another client is driving this device."} — ${REFUSAL_REMEDY}`);
     },
   });
 }

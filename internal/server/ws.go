@@ -71,6 +71,48 @@ func (s *Server) handleVideoWS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// Input connections are pinged on this cadence. A driver that dies
+// without closing its socket — a killed browser, a slept laptop, a CI
+// job that was cancelled — leaves the connection open from this side, so
+// conn.Read blocks for ever and the device's claim is never released.
+// Every later client is then refused on behalf of a driver that no
+// longer exists, and on the device page the refusal is nearly invisible.
+// A ping is the only thing that distinguishes a quiet driver from a dead
+// one. The interval is a compromise: long enough to be nothing on the
+// wire, short enough that a device is reclaimable within half a minute.
+const (
+	inputPingInterval = 15 * time.Second
+	inputPingTimeout  = 10 * time.Second
+)
+
+// watchLiveness pings conn until a ping goes unanswered, then closes it
+// so the handler's blocked Read returns and its deferred release runs.
+// Closing is what frees the device; this only decides when.
+// The cadence is a parameter so tests need not wait real seconds for a
+// verdict; production callers pass the constants above.
+func watchLiveness(ctx context.Context, conn *websocket.Conn, interval, timeout time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			pingCtx, cancel := context.WithTimeout(ctx, timeout)
+			err := conn.Ping(pingCtx)
+			cancel()
+			if err != nil {
+				// CloseNow, not Close: a graceful close waits for the
+				// peer to acknowledge, and this peer has already been
+				// measured as unable to answer — waiting was observed to
+				// cost ~3s, all of it with the device still claimed.
+				conn.CloseNow()
+				return
+			}
+		}
+	}
+}
+
 // handleInputWS receives raw sidecar protocol frames from the browser —
 // the real-time path for streamed touches during manual driving. Each
 // binary message must be exactly one valid frame; malformed frames are
@@ -93,6 +135,12 @@ func (s *Server) handleInputWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer release()
+
+	// Only after the claim: a refused connection has nothing to release,
+	// and pinging it would keep a doomed socket alive for no reason.
+	liveCtx, stopWatching := context.WithCancel(ctx)
+	defer stopWatching()
+	go watchLiveness(liveCtx, conn, inputPingInterval, inputPingTimeout)
 
 	var held heldTouch
 	// Closure, not a direct defer: deferred arguments evaluate at defer

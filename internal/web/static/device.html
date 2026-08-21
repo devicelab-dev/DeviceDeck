@@ -26,13 +26,45 @@
       user-select: none;
       cursor: default;
       font: 10px/1 sans-serif;
+      /* A native container's frame spans its children, so mirroring the
+         tree faithfully stacks big transparent divs over the leaves they
+         contain — and a later sibling wins the hit test. Playwright then
+         refuses to click a perfectly visible control because "another
+         element intercepts pointer events". Containers must therefore be
+         click-through and only leaves clickable. Clicking a container
+         still works: the hit lands on a descendant, which the actionability
+         check accepts. `hittable` cannot serve here — iOS reports it false
+         for whole visible subtrees (see device.js). */
+      pointer-events: none;
     }
+    #mirror [data-dd-node]:not(:has([data-dd-node])) { pointer-events: auto; }
+    /* A refused page looks identical to a working one: the video still
+       streams, the mirror still updates, and only the touches go nowhere.
+       Someone driving by hand reads that as "DeviceDeck is broken".
+
+       The text is drawn from an attribute via ::after rather than written
+       into the DOM. aria-hidden alone was measured to be insufficient: it
+       hides the notice from getByRole and from an ARIA snapshot, but
+       getByText still matched it, which would let our sentence satisfy an
+       assertion meant for the app. Generated content has no text node, so
+       there is nothing for a text query to find. */
+    #notice {
+      position: absolute; top: 0; left: 0; right: 0;
+      padding: 10px 14px;
+      background: #b3261e; color: #fff;
+      font: 13px/1.4 -apple-system, system-ui, sans-serif;
+      pointer-events: none;
+      display: none;
+    }
+    #notice[data-shown] { display: block; }
+    #notice::after { content: attr(data-reason); }
   </style>
 </head>
 <body>
   <div id="stage">
     <canvas id="video"></canvas>
     <div id="mirror" role="application" aria-label="device"></div>
+    <div id="notice" aria-hidden="true"></div>
   </div>
   <script src="/video-common.js"></script>
   <script src="/input-common.js"></script>

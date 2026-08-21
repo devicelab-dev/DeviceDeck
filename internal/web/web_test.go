@@ -101,3 +101,38 @@ func TestDevicePageCarriesNoControlsOfOurOwn(t *testing.T) {
 		}
 	}
 }
+
+// The refusal notice is the one piece of our own wording on the automation
+// page, so it has to be provably invisible to a locator. Two things make
+// that true, and both were needed: aria-hidden keeps it out of getByRole
+// and the ARIA snapshot, and keeping the element empty keeps it out of
+// getByText — which was measured still matching an aria-hidden node. A
+// refused page must never offer an agent a sentence the app never had.
+func TestDeviceNoticeIsHiddenFromAutomation(t *testing.T) {
+	body := get(t, "/device/EB69B42A-4763-4A33-AF0F-CD233F721951").Body.String()
+	start := strings.Index(body, "<body>")
+	end := strings.Index(body, "<script")
+	if start < 0 || end < 0 {
+		t.Fatal("device page shape changed; this guard needs updating")
+	}
+	markup := body[start:end]
+	notice := strings.Index(markup, `id="notice"`)
+	if notice < 0 {
+		t.Fatal("device page has no refusal notice; a refused page would look merely broken")
+	}
+	// The attribute must sit on the notice element itself.
+	tagStart := strings.LastIndex(markup[:notice], "<")
+	tagEnd := strings.Index(markup[notice:], ">") + notice
+	if tag := markup[tagStart : tagEnd+1]; !strings.Contains(tag, `aria-hidden="true"`) {
+		t.Errorf("notice is not aria-hidden, so automation would read it as app content: %s", tag)
+	}
+	// It must also live outside the mirror, which is the app's subtree.
+	if mirror := strings.Index(markup, `id="mirror"`); mirror > notice {
+		t.Error("notice precedes the mirror; it must not sit inside the app subtree")
+	}
+	// Empty element: the wording is painted by CSS from an attribute, so
+	// there is no text node for getByText to match.
+	if body := markup[tagEnd+1:]; !strings.HasPrefix(strings.TrimSpace(body), "</div>") {
+		t.Errorf("notice carries text in the DOM, which getByText would match: %.60s", body)
+	}
+}

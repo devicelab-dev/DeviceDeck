@@ -366,3 +366,67 @@ func TestInputWSReleasesOnDisconnect(t *testing.T) {
 		}
 	}
 }
+
+// wsAcceptOnce serves exactly one upgrade and hands the connection to fn,
+// signalling when fn returns.
+func wsAcceptOnce(t *testing.T, fn func(*websocket.Conn)) (addr string, done <-chan struct{}) {
+	t.Helper()
+	finished := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.CloseNow()
+		fn(conn)
+		close(finished)
+	}))
+	t.Cleanup(srv.Close)
+	return "ws" + strings.TrimPrefix(srv.URL, "http"), finished
+}
+
+// A peer that stops answering is the case that stranded a real device for
+// 22 hours: the socket stayed open, Read blocked for ever, and the claim
+// outlived the client that made it. Only an unanswered ping reveals it.
+func TestWatchLivenessGivesUpOnASilentPeer(t *testing.T) {
+	addr, done := wsAcceptOnce(t, func(conn *websocket.Conn) {
+		watchLiveness(context.Background(), conn, 5*time.Millisecond, 40*time.Millisecond)
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, addr, nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.CloseNow()
+	// Deliberately never read: coder/websocket answers pings from the read
+	// path, so a client that is not reading is indistinguishable from one
+	// that is gone — which is exactly the condition being tested.
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("watchLiveness never gave up on a peer that stopped answering")
+	}
+}
+
+// Cancellation is the ordinary exit: the handler returned, the claim is
+// already being released, and the watcher must not outlive it.
+func TestWatchLivenessStopsWhenTheHandlerReturns(t *testing.T) {
+	addr, done := wsAcceptOnce(t, func(conn *websocket.Conn) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		watchLiveness(ctx, conn, time.Hour, time.Hour)
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, addr, nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.CloseNow()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("watchLiveness ignored a cancelled context")
+	}
+}

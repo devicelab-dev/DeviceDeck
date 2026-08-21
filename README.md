@@ -109,8 +109,8 @@ on durable selectors.
   in the Android driver, and they are discarded rather than guessed at.
 - **A device serves one driver at a time**, and a second claim is refused rather than shared.
   That includes the console: a browser tab left open on a device will refuse your test run,
-  and only the refused side is told why. There is no keepalive yet, so a client that dies
-  without closing its socket holds the device until the server restarts.
+  and the refused page says so on screen. A driver that dies without closing its socket is
+  detected by ping within about half a minute, and the device is released.
 - Relaunching an app does not reset its state.
 
 ## Licence
