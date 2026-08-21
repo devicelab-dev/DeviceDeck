@@ -184,7 +184,7 @@ function setOrRemove(el, attr, value) {
 // syncNode positions el inside its rendered ancestor: node frames are
 // screen-absolute, so coordinates convert to percentages of the
 // ancestor's frame and stay proportional at any canvas size.
-function syncNode(el, node, anchorFrame) {
+function syncNode(el, node, anchorFrame, owners) {
   const f = node.frame;
   el.style.left = `${((f.x - anchorFrame.x) / anchorFrame.width) * 100}%`;
   el.style.top = `${((f.y - anchorFrame.y) / anchorFrame.height) * 100}%`;
@@ -192,7 +192,11 @@ function syncNode(el, node, anchorFrame) {
   el.style.height = `${(f.height / anchorFrame.height) * 100}%`;
 
   setOrRemove(el, "role", ROLES[node.type] || "");
-  setOrRemove(el, "data-testid", node.identifier || "");
+  // Only the owner of a contested identifier carries it; see
+  // identifierOwners for why the others are left without one.
+  const owner = owners.get(node.identifier);
+  const mine = owner === undefined || owner === node.index;
+  setOrRemove(el, "data-testid", mine ? node.identifier || "" : "");
   // Accessible name: label first, placeholder as fallback so unnamed
   // elements still read as `textbox "Username"` in aria snapshots.
   //
@@ -300,6 +304,62 @@ function dropRepeatedName(el, name) {
   if (first && first.nodeType === Node.TEXT_NODE && first.data === name) first.remove();
 }
 
+// Several nodes routinely carry one identifier: a cart icon and the
+// badge counting what is in it, a search glass and the field beside it.
+// Every one of them becomes a data-testid, so getByTestId matches more
+// than one element and a strict-mode query fails outright — which is how
+// a spec here stopped being able to click the cart the moment anything
+// was in it.
+//
+// Give the identifier to the node it is really for, but only when that
+// is unambiguous: the single control among them, or the one whose frame
+// contains the rest. Six product rows that all reuse "star.fill" are six
+// real buttons, and picking one would hide five controls that exist —
+// that ambiguity belongs to the app, and the mirror reports it as it is
+// rather than inventing a uniqueness the app never had.
+// Frames arrive as floating-point points, and a badge sitting flush to
+// its icon's edge misses exact containment by a ten-thousandth of a
+// point. The tolerance is sub-pixel: it forgives that rounding without
+// reaching anything genuinely alongside — the search glass and its field
+// are ten points apart.
+const FRAME_SLACK = 1;
+
+function contains(outer, inner) {
+  return (
+    inner.x >= outer.x - FRAME_SLACK && inner.y >= outer.y - FRAME_SLACK &&
+    inner.x + inner.width <= outer.x + outer.width + FRAME_SLACK &&
+    inner.y + inner.height <= outer.y + outer.height + FRAME_SLACK
+  );
+}
+
+// identifierOwner returns the index of the node that keeps the shared
+// identifier, or null to leave every node in the group carrying it.
+function identifierOwner(group) {
+  if (group.length < 2) return null;
+  const controls = group.filter((n) => CONTROL_ROLES.has(ROLES[n.type] || ""));
+  if (controls.length === 1) return controls[0].index;
+  const outer = group.find((n) => group.every((m) => contains(n.frame, m.frame)));
+  return outer ? outer.index : null;
+}
+
+// identifierOwners maps each contested identifier to the one node that
+// should carry it. An identifier used once never appears here.
+function identifierOwners(nodes) {
+  const groups = new Map();
+  for (const node of nodes) {
+    if (!node.identifier || !mirrorable(node)) continue;
+    const group = groups.get(node.identifier) || [];
+    group.push(node);
+    groups.set(node.identifier, group);
+  }
+  const owners = new Map();
+  for (const [id, group] of groups) {
+    const owner = identifierOwner(group);
+    if (owner != null) owners.set(id, owner);
+  }
+  return owners;
+}
+
 // A node earns a mirror element only if something can find it: an
 // identifier, visible text, or a mapped role. Zero-size nodes never do.
 function mirrorable(node) {
@@ -362,7 +422,7 @@ function renderNode(node, pass) {
   const anchor = twinOf(parentAnchor, node) || parentAnchor;
   const key = nodeKey(node, anchor.key, pass.counts);
   const el = acquireEl(pass.existing, key, node);
-  syncNode(el, node, anchor.frame);
+  syncNode(el, node, anchor.frame, pass.owners);
   // Never the root: the mirror's own name is the screen fingerprint,
   // which belongs to no node and must survive every refresh.
   if (anchor !== pass.root) dropRepeatedName(anchor.el, baseName(node));
@@ -401,6 +461,7 @@ function renderMirror(nodes) {
   // container element + frame that a node's children position against.
   const pass = {
     existing,
+    owners: identifierOwners(nodes),
     counts: new Map(),
     anchors: new Map(),
     root: { el: mirror, frame: app, key: "", lastChild: null },

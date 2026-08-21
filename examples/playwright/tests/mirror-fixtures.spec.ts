@@ -102,3 +102,35 @@ test('a text field mirrors as a real input an agent can type into', async ({ pag
   expect(await agentView(page)).toContain('textbox "Username (username-input)"');
   expect(await username.inputValue()).toBe('devicelab');
 });
+
+test('a contested identifier lands on the element you would act on', async ({ page }) => {
+  await serveMirror(page, 'products-cart-full');
+  // The app puts cart-button on the icon and on the badge counting the
+  // cart's contents, so this query matched two elements and failed as a
+  // strict-mode violation the moment anything was in the cart.
+  const cart = page.getByTestId('cart-button');
+  await expect(cart).toHaveCount(1);
+  // It has to be the icon, not the badge: the badge sits inside it and
+  // is not what a click is aimed at.
+  expect(await cart.getAttribute('aria-label')).toBe('Shopping Cart');
+  // The badge is still there to be read, just not by that identifier.
+  expect(await agentView(page)).toContain('1');
+});
+
+test('a field beside a same-named icon keeps the identifier', async ({ page }) => {
+  await serveMirror(page, 'products');
+  // search-bar is on both the search glass and the field next to it.
+  // Neither contains the other, so the control wins.
+  const search = page.getByTestId('search-bar');
+  await expect(search).toHaveCount(1);
+  await expect(search).toHaveJSProperty('tagName', 'INPUT');
+});
+
+test('an identifier the app genuinely repeats is left alone', async ({ page }) => {
+  await serveMirror(page, 'products');
+  // Six product rows each reuse star.fill for their favourite icon.
+  // These are six real controls on six different products: picking one
+  // would hide five elements that exist. The ambiguity is the app's,
+  // and the mirror must not paper over it.
+  await expect(page.getByTestId('star.fill')).toHaveCount(6);
+});
