@@ -137,9 +137,43 @@ function nodeKey(node, parentKey, counts) {
 // label — see the note in syncNode.
 const FIELD_TYPES = new Set(["TextField", "SecureTextField", "SearchField"]);
 
-function accessibleName(node) {
+// Roles that represent something a person taps. Only these carry their
+// identifier in the name.
+const CONTROL_ROLES = new Set([
+  "button", "link", "textbox", "searchbox", "checkbox", "radio", "switch", "tab",
+]);
+
+// baseName is a node's own name before an identifier is folded in. A
+// native container repeats this string, not the decorated one, so it is
+// what an ancestor's name has to be compared against.
+function baseName(node) {
   if (FIELD_TYPES.has(node.type) && node.placeholder) return node.placeholder;
   return node.label || node.placeholder || "";
+}
+
+// accessibleName is what an agent reads, and the only thing it can address
+// an element by.
+//
+// A control's identifier is folded in because the name is the sole channel
+// that survives into an accessibility snapshot: data-testid,
+// aria-description, title, aria-keyshortcuts and aria-roledescription were
+// each measured and none of them appear. An app can therefore label six
+// buttons "Add", number their identifiers add-to-cart-1..6, and leave an
+// agent choosing blindly between six identical names while the key that
+// separates them sits in the DOM unread. That is exactly what happened
+// when one was asked to add a named product to a cart.
+//
+// Controls only, because that is where ambiguity costs a wrong action
+// rather than a slow reading, and it keeps the snapshot from doubling in
+// size. The suffix is stable: an identifier is the app's own test ID, so
+// unlike naming a field from its contents — which renamed it on every
+// keystroke — this never changes as the screen does.
+function accessibleName(node) {
+  const base = baseName(node);
+  const id = node.identifier || "";
+  if (!id || !CONTROL_ROLES.has(ROLES[node.type] || "")) return base;
+  if (!base) return id;
+  return base === id ? base : `${base} (${id})`;
 }
 
 function setOrRemove(el, attr, value) {
