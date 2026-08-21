@@ -38,6 +38,27 @@
       pointer-events: none;
     }
     #mirror [data-dd-node]:not(:has([data-dd-node])) { pointer-events: auto; }
+    /* A div paints nothing by default; an <input> paints a border, an
+       opaque background and a caret. Mirrored fields are inputs so that
+       fill() works, which made two white boxes float over the video and
+       blank out whatever sat behind them. Everything the user agent adds
+       has to come back off — the device draws the real field, and its
+       own caret, in the video underneath. */
+    #mirror input[data-dd-node] {
+      appearance: none;
+      -webkit-appearance: none;
+      border: 0;
+      padding: 0;
+      background: transparent;
+      caret-color: transparent;
+      font: inherit;
+    }
+    #mirror input[data-dd-node]:focus { outline: none; }
+    /* ::placeholder carries its own colour and ignores the transparent
+       one above, so the placeholder painted a second copy of the field's
+       own prompt on top of the app's. It still has to exist as an
+       attribute — it is what names the field for getByRole. */
+    #mirror input[data-dd-node]::placeholder { color: transparent; }
     /* A refused page looks identical to a working one: the video still
        streams, the mirror still updates, and only the touches go nowhere.
        Someone driving by hand reads that as "DeviceDeck is broken".

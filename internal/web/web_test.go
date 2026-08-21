@@ -169,3 +169,24 @@ func TestMirrorHidesFromTheEyeAndNotFromTheMachine(t *testing.T) {
 		t.Error("mirror nodes no longer rely on color:transparent; confirm they are still exposed to automation")
 	}
 }
+
+// Mirrored text fields are <input> elements, and unlike a div a user agent
+// paints those: a border, an opaque background, a caret, and a placeholder
+// that keeps its own colour whatever `color` says. Shipped without the
+// reset, they drew two white boxes over the video and a second copy of each
+// field's prompt on top of the app's own — the mirror is meant to add no
+// pixels at all. Every one of these was a separate leak, so each is named.
+func TestMirroredFieldsPaintNothing(t *testing.T) {
+	body := get(t, "/device/EB69B42A-4763-4A33-AF0F-CD233F721951").Body.String()
+	for _, required := range []string{
+		"appearance: none",
+		"border: 0",
+		"background: transparent",
+		"caret-color: transparent",
+		"::placeholder { color: transparent; }",
+	} {
+		if !strings.Contains(body, required) {
+			t.Errorf("mirrored inputs are missing %q, so they will paint over the video", required)
+		}
+	}
+}
