@@ -104,14 +104,24 @@ function valueFor(name) {
   return 'Test';
 }
 
-async function freshLogin() {
+// resetAndOpen puts the app back to a clean install and loads the page —
+// the login screen, every time.
+async function resetAndOpen() {
   resetApp();
   await fetch(`http://127.0.0.1:8787/api/devices/${UDID}/app/launch`, { method: 'POST', body: JSON.stringify({ app: APP }) });
   await call('browser_navigate', { url: PAGE });
-  await type('textbox', 'Username', USER);
-  await type('textbox', 'Password', PASS);
+}
+
+// loginWith signs in with the given credentials; the caller decides
+// whether they are the right ones.
+async function loginWith(user, pass) {
+  await resetAndOpen();
+  await type('textbox', 'Username', user);
+  await type('textbox', 'Password', pass);
   await click('button', 'Sign In');
 }
+
+const freshLogin = () => loginWith(USER, PASS);
 
 const results = [];
 async function journey(name, fn, assertion) {
@@ -164,6 +174,51 @@ await journey('check out through the shipping form', async () => {
   return end
     ? `await expect(page.getByRole('button', { name: ${JSON.stringify(end)} })).toBeVisible();`
     : "await expect(page.getByRole('button', { name: /payment|place|pay/i }).first()).toBeVisible();";
+});
+
+// Journey D: search the catalogue. Success = the searched framework shows.
+await journey('searches the catalogue', async () => {
+  await freshLogin();
+  await type('textbox', 'search', 'Maestro');
+  await find('generic', 'Maestro', { tries: 6 }).catch(() => find('text', 'Maestro', { tries: 4 }));
+  return "await expect(page.getByText('Maestro').first()).toBeVisible();";
+});
+
+// Journey E: change a cart line's quantity. In the cart the + is a button
+// whose id folds "cart-increase-quantity"; the fresh agent finds it by
+// that word, not a memorised id.
+await journey('increases a cart quantity', async () => {
+  await freshLogin();
+  await click('button', 'Add');
+  await click('button', 'cart');
+  await click('button', 'increase');
+  // The cart stayed put with the line still in it — a checkout control is
+  // the discoverable proof.
+  await find('button', 'Checkout');
+  return "await expect(page.getByRole('button', { name: /checkout/i })).toBeVisible();";
+});
+
+// Journey F: remove the only line from the cart.
+await journey('removes an item from the cart', async () => {
+  await freshLogin();
+  await click('button', 'Add');
+  await click('button', 'cart');
+  await click('button', 'decrease');   // the − folds "cart-decrease-quantity"
+  await settle(2);
+  // Success = the flow offers to keep shopping, i.e. the cart emptied.
+  const end = (await allOf('button')).map((b) => b.name).find((n) => /continue|shopping|browse|back/i.test(n));
+  return end
+    ? `await expect(page.getByRole('button', { name: ${JSON.stringify(end)} })).toBeVisible();`
+    : "await expect(page.getByRole('button', { name: /cart/i }).first()).toBeVisible();";
+});
+
+// Journey G: a wrong password is rejected — the login screen holds.
+await journey('rejects a wrong password', async () => {
+  await loginWith(USER, 'not-the-password');
+  await settle(2);
+  // Still on login: the Sign In button is right there, not the store.
+  await find('button', 'Sign In');
+  return "await expect(page.getByRole('button', { name: /sign in/i })).toBeVisible();";
 });
 
 srv.kill();
