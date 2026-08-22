@@ -89,10 +89,12 @@ let keyframeRequest = KeyframeRequest()
 // stdin command reader: 'K' → keyframe request; EOF → exit.
 DispatchQueue.global().async {
     while true {
-        let data = FileHandle.standardInput.readData(ofLength: 1)
-        guard !data.isEmpty else { exit(0) }
-        if data[0] == UInt8(ascii: "K") {
-            keyframeRequest.request()
+        autoreleasepool {
+            let data = FileHandle.standardInput.readData(ofLength: 1)
+            guard !data.isEmpty else { exit(0) }
+            if data[0] == UInt8(ascii: "K") {
+                keyframeRequest.request()
+            }
         }
     }
 }
@@ -108,29 +110,39 @@ var lastSeed: UInt32 = 0
 var lastSurfaceID: IOSurfaceID = 0
 DispatchQueue.global(qos: .userInteractive).async {
     while true {
-        let started = Date()
-        if let surface = framebuffer.currentSurface() {
-            let seed = IOSurfaceGetSeed(surface)
-            let surfaceID = IOSurfaceGetID(surface)
-            // Encode when the content changed (seed moved) or the surface
-            // was swapped — the simulator double-buffers, so a swap can
-            // carry new content under a seed that matches the other
-            // surface's. But only a keyframe *request* forces a keyframe:
-            // the swap alone must not, because the buffer ring rotates on
-            // nearly every poll even on a still screen, and forcing an IDR
-            // each time pins the encoder at max rate on static content —
-            // the load that fed the input-queue blowup. A delta on a
-            // static screen costs a handful of bytes.
-            let force = keyframeRequest.consume()
-            if force || seed != lastSeed || surfaceID != lastSurfaceID {
-                encoder.encode(surface, forceKeyframe: force)
-                lastSeed = seed
-                lastSurfaceID = surfaceID
+        // Each iteration drains its own autorelease pool. The loop never
+        // returns to a run loop, so without this every autoreleased
+        // object it touches — the IOSurface and CVPixelBuffer wrappers,
+        // the NSDictionary of frame properties, the framebuffer port
+        // lookups, the encoded NSData — piles up in the thread's pool
+        // and is never freed. That, not the encoder's input queue, is
+        // what grew the process to tens of GB: measured at ~70MB/s of
+        // autoreleasepool content under sustained encoding.
+        autoreleasepool {
+            let started = Date()
+            if let surface = framebuffer.currentSurface() {
+                let seed = IOSurfaceGetSeed(surface)
+                let surfaceID = IOSurfaceGetID(surface)
+                // Encode when the content changed (seed moved) or the
+                // surface was swapped — the simulator double-buffers, so a
+                // swap can carry new content under a seed that matches the
+                // other surface's. But only a keyframe *request* forces a
+                // keyframe: the swap alone must not, because the buffer
+                // ring rotates on nearly every poll even on a still screen,
+                // and forcing an IDR each time pins the encoder at max rate
+                // on static content. A delta on a static screen is a
+                // handful of bytes.
+                let force = keyframeRequest.consume()
+                if force || seed != lastSeed || surfaceID != lastSurfaceID {
+                    encoder.encode(surface, forceKeyframe: force)
+                    lastSeed = seed
+                    lastSurfaceID = surfaceID
+                }
             }
-        }
-        let elapsed = Date().timeIntervalSince(started)
-        if elapsed < interval {
-            usleep(UInt32((interval - elapsed) * 1_000_000))
+            let elapsed = Date().timeIntervalSince(started)
+            if elapsed < interval {
+                usleep(UInt32((interval - elapsed) * 1_000_000))
+            }
         }
     }
 }
