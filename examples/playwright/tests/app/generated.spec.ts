@@ -1,4 +1,4 @@
-import { test, expect } from '../support/deviceTest';
+import { test, expect } from '@playwright/test';
 
 // A test an agent generated.
 //
