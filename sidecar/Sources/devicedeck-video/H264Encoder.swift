@@ -28,6 +28,20 @@ final class H264Encoder: @unchecked Sendable {
     private var emittedDescription = false
     private var frameCount: Int64 = 0
 
+    // In-flight accounting bounds the encoder's memory. VTCompressionSession
+    // takes frames fire-and-forget and holds each submitted IOSurface-backed
+    // pixel buffer (~12MB at retina) until it finishes encoding. Nothing in
+    // VideoToolbox caps the input queue, so when submission outpaces encoding
+    // — a busy screen, or a machine under load — the queue grows without
+    // limit; it was measured reaching 50GB. Dropping a frame while the
+    // encoder is behind is the right trade for a realtime stream: the next
+    // changed frame re-encodes, and a late joiner still gets a keyframe on
+    // the 2s interval. maxInFlight is small because anything beyond a couple
+    // of frames of latency is already too stale to show.
+    private let inFlightLock = NSLock()
+    private var inFlight = 0
+    private let maxInFlight = 4
+
     init(fps: Int, bitrate: Int) {
         self.fps = Int32(fps)
         self.bitrate = bitrate
@@ -59,11 +73,22 @@ final class H264Encoder: @unchecked Sendable {
         }
         guard let session else { return }
 
+        // Drop rather than submit when the encoder is already behind, so a
+        // slow encode can never accumulate an unbounded backlog of retained
+        // pixel buffers.
+        inFlightLock.lock()
+        if inFlight >= maxInFlight {
+            inFlightLock.unlock()
+            return
+        }
+        inFlight += 1
+        inFlightLock.unlock()
+
         let frameProps: NSDictionary? = forceKeyframe
             ? [kVTEncodeFrameOptionKey_ForceKeyFrame: kCFBooleanTrue!] as NSDictionary
             : nil
         frameCount += 1
-        VTCompressionSessionEncodeFrame(
+        let status = VTCompressionSessionEncodeFrame(
             session,
             imageBuffer: pixelBuffer,
             presentationTimeStamp: CMTime(value: frameCount, timescale: fps),
@@ -71,10 +96,27 @@ final class H264Encoder: @unchecked Sendable {
             frameProperties: frameProps,
             infoFlagsOut: nil
         ) { [weak self] status, _, sampleBuffer in
-            guard let self, status == noErr, let sb = sampleBuffer,
+            guard let self else { return }
+            self.completed()
+            guard status == noErr, let sb = sampleBuffer,
                   let encoded = self.extract(from: sb) else { return }
             self.onEncoded?(encoded)
         }
+        // A submission error means the completion handler never fires, so
+        // release the slot here or the count would leak the encoder shut.
+        if status != noErr {
+            completed()
+        }
+    }
+
+    // completed releases one in-flight slot. Called from VT's callback
+    // queue on success and inline when submission itself failed.
+    private func completed() {
+        inFlightLock.lock()
+        if inFlight > 0 {
+            inFlight -= 1
+        }
+        inFlightLock.unlock()
     }
 
     private func rebuildSession() {

@@ -112,8 +112,17 @@ DispatchQueue.global(qos: .userInteractive).async {
         if let surface = framebuffer.currentSurface() {
             let seed = IOSurfaceGetSeed(surface)
             let surfaceID = IOSurfaceGetID(surface)
-            let force = keyframeRequest.consume() || surfaceID != lastSurfaceID
-            if force || seed != lastSeed {
+            // Encode when the content changed (seed moved) or the surface
+            // was swapped — the simulator double-buffers, so a swap can
+            // carry new content under a seed that matches the other
+            // surface's. But only a keyframe *request* forces a keyframe:
+            // the swap alone must not, because the buffer ring rotates on
+            // nearly every poll even on a still screen, and forcing an IDR
+            // each time pins the encoder at max rate on static content —
+            // the load that fed the input-queue blowup. A delta on a
+            // static screen costs a handful of bytes.
+            let force = keyframeRequest.consume()
+            if force || seed != lastSeed || surfaceID != lastSurfaceID {
                 encoder.encode(surface, forceKeyframe: force)
                 lastSeed = seed
                 lastSurfaceID = surfaceID
