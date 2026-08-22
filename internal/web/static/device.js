@@ -12,6 +12,15 @@
 
 let udid = decodeURIComponent(location.pathname.split("/")[2] || "booted");
 const appId = new URLSearchParams(location.search).get("app") || "";
+// Video is off by default on this page, which is the automation surface.
+// A driver reads the DOM mirror, not the pixels: clicks are normalised to
+// the device's own coordinates and mirror nodes are positioned as
+// percentages of the tree's device frame, so the video contributes
+// nothing but load — one H.264 sidecar per headless session, streaming
+// frames no driver ever decodes. Humans who want to watch pass ?video=1
+// (the console at / is the usual place to watch). See sizeStage for how
+// the canvas gets its dimensions without a frame to measure.
+const wantVideo = new URLSearchParams(location.search).get("video") === "1";
 const canvas = document.getElementById("video");
 const ctx = canvas.getContext("2d");
 const mirror = document.getElementById("mirror");
@@ -102,6 +111,21 @@ const ROLES = {
 };
 
 let lastTreeJSON = "";
+
+// sizeStage gives the canvas the device's dimensions from the tree, so
+// the mirror has the right size and aspect with no video frame to
+// measure. When video is on it manages the canvas itself (at real pixel
+// resolution), and this stands aside — the mirror's own layout is in
+// percentages, so the absolute size never affects where a click lands.
+function sizeStage(app) {
+  if (wantVideo) return;
+  const w = Math.round(app.width);
+  const h = Math.round(app.height);
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
+  }
+}
 
 function positionMirror() {
   const stage = document.getElementById("stage").getBoundingClientRect();
@@ -439,12 +463,14 @@ function renderMirror(nodes) {
   if (json === lastTreeJSON) return;
   lastTreeJSON = json;
 
-  positionMirror();
   const app = nodes.length ? nodes[0].frame : null;
   if (!app || !(app.width > 0) || !(app.height > 0)) {
+    positionMirror();
     mirror.innerHTML = "";
     return;
   }
+  sizeStage(app);
+  positionMirror();
 
   // Reconcile instead of rebuilding: an element that survives a refresh
   // keeps its DOM identity, so automation handles held across refreshes
@@ -985,7 +1011,7 @@ async function start() {
       if (devices.length) udid = devices[0].udid;
     } catch {}
   }
-  connectVideo();
+  if (wantVideo) connectVideo();
   connectInput();
   // Unscoped trees follow the frontmost app (the runner resolves it);
   // ?app= narrows to one bundle when tests want isolation.

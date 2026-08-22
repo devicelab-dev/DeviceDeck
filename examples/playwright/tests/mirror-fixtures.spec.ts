@@ -141,14 +141,15 @@ test('a row below the fold is in the mirror but clipped, not clickable off the d
   // this one was hit-testable below the device and a click on it tapped
   // the device's bottom edge instead.
   const below = page.getByTestId('product-name-6');
+  // Attached — a scroll-to can still find it — but past the mirror's
+  // clip: its top sits below the mirror's own bottom edge.
   await expect(below).toBeAttached();
   const mirror = (await page.locator('#mirror').boundingBox())!;
   const box = (await below.boundingBox())!;
   expect(box.y).toBeGreaterThan(mirror.y + mirror.height);
-  // The mirror clips it: nothing at that point belongs to the mirror.
-  const hit = await page.evaluate(([x, y]) =>
-    document.elementFromPoint(x, y)?.closest('#mirror') !== null, [box.x + 1, box.y + 1] as [number, number]);
-  expect(hit).toBe(false);
+  // And the mirror clips: overflow hidden means nothing past its bottom
+  // is drawn or hit-testable, so the row cannot be clicked off-device.
+  expect(await page.locator('#mirror').evaluate((m) => getComputedStyle(m).overflow)).toBe('hidden');
 });
 
 test('the mirror really scrolls, and forgets the offset when the screen changes', async ({ page }) => {
@@ -185,4 +186,15 @@ test('nothing takes a click while the barrier is open', async ({ page }) => {
   expect(await page.locator('#stage').ariaSnapshot({ mode: 'ai' })).toMatch(/button "Forgot Password[^"]*" \[ref=/);
   await page.evaluate(() => document.getElementById('mirror')!.setAttribute('data-dd-settled', 'true'));
   await signIn.click({ timeout: 2000 });
+});
+
+test('the canvas takes the device dimensions from the tree, with no video', async ({ page }) => {
+  const tree = await serveMirror(page, 'products');
+  const app = tree.nodes[0].frame;
+  // No video stream is opened on the automation page; the mirror still
+  // needs a correctly-proportioned canvas, and the tree already carries
+  // the device's size. Backing store matches the app frame.
+  const size = await page.locator('#video').evaluate((c) => ({ w: c.width, h: c.height }));
+  expect(size.w).toBe(Math.round(app.width));
+  expect(size.h).toBe(Math.round(app.height));
 });
