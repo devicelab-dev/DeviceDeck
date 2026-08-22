@@ -8,7 +8,7 @@ import { writeFileSync } from 'node:fs';
 
 const UDID = process.env.DEVICEDECK_UDID;
 const APP = 'dev.devicelab.testhive';
-const OUT = 'tests/generated-checkout.spec.ts';
+const OUT = 'tests/app/generated-checkout.spec.ts';
 const PAGE = `http://127.0.0.1:8787/device/${UDID}?app=${APP}`;
 
 const srv = spawn('npx', ['-y', '@playwright/mcp@latest', '--headless'], { stdio: ['pipe','pipe','ignore'] });

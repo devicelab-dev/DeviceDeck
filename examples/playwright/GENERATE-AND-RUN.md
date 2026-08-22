@@ -9,7 +9,7 @@ on the device, then run it. Two phases, one device at a time.
 DEVICEDECK_UDID=<udid> node tests/support/generate.mjs
 
 # 2. Playwright runs the generated test against the device.
-DEVICEDECK_UDID=<udid> npx playwright test generated-checkout
+DEVICEDECK_UDID=<udid> npx playwright test app/generated-checkout
 ```
 
 Phase 1 needs `devicedeck serve` running with the app installed on a

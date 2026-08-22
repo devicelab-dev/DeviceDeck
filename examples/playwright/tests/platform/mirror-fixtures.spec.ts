@@ -16,8 +16,8 @@ import * as path from 'path';
 // has to keep working for every agent, and the part no simulator is
 // needed to check.
 
-const STATIC = path.join(__dirname, '../../../internal/web/static');
-const FIXTURES = path.join(__dirname, 'fixtures');
+const STATIC = path.join(__dirname, '../../../../internal/web/static');
+const FIXTURES = path.join(__dirname, '../fixtures');
 const UDID = '00000000-0000-0000-0000-000000000000';
 
 const fixture = (name: string) =>

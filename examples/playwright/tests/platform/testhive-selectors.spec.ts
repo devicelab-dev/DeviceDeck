@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { clearField, fillField, launchApp, openDevice } from './support/device';
+import { clearField, fillField, launchApp, openDevice } from '../support/device';
 
 // The device page's whole promise is that ordinary web selectors work
 // against a native app. Our other specs use getByTestId, which exercises

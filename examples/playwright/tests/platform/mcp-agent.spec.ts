@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { APP, UDID, launchApp } from './support/device';
-import { McpSession, refFor } from './support/mcp';
+import { APP, UDID, launchApp } from '../support/device';
+import { McpSession, refFor } from '../support/mcp';
 
 // The journey an agent failed at before the mirror named its controls:
 // "add Maestro to the cart", on a screen with several buttons all

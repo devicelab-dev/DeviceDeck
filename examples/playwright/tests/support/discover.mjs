@@ -256,11 +256,11 @@ test.beforeEach(async ({ request }) => {
 
 ${ok.map(block).join('\n\n')}
 `;
-writeFileSync('tests/generated-agent.spec.ts', body);
+writeFileSync('tests/app/generated-agent.spec.ts', body);
 
 console.log('\n=== BENCHMARK: fresh-agent authoring ===');
 console.log(`journeys attempted: ${results.length}`);
 console.log(`generated cleanly:  ${ok.length}`);
 for (const r of results) console.log(`  ${r.ok ? 'ok  ' : 'FAIL'} ${r.name}${r.ok ? '' : ' — ' + r.error}`);
-console.log(`\nwrote tests/generated-agent.spec.ts (${ok.length} tests)`);
+console.log(`\nwrote tests/app/generated-agent.spec.ts (${ok.length} tests)`);
 process.exit(0);

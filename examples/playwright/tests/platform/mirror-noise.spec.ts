@@ -25,7 +25,7 @@ const CHAIN = ['Typing Predictions', 'Typing Predictions', 'Typing Predictions',
 // here would let the copy drift from the one that ships.
 function dropRepeatedNameSource(): string {
   const src = fs.readFileSync(
-    path.join(__dirname, '../../../internal/web/static/device.js'), 'utf8');
+    path.join(__dirname, '../../../../internal/web/static/device.js'), 'utf8');
   const from = src.indexOf('function dropRepeatedName');
   expect(from, 'dropRepeatedName still exists in device.js').toBeGreaterThan(-1);
   const fn = src.slice(from);

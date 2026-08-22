@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { APP, UDID, clearField, deviceValue, fillField, launchApp, openDevice } from './support/device';
+import { APP, UDID, clearField, deviceValue, fillField, launchApp, openDevice } from '../support/device';
 
 // The device is a normal webpage: locate native elements with standard
 // Playwright selectors against the DOM mirror, and drive the simulator
