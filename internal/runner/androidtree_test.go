@@ -81,6 +81,34 @@ func TestConvertAndroidElements(t *testing.T) {
 	}
 }
 
+func TestButtonIfClickable(t *testing.T) {
+	tests := []struct {
+		name      string
+		typ       string
+		clickable bool
+		want      string
+	}{
+		{"clickable ViewGroup becomes a button", "ViewGroup", true, "Button"},
+		{"clickable View becomes a button", "View", true, "Button"},
+		{"clickable StaticText becomes a button", "StaticText", true, "Button"},
+		{"clickable Image becomes a button", "Image", true, "Button"},
+		{"non-clickable ViewGroup stays a container", "ViewGroup", false, "ViewGroup"},
+		{"a Button stays a Button", "Button", true, "Button"},
+		{"a clickable text field keeps its role", "TextField", true, "TextField"},
+		{"a clickable switch keeps its role", "Switch", true, "Switch"},
+		{"a clickable list is not a button", "CollectionView", true, "CollectionView"},
+		{"a clickable scroll view is not a button", "ScrollView", true, "ScrollView"},
+		{"a clickable tab bar is not a button", "TabBar", true, "TabBar"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := buttonIfClickable(tt.typ, tt.clickable); got != tt.want {
+				t.Errorf("buttonIfClickable(%q, %v) = %q, want %q", tt.typ, tt.clickable, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestAndroidTypeMapping(t *testing.T) {
 	tests := []struct{ class, want string }{
 		{"android.widget.ImageButton", "Button"},

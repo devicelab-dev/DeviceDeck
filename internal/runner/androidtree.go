@@ -254,7 +254,7 @@ func convertAndroidElements(in []*dlandroid.ParsedElement, screenW, screenH int)
 	for i, e := range in {
 		n := Node{
 			Index:       i + 1,
-			Type:        androidType(e.ClassName),
+			Type:        buttonIfClickable(androidType(e.ClassName), e.Clickable),
 			Label:       e.ContentDesc,
 			Identifier:  resourceIDSuffix(e.ResourceID),
 			Value:       e.Text,
@@ -278,6 +278,35 @@ func convertAndroidElements(in []*dlandroid.ParsedElement, screenW, screenH int)
 		out[i+1] = n
 	}
 	return out
+}
+
+// buttonRoleKeeps names the types whose own role already conveys how they
+// are operated, so a clickable one keeps its type rather than becoming a
+// button — the input controls, and the structural containers (a list, a
+// scroll view, a tab bar) that are clickable without being buttons.
+var buttonRoleKeeps = map[string]bool{
+	"Button": true, "TextField": true, "CheckBox": true, "Switch": true,
+	"RadioButton": true, "Slider": true, "Picker": true, "CollectionView": true,
+	"ScrollView": true, "ToolBar": true, "NavigationBar": true, "TabBar": true,
+	"WebView": true, "ProgressIndicator": true,
+}
+
+// buttonIfClickable promotes a clickable generic container to Button.
+//
+// Android renders a tappable control — a React Native <TouchableOpacity>,
+// most obviously — as a plain ViewGroup with android:clickable, its
+// visible label sitting in a child TextView. Left as a generic, an agent
+// reading the tree sees no button to press: it drives by getByTestId but
+// cannot reason "click the Sign In button", which is how test authoring
+// works. iOS reports the same control as a Button, so promoting the
+// clickable container gives one role vocabulary across both platforms.
+// Controls that already carry an interactive role, and structural
+// containers that merely happen to be clickable, keep their type.
+func buttonIfClickable(t string, clickable bool) string {
+	if clickable && !buttonRoleKeeps[t] {
+		return "Button"
+	}
+	return t
 }
 
 // androidType reduces a fully-qualified class name to the mirror's type
