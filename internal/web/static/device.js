@@ -21,6 +21,15 @@ const appId = new URLSearchParams(location.search).get("app") || "";
 // (the console at / is the usual place to watch). See sizeStage for how
 // the canvas gets its dimensions without a frame to measure.
 const wantVideo = new URLSearchParams(location.search).get("video") === "1";
+// App launch on page load. The device page is the start of a session, so
+// by default opening it launches the app fresh (terminate + relaunch),
+// giving every session — and every generated test that navigates here —
+// the app's own first screen rather than whatever the last one left
+// behind. ?resume=1 keeps the current state instead: a second viewer
+// joining a live session, or anyone who means to inspect where the app
+// already is, must not restart it under the first driver. Needs ?app= to
+// know what to launch; without it the page just mirrors the frontmost app.
+const resume = new URLSearchParams(location.search).get("resume") === "1";
 const canvas = document.getElementById("video");
 const ctx = canvas.getContext("2d");
 const mirror = document.getElementById("mirror");
@@ -1013,6 +1022,18 @@ async function start() {
   }
   if (wantVideo) connectVideo();
   connectInput();
+  // Fresh-launch the app before the first tree, unless asked to resume,
+  // so the mirror opens on the app's own first screen. Best-effort: a
+  // launch that fails (device-free tests, a bad bundle) leaves the page
+  // to mirror whatever is there rather than blocking on it.
+  if (appId && !resume) {
+    try {
+      await fetch(`/api/devices/${udid}/app/launch`, {
+        method: "POST",
+        body: JSON.stringify({ app: appId }),
+      });
+    } catch {}
+  }
   // Unscoped trees follow the frontmost app (the runner resolves it);
   // ?app= narrows to one bundle when tests want isolation.
   syncTree();

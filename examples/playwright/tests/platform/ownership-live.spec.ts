@@ -16,7 +16,7 @@ test('a second driver is refused on a real device', async ({ browser, request })
   await first.waitForTimeout(1500);
 
   const second = await browser.newPage();
-  await second.goto(`/device/${UDID}?app=${APP}`);
+  await second.goto(`/device/${UDID}?app=${APP}&resume=1`);
   await second.getByTestId('username-input').waitFor({ state: 'visible', timeout: 30000 });
   // The mirror still renders — reading is allowed — but input is refused.
   await expect(second.locator('#mirror')).toHaveAttribute('data-dd-input-refused', /driven by/, { timeout: 20000 });
