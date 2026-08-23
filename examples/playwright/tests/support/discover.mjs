@@ -16,10 +16,14 @@
 import { spawn, execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 
-const UDID = process.env.DEVICEDECK_UDID;
-const APP = 'dev.devicelab.testhive';
-const APP_PATH = process.env.TESTHIVE_APP || '/Users/omnarayan/work/temp/TestHive-iOS/prebuilt-ios/simulator/testhive.app';
-const PAGE = `http://127.0.0.1:8787/device/${UDID}?app=${APP}`;
+const SERIAL = process.env.DEVICEDECK_ANDROID_SERIAL;
+const ANDROID = !!SERIAL;
+const DEV = ANDROID ? SERIAL : process.env.DEVICEDECK_UDID;
+const APP = ANDROID ? 'com.testhiveapp' : 'dev.devicelab.testhive';
+const APP_PATH = ANDROID
+  ? (process.env.TESTHIVE_APK || '/Users/omnarayan/work/temp/TestHive/prebuilt-apk/app-release.apk')
+  : (process.env.TESTHIVE_APP || '/Users/omnarayan/work/temp/TestHive-iOS/prebuilt-ios/simulator/testhive.app');
+const PAGE = ANDROID ? `http://127.0.0.1:8787/device/${DEV}` : `http://127.0.0.1:8787/device/${DEV}?app=${APP}`;
 const USER = 'devicelab';
 const PASS = 'robustest';
 
@@ -30,10 +34,11 @@ const PASS = 'robustest';
 // true blank slate, so every journey starts where a first-time user
 // does. This is what the ?reset=1 page mode will do for real tests.
 function resetApp() {
-  try {
-    execFileSync('xcrun', ['simctl', 'uninstall', UDID, APP], { stdio: 'ignore' });
-  } catch {}
-  execFileSync('xcrun', ['simctl', 'install', UDID, APP_PATH], { stdio: 'ignore' });
+  const tool = ANDROID ? 'adb' : 'xcrun';
+  const un = ANDROID ? ['uninstall', APP] : ['simctl', 'uninstall', DEV, APP];
+  const ins = ANDROID ? ['install', '-r', APP_PATH] : ['simctl', 'install', DEV, APP_PATH];
+  try { execFileSync(tool, un, { stdio: 'ignore' }); } catch {}
+  execFileSync(tool, ins, { stdio: 'ignore' });
 }
 
 const srv = spawn('npx', ['-y', '@playwright/mcp@latest', '--headless'], { stdio: ['pipe', 'pipe', 'ignore'] });
@@ -108,7 +113,7 @@ function valueFor(name) {
 // the login screen, every time.
 async function resetAndOpen() {
   resetApp();
-  await fetch(`http://127.0.0.1:8787/api/devices/${UDID}/app/launch`, { method: 'POST', body: JSON.stringify({ app: APP }) });
+  await fetch(`http://127.0.0.1:8787/api/devices/${DEV}/app/launch`, { method: 'POST', body: JSON.stringify({ app: APP }) });
   await call('browser_navigate', { url: PAGE });
 }
 
@@ -116,9 +121,9 @@ async function resetAndOpen() {
 // whether they are the right ones.
 async function loginWith(user, pass) {
   await resetAndOpen();
-  await type('textbox', 'Username', user);
-  await type('textbox', 'Password', pass);
-  await click('button', 'Sign In');
+  await type('textbox', 'username', user);
+  await type('textbox', 'password', pass);
+  await click('button', 'login-button');
 }
 
 const freshLogin = () => loginWith(USER, PASS);
@@ -142,7 +147,7 @@ await rpc('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clien
 // appears), inferred, not memorised.
 await journey('log in', async () => {
   await freshLogin();
-  await find('button', 'cart');
+  await find('button', 'cart-button');
   return "await expect(page.getByRole('button', { name: /cart/i }).first()).toBeVisible();";
 });
 
@@ -150,9 +155,9 @@ await journey('log in', async () => {
 // checkout control appears.
 await journey('add a product to the cart', async () => {
   await freshLogin();
-  await click('button', 'Add');            // first Add button on the list
-  await click('button', 'cart');           // the badge that appears
-  await find('button', 'Checkout');
+  await click('button', 'add-to-cart');            // first Add button on the list
+  await click('button', 'cart-button');           // the badge that appears
+  await find('button', 'checkout');
   return "await expect(page.getByRole('button', { name: /checkout/i })).toBeVisible();";
 });
 
@@ -160,9 +165,9 @@ await journey('add a product to the cart', async () => {
 // asks for, proceed. Success = the flow moved past the address form.
 await journey('check out through the shipping form', async () => {
   await freshLogin();
-  await click('button', 'Add');
-  await click('button', 'cart');
-  await click('button', 'Checkout');
+  await click('button', 'add-to-cart');
+  await click('button', 'cart-button');
+  await click('button', 'checkout');
   await find('textbox', '');               // wait for the form
   for (const field of await allOf('textbox')) {
     await call('browser_type', { element: field.name, target: field.ref, text: valueFor(field.name) });
@@ -180,7 +185,14 @@ await journey('check out through the shipping form', async () => {
 await journey('searches the catalogue', async () => {
   await freshLogin();
   await type('textbox', 'search', 'Maestro');
-  await find('generic', 'Maestro', { tries: 6 }).catch(() => find('text', 'Maestro', { tries: 4 }));
+  // The searched framework is still on screen — as a text node (iOS) or
+  // a product-item/add button carrying the name (Android). Any of them
+  // confirms the search took.
+  await Promise.any([
+    find('generic', 'Maestro', { tries: 4 }),
+    find('text', 'Maestro', { tries: 4 }),
+    find('button', 'Maestro', { tries: 4 }),
+  ]).catch(() => { throw new Error('searched framework not visible'); });
   return "await expect(page.getByText('Maestro').first()).toBeVisible();";
 });
 
@@ -189,21 +201,21 @@ await journey('searches the catalogue', async () => {
 // that word, not a memorised id.
 await journey('increases a cart quantity', async () => {
   await freshLogin();
-  await click('button', 'Add');
-  await click('button', 'cart');
-  await click('button', 'increase');
+  await click('button', 'add-to-cart');
+  await click('button', 'cart-button');
+  await click('button', 'add');   // iOS "Add (cart-increase-quantity)", Android re-add "add-to-cart-button"
   // The cart stayed put with the line still in it — a checkout control is
   // the discoverable proof.
-  await find('button', 'Checkout');
+  await find('button', 'checkout');
   return "await expect(page.getByRole('button', { name: /checkout/i })).toBeVisible();";
 });
 
 // Journey F: remove the only line from the cart.
 await journey('removes an item from the cart', async () => {
   await freshLogin();
-  await click('button', 'Add');
-  await click('button', 'cart');
-  await click('button', 'decrease');   // the − folds "cart-decrease-quantity"
+  await click('button', 'add-to-cart');
+  await click('button', 'cart-button');
+  await click('button', 'remove');   // iOS "Remove", Android "remove-from-cart-button"
   await settle(2);
   // Success = the flow offers to keep shopping, i.e. the cart emptied.
   const end = (await allOf('button')).map((b) => b.name).find((n) => /continue|shopping|browse|back/i.test(n));
@@ -217,13 +229,15 @@ await journey('rejects a wrong password', async () => {
   await loginWith(USER, 'not-the-password');
   await settle(2);
   // Still on login: the Sign In button is right there, not the store.
-  await find('button', 'Sign In');
-  return "await expect(page.getByRole('button', { name: /sign in/i })).toBeVisible();";
+  await find('button', 'login-button');
+  return "await expect(page.getByRole('button', { name: /login-button/i })).toBeVisible();";
 });
 
 srv.kill();
 
-const gotoLine = 'await page.goto(`http://127.0.0.1:8787/device/${UDID}?app=${APP}`);';
+const gotoLine = ANDROID
+  ? 'await page.goto(`http://127.0.0.1:8787/device/${DEV}`);'
+  : 'await page.goto(`http://127.0.0.1:8787/device/${DEV}?app=${APP}`);';
 const clean = (l) => (l.includes('setTimeout') ? null : l.startsWith('await page.goto(') ? gotoLine : l);
 const block = (r) => {
   const steps = r.lines.map(clean).filter(Boolean).map((l) => '  ' + l).join('\n');
@@ -231,32 +245,33 @@ const block = (r) => {
 };
 
 const ok = results.filter((r) => r.ok);
+const envName = ANDROID ? 'DEVICEDECK_ANDROID_SERIAL' : 'DEVICEDECK_UDID';
+const envDefault = ANDROID ? 'emulator-5554' : 'booted';
+const pathEnv = ANDROID ? 'TESTHIVE_APK' : 'TESTHIVE_APP';
+const resetLines = ANDROID
+  ? `  try { execFileSync('adb', ['uninstall', APP]); } catch {}\n  execFileSync('adb', ['install', '-r', APP_PATH]);`
+  : `  try { execFileSync('xcrun', ['simctl', 'uninstall', DEV, APP]); } catch {}\n  execFileSync('xcrun', ['simctl', 'install', DEV, APP_PATH]);`;
 const body = `import { test, expect } from '@playwright/test';
+import { execFileSync } from 'child_process';
 
 // GENERATED by a fresh agent (tests/support/discover.mjs) that knew only
 // the login credentials and found every element on screen by role and
-// name. Re-generate after a DeviceDeck change and compare pass counts.
+// name — on ${ANDROID ? 'Android' : 'iOS'}. Re-generate after a DeviceDeck change.
 
-const UDID = process.env.DEVICEDECK_UDID || 'booted';
-const APP = 'dev.devicelab.testhive';
+const DEV = process.env.${envName} || '${envDefault}';
+const APP = '${APP}';
+const APP_PATH = process.env.${pathEnv} || '${APP_PATH}';
 
-import { execFileSync } from 'child_process';
-
-const APP_PATH = process.env.TESTHIVE_APP || '/Users/omnarayan/work/temp/TestHive-iOS/prebuilt-ios/simulator/testhive.app';
-
-// Each test starts from a clean install so it is independent: a plain
-// relaunch keeps TestHive logged in, so without this the second test on
-// would never see the login screen. (A ?reset=1 page mode would move
-// this server-side; until then the reset is done here.)
+// Each test starts from a clean install so it is independent: a relaunch
+// keeps TestHive logged in, so the login tests need a blank slate.
 test.beforeEach(async ({ request }) => {
-  try { execFileSync('xcrun', ['simctl', 'uninstall', UDID, APP]); } catch {}
-  execFileSync('xcrun', ['simctl', 'install', UDID, APP_PATH]);
-  await request.post(\`/api/devices/\${UDID}/app/launch\`, { data: { app: APP } });
+${resetLines}
+  await request.post(\`/api/devices/\${DEV}/app/launch\`, { data: { app: APP } });
 });
 
 ${ok.map(block).join('\n\n')}
 `;
-writeFileSync('tests/app/generated-agent.spec.ts', body);
+writeFileSync(ANDROID ? 'tests/app/generated-agent-android.spec.ts' : 'tests/app/generated-agent.spec.ts', body);
 
 console.log('\n=== BENCHMARK: fresh-agent authoring ===');
 console.log(`journeys attempted: ${results.length}`);
