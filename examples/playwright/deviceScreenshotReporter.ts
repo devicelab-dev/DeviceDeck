@@ -14,7 +14,9 @@ import { join } from 'path';
 // which is why the fixture, not a reporter, was needed until this.
 export default class DeviceScreenshotReporter implements Reporter {
   private base = process.env.DEVICEDECK_URL || 'http://127.0.0.1:8787';
-  private udid = process.env.DEVICEDECK_UDID || 'booted';
+  // Android tests set the serial; iOS tests the udid. The server drives
+  // both by the same id, so either identifies the device to screenshot.
+  private udid = process.env.DEVICEDECK_ANDROID_SERIAL || process.env.DEVICEDECK_UDID || 'booted';
 
   onTestEnd(_test: TestCase, result: TestResult) {
     if (result.status === 'passed' || result.status === 'skipped') return;
