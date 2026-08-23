@@ -37,7 +37,6 @@ async function serveMirror(page: Page, name: string) {
 
   await page.route('**/api/devices', (r) =>
     r.fulfill({ json: { devices: [{ udid: UDID, name: 'Fixture', booted: true }] } }));
-  await page.route('**/api/devices/*/app/launch', (r) => r.fulfill({ json: { ok: true } }));
   await page.route('**/api/devices/*/tree*', (r) => r.fulfill({ json: tree }));
   await page.route(/\/device\/[0-9A-Fa-f-]+/, (r) =>
     r.fulfill({ contentType: 'text/html', body: fs.readFileSync(path.join(STATIC, 'device.html'), 'utf8') }));
