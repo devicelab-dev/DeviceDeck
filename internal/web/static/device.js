@@ -291,6 +291,12 @@ function syncNode(el, node, anchorFrame, owners) {
 // baseline the next edit is diffed against.
 function syncField(el, node) {
   const value = node.value || "";
+  // The device's own contents, kept even while the field holds focus (when
+  // the write below is suppressed) so the edit chain can read back what the
+  // device actually received and repair any drift. A secure field reports
+  // bullets, so its read-back is by length; mark it.
+  el.dataset.ddDeviceValue = value;
+  el.dataset.ddSecure = node.type === "SecureTextField" ? "true" : "false";
   if (el !== document.activeElement && el.value !== value) el.value = value;
   el.dataset.ddValue = el.value;
   setOrRemove(el, "placeholder", node.placeholder || "");
@@ -982,12 +988,91 @@ mirror.addEventListener("input", (e) => {
   const before = el.dataset.ddValue ?? "";
   const after = el.value;
   el.dataset.ddValue = after;
+  // What the caller wants in this field, kept apart from ddValue because a
+  // poll overwrites ddValue with the device's contents once focus leaves.
+  // The reconcile below reads it back against the device to catch a bleed.
+  el.dataset.ddIntended = after;
+  editedFields.add(el);
   editChain = editChain.then(async () => {
     await waitReady(el);
     sendEdit(before, after);
   });
+  scheduleReconcile();
   noteActivity();
 });
+
+// Read-back reconcile. iOS reports no keyboard focus, so a keystroke sent
+// before a focus tap has landed bleeds into the previously focused field —
+// "devicelab" then a password reaching the device as "devicelabr" — and no
+// wall-clock prevents it on a loaded device (the guess is browser time, the
+// device runs on its own). So do not guess when to type; verify what
+// landed. After typing settles, check the device echoed each field's
+// intended value and retype any it did not — device truth, not a timer, so
+// it holds under any load. Bounded, so a field the device will never accept
+// does not spin forever.
+const editedFields = new Set();
+const RECONCILE_MS = 250;
+const MAX_REPAIRS = 4;
+let reconcileTimer = 0;
+
+// fieldMatches reports whether the device holds what the caller asked for.
+// A secure field only reports bullets, so it is matched by length.
+function fieldMatches(el) {
+  const intended = el.dataset.ddIntended ?? "";
+  const device = el.dataset.ddDeviceValue ?? "";
+  return el.dataset.ddSecure === "true"
+    ? device.length === intended.length
+    : device === intended;
+}
+
+// scheduleReconcile queues one verify pass for after typing goes quiet, so
+// a burst of keystrokes reconciles once rather than once per key.
+function scheduleReconcile() {
+  clearTimeout(reconcileTimer);
+  reconcileTimer = setTimeout(() => {
+    editChain = editChain.then(reconcileFields);
+    noteActivity();
+  }, RECONCILE_MS);
+}
+
+// reconcileFields brings every edited field to the caller's value, re-
+// tapping and retyping any the device did not echo. It waits on a settled
+// tree so it reads fresh device contents, and gives up after MAX_REPAIRS.
+async function reconcileFields() {
+  for (let attempt = 0; attempt < MAX_REPAIRS; attempt++) {
+    await settledRender();
+    const drifted = [...editedFields].filter((el) => el.isConnected && !fieldMatches(el));
+    for (const el of editedFields) {
+      if (!el.isConnected) editedFields.delete(el);
+    }
+    if (!drifted.length) return;
+    for (const el of drifted) {
+      await tapField(el);
+      await waitReady(el);
+      await repairField(el);
+    }
+    noteActivity();
+  }
+}
+
+// repairField clears whatever the device currently holds in el and types
+// the caller's value fresh — a rewrite, not a diff, because a secure
+// field's device contents are bullets that cannot be diffed against. The
+// clear is confirmed against the device before anything is typed: a
+// backspace can bleed under load too, and a value typed on top of one the
+// clear failed to remove doubles the field ("devicelabdevicelab"). If the
+// clear did not take, this returns and the reconcile loop retries the tap.
+async function repairField(el) {
+  const deviceLen = (el.dataset.ddDeviceValue ?? "").length;
+  for (let n = 0; n < deviceLen + 2; n++) input.send(keyFrame(0, KEY_USAGE.Backspace));
+  noteActivity();
+  await settledRender();
+  if ((el.dataset.ddDeviceValue ?? "").length > 0) return;
+  for (const ch of el.dataset.ddIntended ?? "") {
+    const frame = keyFrameForChar(ch);
+    if (frame) input.send(frame);
+  }
+}
 
 // sendEdit turns a value change into the keystrokes that would produce
 // it: backspaces for what was removed, characters for what was added.
