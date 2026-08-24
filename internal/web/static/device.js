@@ -21,6 +21,15 @@ const appId = new URLSearchParams(location.search).get("app") || "";
 // (the console at / is the usual place to watch). See sizeStage for how
 // the canvas gets its dimensions without a frame to measure.
 const wantVideo = new URLSearchParams(location.search).get("video") === "1";
+// ?reset=1 wipes the app's stored data and relaunches before the mirror
+// shows anything, so a driver that opened this page for a fresh session
+// starts at the app's first screen — logged out — not wherever the last
+// session left it. Web automation frameworks assume a new session is
+// clean; a native app persists across relaunches, so the page asks the
+// server to make it so. Opt-in and gated on ?app= (which app to reset):
+// a reset is destructive, and a plain refresh must never wipe state.
+const wantReset =
+  !!appId && new URLSearchParams(location.search).get("reset") === "1";
 const canvas = document.getElementById("video");
 const ctx = canvas.getContext("2d");
 const mirror = document.getElementById("mirror");
@@ -1036,16 +1045,36 @@ function renderFirstTree() {
   } catch {}
 }
 
+// resetApp wipes the app and relaunches it through the launch endpoint,
+// whose ?reset=1 clears stored data and whose reply waits until the app
+// is taking input. Awaited before the first poll so the mirror's opening
+// snapshot is the reset app, not the one it replaced. A failure falls
+// through to a normal poll rather than stranding the page on a bad reset.
+async function resetApp() {
+  try {
+    await fetch(`/api/devices/${udid}/app/launch?reset=1`, {
+      method: "POST",
+      body: JSON.stringify({ app: appId }),
+    });
+  } catch {}
+}
+
 // "booted" is a convenience alias; resolve it to the actual UDID up
 // front — the tree engine needs a concrete device.
 async function start() {
-  renderFirstTree();
+  // The inlined first tree is last session's screen; on a reset it would
+  // flash the logged-in state a fresh session is leaving, so it is skipped
+  // and the mirror stays empty until the relaunched app polls in. On the
+  // normal path it renders synchronously, before load — all an agent's
+  // navigate waits for.
+  if (!wantReset) renderFirstTree();
   if (udid === "booted") {
     try {
       const { devices } = await (await fetch("/api/devices")).json();
       if (devices.length) udid = devices[0].udid;
     } catch {}
   }
+  if (wantReset) await resetApp();
   if (wantVideo) connectVideo();
   connectInput();
   // Unscoped trees follow the frontmost app (the runner resolves it);
