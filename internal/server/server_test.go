@@ -542,13 +542,16 @@ func TestLaunchApp(t *testing.T) {
 	if len(f.launched) != 1 || f.launched[0] != "AAA/com.example" {
 		t.Errorf("launched = %v", f.launched)
 	}
+	// Fresh by default: a plain launch resets first.
+	if len(f.reset) != 1 || f.reset[0] != "AAA/com.example" {
+		t.Errorf("plain launch did not reset by default: %v", f.reset)
+	}
 }
 
-// ?reset=1 wipes the app's data before launching, so the run begins
-// logged out; the reset must happen and must precede the launch.
-func TestLaunchAppReset(t *testing.T) {
+// ?reset=yes is the explicit form of the default: wipe then launch.
+func TestLaunchAppResetYes(t *testing.T) {
 	f := &fakeBackend{nodes: []runner.Node{{Type: "Button", Label: "Sign In", Enabled: true}}}
-	rec := do(t, newTestServer(f), "POST", "/api/devices/AAA/app/launch?reset=1", `{"app":"com.example"}`)
+	rec := do(t, newTestServer(f), "POST", "/api/devices/AAA/app/launch?reset=yes", `{"app":"com.example"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("reset launch: %d %s", rec.Code, rec.Body)
 	}
@@ -561,10 +564,10 @@ func TestLaunchAppReset(t *testing.T) {
 }
 
 // A reset that fails aborts the launch — a stale logged-in session is
-// not the clean slate the caller asked for.
+// not the clean slate the default asks for.
 func TestLaunchAppResetFailure(t *testing.T) {
 	f := &fakeBackend{resetErr: errors.New("not installed")}
-	rec := do(t, newTestServer(f), "POST", "/api/devices/AAA/app/launch?reset=1", `{"app":"com.example"}`)
+	rec := do(t, newTestServer(f), "POST", "/api/devices/AAA/app/launch", `{"app":"com.example"}`)
 	if rec.Code != http.StatusBadGateway {
 		t.Fatalf("reset failure: %d %s", rec.Code, rec.Body)
 	}
@@ -573,16 +576,19 @@ func TestLaunchAppResetFailure(t *testing.T) {
 	}
 }
 
-// Without ?reset=1 the data is left alone — a plain launch keeps the
-// session, so the reset backend is never called.
-func TestLaunchAppNoResetByDefault(t *testing.T) {
+// ?reset=no resumes: the data is left alone and the reset backend is
+// never called, so the app launches onto whatever was left.
+func TestLaunchAppResumeSkipsReset(t *testing.T) {
 	f := &fakeBackend{nodes: []runner.Node{{Type: "Button", Label: "Sign In", Enabled: true}}}
-	rec := do(t, newTestServer(f), "POST", "/api/devices/AAA/app/launch", `{"app":"com.example"}`)
+	rec := do(t, newTestServer(f), "POST", "/api/devices/AAA/app/launch?reset=no", `{"app":"com.example"}`)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("launch: %d %s", rec.Code, rec.Body)
+		t.Fatalf("resume launch: %d %s", rec.Code, rec.Body)
 	}
 	if len(f.reset) != 0 {
-		t.Errorf("reset called without ?reset=1: %v", f.reset)
+		t.Errorf("reset called for ?reset=no: %v", f.reset)
+	}
+	if len(f.launched) != 1 {
+		t.Errorf("launched = %v", f.launched)
 	}
 }
 

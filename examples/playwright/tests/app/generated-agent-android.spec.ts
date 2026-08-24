@@ -9,15 +9,15 @@ const DEV = process.env.DEVICEDECK_ANDROID_SERIAL || 'emulator-5554';
 const APP = 'com.testhiveapp';
 const APP_PATH = process.env.TESTHIVE_APK || '/Users/omnarayan/work/temp/TestHive/prebuilt-apk/app-release.apk';
 
-// Installed once, then every test resets to a logged-out first run with
-// ?reset=1: the server wipes the app's data before launching, so each
-// test is independent. A plain relaunch keeps TestHive logged in, and the
-// reset is far cheaper than the reinstall it used to take per test.
+// Installed once, then every test launches fresh — the launch endpoint
+// wipes the app's data by default, so each test starts logged out and
+// independent. Far cheaper than the reinstall this used to take per test;
+// pass ?reset=no to resume the app instead.
 test.beforeAll(() => {
   execFileSync('adb', ['install', '-r', APP_PATH]);
 });
 test.beforeEach(async ({ request }) => {
-  await request.post(`/api/devices/${DEV}/app/launch?reset=1`, { data: { app: APP } });
+  await request.post(`/api/devices/${DEV}/app/launch`, { data: { app: APP } });
 });
 
 test('agent: log in', async ({ page }) => {

@@ -166,8 +166,9 @@ type launchRequest struct {
 	App string `json:"app"`
 }
 
-// handleLaunchApp starts an app fresh, so a caller can begin from a
-// known screen rather than inheriting whatever the last session left.
+// handleLaunchApp starts an app at a first-run screen by default — data
+// wiped, logged out — so a caller begins from the clean slate a new
+// automation session expects. ?reset=no resumes the app as it was left.
 func (s *Server) handleLaunchApp(w http.ResponseWriter, r *http.Request) {
 	var req launchRequest
 	if !decodeBody(w, r, &req) {
@@ -178,11 +179,14 @@ func (s *Server) handleLaunchApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	udid := r.PathValue("udid")
-	// ?reset=1 asks for a clean slate: wipe the app's stored data before
-	// launching so the run starts logged out, not wherever the last
-	// session left the app. Without it a relaunch keeps a logged-in
-	// session, which is why the login example specs reinstall by hand.
-	if r.URL.Query().Get("reset") == "1" {
+	// Launch fresh by default: wipe the app's stored data first so the run
+	// begins at a first-run screen — logged out — which is the clean slate
+	// a new automation session expects (Appium resets between sessions
+	// too). A relaunch alone keeps a logged-in session, which is the
+	// surprise that makes web-style tests flaky against a native app. Pass
+	// ?reset=no to resume instead, launching onto whatever the last session
+	// left — for continuing a flow or inspecting current state.
+	if r.URL.Query().Get("reset") != "no" {
 		if err := s.launch.ResetApp(r.Context(), udid, req.App); err != nil {
 			httpError(w, http.StatusBadGateway, err)
 			return

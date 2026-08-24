@@ -21,15 +21,15 @@ const appId = new URLSearchParams(location.search).get("app") || "";
 // (the console at / is the usual place to watch). See sizeStage for how
 // the canvas gets its dimensions without a frame to measure.
 const wantVideo = new URLSearchParams(location.search).get("video") === "1";
-// ?reset=1 wipes the app's stored data and relaunches before the mirror
-// shows anything, so a driver that opened this page for a fresh session
-// starts at the app's first screen — logged out — not wherever the last
-// session left it. Web automation frameworks assume a new session is
-// clean; a native app persists across relaunches, so the page asks the
-// server to make it so. Opt-in and gated on ?app= (which app to reset):
-// a reset is destructive, and a plain refresh must never wipe state.
+// ?reset=yes launches the app fresh — data wiped, logged out — before the
+// mirror shows anything, so a driver that opened this page for a new
+// session starts at the app's first screen, not wherever the last session
+// left it. Web automation frameworks assume a new session is clean; a
+// native app persists across relaunches, so the page asks the server to
+// make it so. Opt-in and gated on ?app= (which app to launch): launching
+// on load is destructive, and a plain refresh must never wipe state.
 const wantReset =
-  !!appId && new URLSearchParams(location.search).get("reset") === "1";
+  !!appId && new URLSearchParams(location.search).get("reset") === "yes";
 const canvas = document.getElementById("video");
 const ctx = canvas.getContext("2d");
 const mirror = document.getElementById("mirror");
@@ -1045,14 +1045,14 @@ function renderFirstTree() {
   } catch {}
 }
 
-// resetApp wipes the app and relaunches it through the launch endpoint,
-// whose ?reset=1 clears stored data and whose reply waits until the app
-// is taking input. Awaited before the first poll so the mirror's opening
-// snapshot is the reset app, not the one it replaced. A failure falls
-// through to a normal poll rather than stranding the page on a bad reset.
+// resetApp launches the app fresh through the launch endpoint, which
+// clears stored data by default and whose reply waits until the app is
+// taking input. Awaited before the first poll so the mirror's opening
+// snapshot is the fresh app, not the one it replaced. A failure falls
+// through to a normal poll rather than stranding the page on a bad launch.
 async function resetApp() {
   try {
-    await fetch(`/api/devices/${udid}/app/launch?reset=1`, {
+    await fetch(`/api/devices/${udid}/app/launch`, {
       method: "POST",
       body: JSON.stringify({ app: appId }),
     });
