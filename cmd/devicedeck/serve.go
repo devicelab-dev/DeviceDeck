@@ -16,6 +16,7 @@ import (
 	"github.com/devicelab-dev/DeviceDeck/internal/capture"
 	"github.com/devicelab-dev/DeviceDeck/internal/emu"
 	"github.com/devicelab-dev/DeviceDeck/internal/input"
+	"github.com/devicelab-dev/DeviceDeck/internal/platform"
 	"github.com/devicelab-dev/DeviceDeck/internal/runner"
 	"github.com/devicelab-dev/DeviceDeck/internal/server"
 	"github.com/devicelab-dev/DeviceDeck/internal/sim"
@@ -36,7 +37,7 @@ func runServe(args []string) error {
 	videoPath := flags.String("video-sidecar", "", "path to devicedeck-video (default: auto-discover)")
 	fps := flags.Int("fps", 30, "video capture frame rate")
 	keepDevices := flags.Bool("keep-devices", false,
-		"leave simulators/emulators running on exit instead of shutting down the ones DeviceDeck drove")
+		"leave the Android emulators DeviceDeck started running on exit (iOS simulators are shut down by the test runner regardless)")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -93,17 +94,22 @@ func runServe(args []string) error {
 	_ = httpServer.Shutdown(ctx)
 	inputs.CloseAll()
 	videos.CloseAll()
-	// Capture the devices we drove before StopAll clears them, then power
-	// them off — simulators and emulators are disposable, so a session
-	// leaves nothing running. --keep-devices opts out; devices DeviceDeck
-	// never attached an engine to are untouched either way.
+	// Stopping an iOS engine shuts its simulator down — killing xcodebuild
+	// tears the test session down with it — so the runner already cleans
+	// those up. Android emulators are detached and outlive that, so they
+	// are the ones DeviceDeck must power off itself: capture the driven
+	// devices before StopAll clears them, then kill the emulators among
+	// them. --keep-devices leaves those running; iOS is the runner's either
+	// way.
 	driven := engines.ActiveUDIDs()
 	engines.StopAll(ctx)
 	if !*keepDevices {
-		shutdown := server.ShutdownRouter{IOS: simClient, Android: emuClient}
 		for _, udid := range driven {
-			if err := shutdown.Shutdown(ctx, udid); err != nil {
-				slog.Warn("device shutdown on exit", "udid", udid, "err", err)
+			if !platform.IsAndroidSerial(udid) {
+				continue
+			}
+			if err := emuClient.Kill(ctx, udid); err != nil {
+				slog.Warn("emulator shutdown on exit", "serial", udid, "err", err)
 			}
 		}
 	}

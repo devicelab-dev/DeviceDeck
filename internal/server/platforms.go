@@ -84,34 +84,6 @@ func (r LaunchRouter) ResetApp(ctx context.Context, udid, appID string) error {
 	return r.IOS.ResetApp(ctx, udid, appID)
 }
 
-// SimShutdowner powers an iOS simulator off; EmuKiller does the same for
-// an Android emulator. The two verbs differ because the platforms do:
-// simctl shuts down, adb kills the emulator console.
-type SimShutdowner interface {
-	Shutdown(ctx context.Context, udid string) error
-}
-
-// EmuKiller powers an Android emulator off via its console.
-type EmuKiller interface {
-	Kill(ctx context.Context, serial string) error
-}
-
-// ShutdownRouter powers a device off through the right platform backend,
-// so exit cleanup can shut down the devices DeviceDeck drove without
-// caring which kind each one is.
-type ShutdownRouter struct {
-	IOS     SimShutdowner
-	Android EmuKiller
-}
-
-// Shutdown powers udid off via its platform backend.
-func (r ShutdownRouter) Shutdown(ctx context.Context, udid string) error {
-	if platform.IsAndroidSerial(udid) {
-		return r.Android.Kill(ctx, udid)
-	}
-	return r.IOS.Shutdown(ctx, udid)
-}
-
 // ScreenshotRouter picks the platform's screenshot backend per device.
 type ScreenshotRouter struct {
 	IOS     Screenshotter
