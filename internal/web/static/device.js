@@ -250,6 +250,10 @@ function syncNode(el, node, anchorFrame, owners) {
   // which makes it unusable as a pointer-events signal.
   el.setAttribute("data-dd-enabled", node.enabled === false ? "false" : "true");
   el.setAttribute("data-dd-hittable", node.hittable ? "true" : "false");
+  // The device's own focus, so typing can wait for the field to actually
+  // hold focus rather than guess how long the tap took — see the input
+  // handler. Mirrored per poll like the other states.
+  el.setAttribute("data-dd-focused", node.focused ? "true" : "false");
   // An <input> holds its contents in .value and can have no children, so
   // it takes neither the text node below nor anything nested.
   if (el.tagName === "INPUT") {
@@ -894,16 +898,32 @@ function centreOf(el) {
   return contentPoint(r.left + r.width / 2, r.top + r.height / 2);
 }
 
-// The device needs a moment to raise its keyboard and place the caret
-// after that tap. Text sent inside the window would be typed into a field
-// that is not yet listening, so an edit that follows a focus waits it out.
-const FOCUS_SETTLE_MS = 400;
+// After a focus tap the device raises its keyboard and moves focus, and
+// the next tree poll reports it as the field's data-dd-focused. Typing
+// waits for that flag rather than a wall-clock guess: a fixed delay is
+// either too long on a fast device or — the bug this replaces — too
+// short on a slow one, where the next field's first keystroke arrived
+// before focus had moved and bled into the previous field ("devicelab"
+// then a password reached the device as "devicelabr"). Bounded so a
+// field that never reports focus does not hang the edit chain; on
+// timeout the keystrokes are sent anyway, best-effort as before.
+const FOCUS_TIMEOUT_MS = 5000;
+function waitFocused(el) {
+  return new Promise((resolve) => {
+    if (el.getAttribute("data-dd-focused") === "true") return resolve();
+    const deadline = Date.now() + FOCUS_TIMEOUT_MS;
+    const tick = () => {
+      if (el.getAttribute("data-dd-focused") === "true" || Date.now() >= deadline) resolve();
+      else setTimeout(tick, 30);
+    };
+    tick();
+  });
+}
 // A click focuses the field on its way through, and the pointer handlers
 // have already tapped the device at that point. Tapping again on focus
 // would make it a double tap, which selects a word instead of placing a
 // caret — measured as scrambled text when a test clicked and then typed.
 const POINTER_FOCUS_MS = 600;
-let focusTapAt = 0;
 let pointerAt = 0;
 
 // Edits run one at a time, in order. Each used to wait out the settle
@@ -924,10 +944,7 @@ mirror.addEventListener("focusin", (e) => {
   if (!(e.target instanceof HTMLInputElement)) return;
   if (Date.now() - pointerAt < POINTER_FOCUS_MS) return;
   const el = e.target;
-  editChain = editChain.then(async () => {
-    await tapField(el);
-    focusTapAt = Date.now();
-  });
+  editChain = editChain.then(() => tapField(el));
   noteActivity();
 });
 
@@ -938,8 +955,7 @@ mirror.addEventListener("input", (e) => {
   const after = el.value;
   el.dataset.ddValue = after;
   editChain = editChain.then(async () => {
-    const wait = Math.max(0, FOCUS_SETTLE_MS - (Date.now() - focusTapAt));
-    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    await waitFocused(el);
     sendEdit(before, after);
   });
   noteActivity();
