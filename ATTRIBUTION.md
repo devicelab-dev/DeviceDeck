@@ -39,7 +39,20 @@ Derived material in `sidecar/`:
   keyboard-service primary / HIDArbitrary-fallback key path —
   `SimKit.swift`, `Injector.swift`.
 
-Both licences permit this use with attribution.
+## Android Open Source Project — Apache License 2.0
+
+https://android.googlesource.com/platform/external/qemu/
+
+Derived material in `internal/emugrpc/`:
+
+- `emulator_controller.pb.go` and `emulator_controller_grpc.pb.go` are Go
+  code generated from the Android Emulator's `emulator_controller.proto`
+  (the gRPC control interface Android Studio's device streaming uses). We
+  use it as a client to pull the emulator's framebuffer over
+  `streamScreenshot` for Android video capture — `internal/video/emugrpc.go`.
+  The generated files retain the upstream AOSP copyright header.
+
+These licences permit this use with attribution.
 
 Upstream copyright notices, retained here as those licences ask:
 
@@ -49,5 +62,8 @@ Upstream copyright notices, retained here as those licences ask:
   section 4(d) adds nothing further to propagate.)
 - tapflow — Copyright (c) 2026 tapflow contributors, MIT License.
   https://github.com/jo-duchan/tapflow/blob/main/LICENSE
+- Android Emulator gRPC — Copyright (C) 2018 The Android Open Source
+  Project, Apache License 2.0. Header retained in
+  `internal/emugrpc/emulator_controller.pb.go`.
 
 DeviceDeck itself is Apache-2.0; see `LICENSE`.
