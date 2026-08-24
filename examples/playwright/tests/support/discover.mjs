@@ -31,8 +31,9 @@ const PASS = 'robustest';
 // TestHive logged in (iOS persists app data across terminate+launch), so
 // each journey would inherit the last one's state and a fresh agent
 // would never see the login screen again. Uninstall+reinstall is the
-// true blank slate, so every journey starts where a first-time user
-// does. This is what the ?reset=1 page mode will do for real tests.
+// true blank slate for authoring, so every journey starts where a
+// first-time user does. The emitted specs use the lighter ?reset=1 launch
+// for their repeated runs; this reinstall is the generator being thorough.
 function resetApp() {
   const tool = ANDROID ? 'adb' : 'xcrun';
   const un = ANDROID ? ['uninstall', APP] : ['simctl', 'uninstall', DEV, APP];
@@ -248,9 +249,9 @@ const ok = results.filter((r) => r.ok);
 const envName = ANDROID ? 'DEVICEDECK_ANDROID_SERIAL' : 'DEVICEDECK_UDID';
 const envDefault = ANDROID ? 'emulator-5554' : 'booted';
 const pathEnv = ANDROID ? 'TESTHIVE_APK' : 'TESTHIVE_APP';
-const resetLines = ANDROID
-  ? `  try { execFileSync('adb', ['uninstall', APP]); } catch {}\n  execFileSync('adb', ['install', '-r', APP_PATH]);`
-  : `  try { execFileSync('xcrun', ['simctl', 'uninstall', DEV, APP]); } catch {}\n  execFileSync('xcrun', ['simctl', 'install', DEV, APP_PATH]);`;
+const installLine = ANDROID
+  ? `  execFileSync('adb', ['install', '-r', APP_PATH]);`
+  : `  execFileSync('xcrun', ['simctl', 'install', DEV, APP_PATH]);`;
 const body = `import { test, expect } from '@playwright/test';
 import { execFileSync } from 'child_process';
 
@@ -262,11 +263,15 @@ const DEV = process.env.${envName} || '${envDefault}';
 const APP = '${APP}';
 const APP_PATH = process.env.${pathEnv} || '${APP_PATH}';
 
-// Each test starts from a clean install so it is independent: a relaunch
-// keeps TestHive logged in, so the login tests need a blank slate.
+// Installed once, then every test resets to a logged-out first run with
+// ?reset=1: the server wipes the app's data before launching, so each
+// test is independent. A plain relaunch keeps TestHive logged in, and the
+// reset is far cheaper than the reinstall it used to take per test.
+test.beforeAll(() => {
+${installLine}
+});
 test.beforeEach(async ({ request }) => {
-${resetLines}
-  await request.post(\`/api/devices/\${DEV}/app/launch\`, { data: { app: APP } });
+  await request.post(\`/api/devices/\${DEV}/app/launch?reset=1\`, { data: { app: APP } });
 });
 
 ${ok.map(block).join('\n\n')}
@@ -277,5 +282,6 @@ console.log('\n=== BENCHMARK: fresh-agent authoring ===');
 console.log(`journeys attempted: ${results.length}`);
 console.log(`generated cleanly:  ${ok.length}`);
 for (const r of results) console.log(`  ${r.ok ? 'ok  ' : 'FAIL'} ${r.name}${r.ok ? '' : ' — ' + r.error}`);
-console.log(`\nwrote tests/app/generated-agent.spec.ts (${ok.length} tests)`);
+const outFile = ANDROID ? 'tests/app/generated-agent-android.spec.ts' : 'tests/app/generated-agent.spec.ts';
+console.log(`\nwrote ${outFile} (${ok.length} tests)`);
 process.exit(0);
