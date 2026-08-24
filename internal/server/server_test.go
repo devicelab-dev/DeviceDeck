@@ -31,6 +31,8 @@ type fakeBackend struct {
 	bootErr    error
 	launched   []string
 	launchErr  error
+	reset      []string
+	resetErr   error
 	// failAfter, when > 0, makes SendFrame fail once that many frames
 	// have been accepted — exercises mid-gesture sidecar death.
 	failAfter int
@@ -70,6 +72,13 @@ func (f *fakeBackend) LaunchApp(_ context.Context, udid, appID string) error {
 	defer f.mu.Unlock()
 	f.launched = append(f.launched, udid+"/"+appID)
 	return f.launchErr
+}
+
+func (f *fakeBackend) ResetApp(_ context.Context, udid, appID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reset = append(f.reset, udid+"/"+appID)
+	return f.resetErr
 }
 
 func (f *fakeBackend) Screenshot(_ context.Context, udid string) ([]byte, error) {
@@ -532,6 +541,48 @@ func TestLaunchApp(t *testing.T) {
 	}
 	if len(f.launched) != 1 || f.launched[0] != "AAA/com.example" {
 		t.Errorf("launched = %v", f.launched)
+	}
+}
+
+// ?reset=1 wipes the app's data before launching, so the run begins
+// logged out; the reset must happen and must precede the launch.
+func TestLaunchAppReset(t *testing.T) {
+	f := &fakeBackend{nodes: []runner.Node{{Type: "Button", Label: "Sign In", Enabled: true}}}
+	rec := do(t, newTestServer(f), "POST", "/api/devices/AAA/app/launch?reset=1", `{"app":"com.example"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reset launch: %d %s", rec.Code, rec.Body)
+	}
+	if len(f.reset) != 1 || f.reset[0] != "AAA/com.example" {
+		t.Errorf("reset = %v", f.reset)
+	}
+	if len(f.launched) != 1 {
+		t.Errorf("launched = %v", f.launched)
+	}
+}
+
+// A reset that fails aborts the launch — a stale logged-in session is
+// not the clean slate the caller asked for.
+func TestLaunchAppResetFailure(t *testing.T) {
+	f := &fakeBackend{resetErr: errors.New("not installed")}
+	rec := do(t, newTestServer(f), "POST", "/api/devices/AAA/app/launch?reset=1", `{"app":"com.example"}`)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("reset failure: %d %s", rec.Code, rec.Body)
+	}
+	if len(f.launched) != 0 {
+		t.Errorf("launched despite reset failure: %v", f.launched)
+	}
+}
+
+// Without ?reset=1 the data is left alone — a plain launch keeps the
+// session, so the reset backend is never called.
+func TestLaunchAppNoResetByDefault(t *testing.T) {
+	f := &fakeBackend{nodes: []runner.Node{{Type: "Button", Label: "Sign In", Enabled: true}}}
+	rec := do(t, newTestServer(f), "POST", "/api/devices/AAA/app/launch", `{"app":"com.example"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("launch: %d %s", rec.Code, rec.Body)
+	}
+	if len(f.reset) != 0 {
+		t.Errorf("reset called without ?reset=1: %v", f.reset)
 	}
 }
 

@@ -32,9 +32,12 @@ type DeviceBooter interface {
 }
 
 // AppLauncher starts an app fresh on a device — terminating it first so
-// a caller can rely on beginning at the app's first screen.
+// a caller can rely on beginning at the app's first screen. ResetApp goes
+// further, wiping the app's stored data so the launch begins as a first
+// run rather than inheriting a logged-in session from a previous one.
 type AppLauncher interface {
 	LaunchApp(ctx context.Context, udid, appID string) error
+	ResetApp(ctx context.Context, udid, appID string) error
 }
 
 // Screenshotter captures a device's screen as PNG bytes.
@@ -175,6 +178,16 @@ func (s *Server) handleLaunchApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	udid := r.PathValue("udid")
+	// ?reset=1 asks for a clean slate: wipe the app's stored data before
+	// launching so the run starts logged out, not wherever the last
+	// session left the app. Without it a relaunch keeps a logged-in
+	// session, which is why the login example specs reinstall by hand.
+	if r.URL.Query().Get("reset") == "1" {
+		if err := s.launch.ResetApp(r.Context(), udid, req.App); err != nil {
+			httpError(w, http.StatusBadGateway, err)
+			return
+		}
+	}
 	if err := s.launch.LaunchApp(r.Context(), udid, req.App); err != nil {
 		httpError(w, http.StatusBadGateway, err)
 		return

@@ -148,3 +148,75 @@ func TestLaunchAppIgnoresTerminateFailure(t *testing.T) {
 		t.Error("a failed launch must be reported")
 	}
 }
+
+// ResetApp empties the app's data container so the next launch is a first
+// run: it locates the container, then wipes Library, Documents and tmp.
+func TestResetApp(t *testing.T) {
+	var calls []string
+	c := &Client{run: func(_ context.Context, name string, args ...string) ([]byte, error) {
+		calls = append(calls, name+" "+strings.Join(args, " "))
+		if len(args) > 1 && args[1] == "get_app_container" {
+			return []byte("/data/Containers/Data/Application/ABC\n"), nil
+		}
+		return nil, nil
+	}}
+	if err := c.ResetApp(context.Background(), "UDID-1", "com.example"); err != nil {
+		t.Fatalf("ResetApp: %v", err)
+	}
+	rm := calls[len(calls)-1]
+	for _, want := range []string{"rm -rf",
+		"/data/Containers/Data/Application/ABC/Library",
+		"/data/Containers/Data/Application/ABC/Documents",
+		"/data/Containers/Data/Application/ABC/tmp"} {
+		if !strings.Contains(rm, want) {
+			t.Errorf("rm call %q missing %q", rm, want)
+		}
+	}
+}
+
+// A container that cannot be located fails the reset rather than guessing.
+func TestResetAppLocateFailure(t *testing.T) {
+	c := &Client{run: func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if len(args) > 1 && args[1] == "get_app_container" {
+			return nil, errors.New("no such app")
+		}
+		return nil, nil
+	}}
+	err := c.ResetApp(context.Background(), "UDID-1", "com.example")
+	if err == nil || !strings.Contains(err.Error(), "locate") {
+		t.Fatalf("expected a locate error, got %v", err)
+	}
+}
+
+// A non-absolute container path would make the wipe `rm -rf /Library`, so
+// it is refused outright.
+func TestResetAppRefusesRelativePath(t *testing.T) {
+	c := &Client{run: func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if len(args) > 1 && args[1] == "get_app_container" {
+			return []byte("\n"), nil // empty path
+		}
+		return nil, nil
+	}}
+	err := c.ResetApp(context.Background(), "UDID-1", "com.example")
+	if err == nil || !strings.Contains(err.Error(), "no data container") {
+		t.Fatalf("expected a no-container error, got %v", err)
+	}
+}
+
+// The wipe failing fails the reset — stale data is not the clean slate
+// that was asked for.
+func TestResetAppWipeFailure(t *testing.T) {
+	c := &Client{run: func(_ context.Context, name string, args ...string) ([]byte, error) {
+		if len(args) > 1 && args[1] == "get_app_container" {
+			return []byte("/data/App/ABC\n"), nil
+		}
+		if name == "rm" {
+			return nil, errors.New("permission denied")
+		}
+		return nil, nil
+	}}
+	err := c.ResetApp(context.Background(), "UDID-1", "com.example")
+	if err == nil || !strings.Contains(err.Error(), "reset com.example") {
+		t.Fatalf("expected a reset error, got %v", err)
+	}
+}

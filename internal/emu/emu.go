@@ -75,6 +75,24 @@ func (c *Client) LaunchApp(ctx context.Context, serial, appID string) error {
 	return nil
 }
 
+// ResetApp clears appID's stored data so the next launch begins as a first
+// run — logged out, no cached state — the Android counterpart of the
+// simulator's data wipe. `pm clear` deletes the package's data directory
+// wholesale, which is exactly the blank slate the login example specs
+// reach for today by uninstalling and reinstalling the apk.
+func (c *Client) ResetApp(ctx context.Context, serial, appID string) error {
+	out, err := c.run(ctx, "adb", "-s", serial, "shell", "pm", "clear", appID)
+	if err != nil {
+		return fmt.Errorf("reset %s on %s: %w", appID, serial, err)
+	}
+	// pm clear prints "Success" or "Failed" on stdout with a zero exit
+	// code, so the text is the only signal that the package existed.
+	if !strings.Contains(string(out), "Success") {
+		return fmt.Errorf("reset %s on %s: %s (is it installed?)", appID, serial, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 // Screenshot captures a PNG of the emulator's screen.
 func (c *Client) Screenshot(ctx context.Context, serial string) ([]byte, error) {
 	return c.run(ctx, "adb", "-s", serial, "exec-out", "screencap", "-p")

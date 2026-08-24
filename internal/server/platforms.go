@@ -76,6 +76,14 @@ func (r LaunchRouter) LaunchApp(ctx context.Context, udid, appID string) error {
 	return r.IOS.LaunchApp(ctx, udid, appID)
 }
 
+// ResetApp implements AppLauncher with platform routing.
+func (r LaunchRouter) ResetApp(ctx context.Context, udid, appID string) error {
+	if platform.IsAndroidSerial(udid) {
+		return r.Android.ResetApp(ctx, udid, appID)
+	}
+	return r.IOS.ResetApp(ctx, udid, appID)
+}
+
 // ScreenshotRouter picks the platform's screenshot backend per device.
 type ScreenshotRouter struct {
 	IOS     Screenshotter

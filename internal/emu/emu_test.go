@@ -140,3 +140,34 @@ func TestLaunchAppReportsAdbFailure(t *testing.T) {
 		t.Error("a failed monkey invocation must be reported")
 	}
 }
+
+// ResetApp clears the package's data so the next launch is a first run.
+func TestResetApp(t *testing.T) {
+	c := &Client{run: fixture(map[string]string{
+		"adb -s emulator-5554 shell pm clear com.example": "Success\n",
+	})}
+	if err := c.ResetApp(context.Background(), "emulator-5554", "com.example"); err != nil {
+		t.Fatalf("ResetApp: %v", err)
+	}
+}
+
+// pm clear prints Failed for a package it does not know, exiting zero, so
+// the result is read from the output.
+func TestResetAppDetectsMissingPackage(t *testing.T) {
+	c := &Client{run: fixture(map[string]string{
+		"adb -s emulator-5554 shell pm clear com.nope": "Failed\n",
+	})}
+	err := c.ResetApp(context.Background(), "emulator-5554", "com.nope")
+	if err == nil || !strings.Contains(err.Error(), "is it installed") {
+		t.Fatalf("expected an installed-check error, got %v", err)
+	}
+}
+
+// A dead adb surfaces as the reset failing outright.
+func TestResetAppRunError(t *testing.T) {
+	c := &Client{run: fixture(nil)} // no fixture → run returns an error
+	err := c.ResetApp(context.Background(), "emulator-5554", "com.example")
+	if err == nil || !strings.Contains(err.Error(), "reset com.example") {
+		t.Fatalf("expected a reset error, got %v", err)
+	}
+}

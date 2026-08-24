@@ -70,11 +70,29 @@ func TestLaunchRouter(t *testing.T) {
 	if len(android.calls) != 1 || len(ios.calls) != 1 {
 		t.Errorf("routing wrong: ios=%v android=%v", ios.calls, android.calls)
 	}
+	// ResetApp routes by the same rule.
+	if err := r.ResetApp(context.Background(), "emulator-5554", "com.example"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.ResetApp(context.Background(), "EB69B42A-4763", "com.example"); err != nil {
+		t.Fatal(err)
+	}
+	if len(android.resets) != 1 || len(ios.resets) != 1 {
+		t.Errorf("reset routing wrong: ios=%v android=%v", ios.resets, android.resets)
+	}
 }
 
-type recordingLauncher struct{ calls []string }
+type recordingLauncher struct {
+	calls  []string
+	resets []string
+}
 
 func (l *recordingLauncher) LaunchApp(_ context.Context, udid, appID string) error {
 	l.calls = append(l.calls, udid+"/"+appID)
+	return nil
+}
+
+func (l *recordingLauncher) ResetApp(_ context.Context, udid, appID string) error {
+	l.resets = append(l.resets, udid+"/"+appID)
 	return nil
 }
