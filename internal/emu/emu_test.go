@@ -171,3 +171,69 @@ func TestResetAppRunError(t *testing.T) {
 		t.Fatalf("expected a reset error, got %v", err)
 	}
 }
+
+// All lists running emulators plus stopped AVDs, deduping a running AVD
+// against its -list-avds entry and prefixing the stopped ones with avd:.
+func TestAll(t *testing.T) {
+	c := &Client{run: fixture(map[string]string{
+		"adb devices": "List of devices attached\nemulator-5554\tdevice\n",
+		"adb -s emulator-5554 shell getprop ro.product.model":         "Pixel 7\n",
+		"adb -s emulator-5554 shell getprop ro.build.version.release": "14\n",
+		"adb -s emulator-5554 emu avd name":                           "Pixel_7\nOK\n",
+		"emulator -list-avds":                                         "Pixel_7\nPixel_8\n\n",
+	})}
+	devices, err := c.All(context.Background())
+	if err != nil {
+		t.Fatalf("All: %v", err)
+	}
+	// Running Pixel_7 stays as its serial; Pixel_7 is deduped out of the
+	// AVD list; Pixel_8 is added as a stopped avd:.
+	if len(devices) != 2 {
+		t.Fatalf("devices = %+v, want 2", devices)
+	}
+	if devices[0].UDID != "emulator-5554" || devices[1].UDID != AVDPrefix+"Pixel_8" {
+		t.Errorf("devices = %+v", devices)
+	}
+}
+
+// A failure listing running devices fails All — the inventory is unknown,
+// not empty.
+func TestAllBootedError(t *testing.T) {
+	c := &Client{run: fixture(nil)} // no "adb devices" fixture → Booted errors
+	if _, err := c.All(context.Background()); err == nil {
+		t.Fatal("expected error when adb devices fails")
+	}
+}
+
+// Without the emulator tool on PATH, All still returns the running devices
+// (the -list-avds block is skipped) and an unnameable running device does
+// not poison the dedup set.
+func TestAllWithoutEmulatorTool(t *testing.T) {
+	c := &Client{run: fixture(map[string]string{
+		"adb devices": "List of devices attached\nemulator-5554\tdevice\n",
+		"adb -s emulator-5554 shell getprop ro.product.model":         "Pixel 7\n",
+		"adb -s emulator-5554 shell getprop ro.build.version.release": "14\n",
+		// no "emu avd name" → avdName returns ""; no "emulator -list-avds"
+	})}
+	devices, err := c.All(context.Background())
+	if err != nil {
+		t.Fatalf("All: %v", err)
+	}
+	if len(devices) != 1 || devices[0].UDID != "emulator-5554" {
+		t.Errorf("devices = %+v, want just the running one", devices)
+	}
+}
+
+// NewClient wires the real command runner; exercise its closure once
+// through a command that fails, to cover the error-wrapping path.
+func TestNewClient(t *testing.T) {
+	c := NewClient()
+	if _, err := c.run(context.Background(), "definitely-not-a-real-binary-xyz"); err == nil {
+		t.Error("expected the real runner to error on a missing binary")
+	}
+	// The success path: a real command whose stdout comes back verbatim.
+	out, err := c.run(context.Background(), "echo", "ok")
+	if err != nil || strings.TrimSpace(string(out)) != "ok" {
+		t.Errorf("echo through the real runner: out=%q err=%v", out, err)
+	}
+}

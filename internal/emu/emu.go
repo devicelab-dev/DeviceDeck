@@ -156,9 +156,11 @@ func bootCommand(id string) []string {
 }
 
 // Boot launches a stopped AVD detached from this process; it appears in
-// adb (and the device list) once Android finishes booting. Only the
-// process spawn is untested here — it needs a real emulator on PATH;
-// the arguments it spawns with are covered via bootCommand.
+// adb (and the device list) once Android finishes booting.
+//
+// Coverage waiver: the process spawn needs a real emulator on PATH, so it
+// only runs end-to-end; the arguments it spawns with are covered via
+// bootCommand.
 func (c *Client) Boot(ctx context.Context, id string) error {
 	args := bootCommand(id)
 	name := args[1]
