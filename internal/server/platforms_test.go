@@ -142,3 +142,33 @@ func TestBootRouter(t *testing.T) {
 		})
 	}
 }
+
+type stubShutdowner struct{ udids []string }
+
+func (s *stubShutdowner) Shutdown(_ context.Context, udid string) error {
+	s.udids = append(s.udids, udid)
+	return nil
+}
+
+type stubKiller struct{ serials []string }
+
+func (s *stubKiller) Kill(_ context.Context, serial string) error {
+	s.serials = append(s.serials, serial)
+	return nil
+}
+
+// ShutdownRouter sends Android serials to Kill and everything else to the
+// simulator's Shutdown.
+func TestShutdownRouter(t *testing.T) {
+	ios, android := &stubShutdowner{}, &stubKiller{}
+	r := ShutdownRouter{IOS: ios, Android: android}
+	if err := r.Shutdown(context.Background(), "emulator-5554"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Shutdown(context.Background(), "EB69B42A-4763"); err != nil {
+		t.Fatal(err)
+	}
+	if len(android.serials) != 1 || len(ios.udids) != 1 {
+		t.Errorf("routing wrong: ios=%v android=%v", ios.udids, android.serials)
+	}
+}

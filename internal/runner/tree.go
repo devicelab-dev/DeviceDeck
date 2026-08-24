@@ -240,3 +240,16 @@ func (s *Engines) StopAll(ctx context.Context) {
 		delete(s.engines, udid)
 	}
 }
+
+// ActiveUDIDs lists the devices DeviceDeck has an engine on — the ones it
+// actually drove. Captured before StopAll (which clears the map) so exit
+// cleanup can shut those devices down and leave untouched ones alone.
+func (s *Engines) ActiveUDIDs() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	udids := make([]string, 0, len(s.engines))
+	for udid := range s.engines {
+		udids = append(udids, udid)
+	}
+	return udids
+}

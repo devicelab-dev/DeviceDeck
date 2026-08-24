@@ -35,6 +35,8 @@ func runServe(args []string) error {
 	hidPath := flags.String("sidecar", "", "path to devicedeck-hid (default: auto-discover)")
 	videoPath := flags.String("video-sidecar", "", "path to devicedeck-video (default: auto-discover)")
 	fps := flags.Int("fps", 30, "video capture frame rate")
+	keepDevices := flags.Bool("keep-devices", false,
+		"leave simulators/emulators running on exit instead of shutting down the ones DeviceDeck drove")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -91,7 +93,20 @@ func runServe(args []string) error {
 	_ = httpServer.Shutdown(ctx)
 	inputs.CloseAll()
 	videos.CloseAll()
+	// Capture the devices we drove before StopAll clears them, then power
+	// them off — simulators and emulators are disposable, so a session
+	// leaves nothing running. --keep-devices opts out; devices DeviceDeck
+	// never attached an engine to are untouched either way.
+	driven := engines.ActiveUDIDs()
 	engines.StopAll(ctx)
+	if !*keepDevices {
+		shutdown := server.ShutdownRouter{IOS: simClient, Android: emuClient}
+		for _, udid := range driven {
+			if err := shutdown.Shutdown(ctx, udid); err != nil {
+				slog.Warn("device shutdown on exit", "udid", udid, "err", err)
+			}
+		}
+	}
 	return nil
 }
 

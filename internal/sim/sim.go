@@ -57,6 +57,17 @@ func (c *Client) Boot(ctx context.Context, udid string) error {
 	return err
 }
 
+// Shutdown powers the simulator off. DeviceDeck calls this on exit for the
+// simulators it drove, so a session leaves nothing running — simulators are
+// disposable and re-boot in seconds, so cleaning up is friendlier than the
+// orphan a detached boot would otherwise leave behind.
+func (c *Client) Shutdown(ctx context.Context, udid string) error {
+	if _, err := c.run(ctx, "xcrun", "simctl", "shutdown", udid); err != nil {
+		return fmt.Errorf("shutdown %s: %w", udid, err)
+	}
+	return nil
+}
+
 // Booted returns every currently booted simulator.
 // LaunchApp starts appID fresh on udid, terminating it first if it is
 // already running. Fresh rather than foreground: a flow — or an example

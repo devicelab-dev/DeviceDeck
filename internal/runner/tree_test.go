@@ -259,3 +259,27 @@ func TestEnginesStartFailure(t *testing.T) {
 		t.Error("failed start must not be cached")
 	}
 }
+
+// ActiveUDIDs lists exactly the devices an engine has been started on.
+func TestEnginesActiveUDIDs(t *testing.T) {
+	s := &Engines{
+		start: func(_ context.Context, udid string) (engineAPI, error) {
+			return &fakeEngine{nodes: []Node{{Type: "Application"}}}, nil
+		},
+		engines: make(map[string]engineAPI),
+	}
+	ctx := context.Background()
+	if got := s.ActiveUDIDs(); len(got) != 0 {
+		t.Fatalf("fresh engines has %v, want none", got)
+	}
+	_, _ = s.Snapshot(ctx, "AAA", "")
+	_, _ = s.Snapshot(ctx, "BBB", "")
+	got := s.ActiveUDIDs()
+	set := map[string]bool{}
+	for _, u := range got {
+		set[u] = true
+	}
+	if len(got) != 2 || !set["AAA"] || !set["BBB"] {
+		t.Errorf("ActiveUDIDs = %v, want AAA and BBB", got)
+	}
+}

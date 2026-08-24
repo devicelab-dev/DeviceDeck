@@ -237,3 +237,16 @@ func TestNewClient(t *testing.T) {
 		t.Errorf("echo through the real runner: out=%q err=%v", out, err)
 	}
 }
+
+// Kill powers an emulator off via its console; a dead adb surfaces.
+func TestKill(t *testing.T) {
+	c := &Client{run: fixture(map[string]string{
+		"adb -s emulator-5554 emu kill": "OK\n",
+	})}
+	if err := c.Kill(context.Background(), "emulator-5554"); err != nil {
+		t.Fatalf("Kill: %v", err)
+	}
+	if err := (&Client{run: fixture(nil)}).Kill(context.Background(), "emulator-5554"); err == nil {
+		t.Error("expected a kill error when adb fails")
+	}
+}

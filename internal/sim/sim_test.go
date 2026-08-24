@@ -220,3 +220,24 @@ func TestResetAppWipeFailure(t *testing.T) {
 		t.Fatalf("expected a reset error, got %v", err)
 	}
 }
+
+// Shutdown powers a simulator off; a failure (e.g. already off) surfaces.
+func TestShutdown(t *testing.T) {
+	var calls []string
+	c := &Client{run: func(_ context.Context, name string, args ...string) ([]byte, error) {
+		calls = append(calls, name+" "+strings.Join(args, " "))
+		return nil, nil
+	}}
+	if err := c.Shutdown(context.Background(), "UDID-1"); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+	if len(calls) != 1 || !strings.Contains(calls[0], "simctl shutdown UDID-1") {
+		t.Fatalf("calls = %v", calls)
+	}
+	failing := &Client{run: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		return nil, errors.New("not booted")
+	}}
+	if err := failing.Shutdown(context.Background(), "UDID-1"); err == nil {
+		t.Error("expected a shutdown error")
+	}
+}

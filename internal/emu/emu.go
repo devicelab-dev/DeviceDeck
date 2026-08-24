@@ -75,6 +75,18 @@ func (c *Client) LaunchApp(ctx context.Context, serial, appID string) error {
 	return nil
 }
 
+// Kill powers the emulator off via its console. DeviceDeck calls this on
+// exit for the emulators it drove — the counterpart to the simulator's
+// Shutdown — so a session leaves no detached emulator running. `adb emu
+// kill` is the graceful console stop; the process was started with Setsid
+// precisely so it could outlive DeviceDeck until asked to stop here.
+func (c *Client) Kill(ctx context.Context, serial string) error {
+	if _, err := c.run(ctx, "adb", "-s", serial, "emu", "kill"); err != nil {
+		return fmt.Errorf("kill %s: %w", serial, err)
+	}
+	return nil
+}
+
 // ResetApp clears appID's stored data so the next launch begins as a first
 // run — logged out, no cached state — the Android counterpart of the
 // simulator's data wipe. `pm clear` deletes the package's data directory
