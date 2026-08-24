@@ -17,7 +17,8 @@ func node(i int, typ string, x, y float64) Node {
 
 func TestScreenHashStableAcrossIdenticalSnapshots(t *testing.T) {
 	nodes := []Node{node(0, "Button", 10, 20)}
-	if ScreenHash(nodes) != ScreenHash(nodes) {
+	first, second := ScreenHash(nodes), ScreenHash(nodes)
+	if first != second {
 		t.Fatal("hash not deterministic")
 	}
 }
@@ -146,7 +147,8 @@ func TestInteractionHashFollowsTheScreen(t *testing.T) {
 	if InteractionHash(one) == InteractionHash(two) {
 		t.Error("a screen change must still change InteractionHash")
 	}
-	if InteractionHash(one) != InteractionHash(one) {
+	a, b := InteractionHash(one), InteractionHash(one)
+	if a != b {
 		t.Error("InteractionHash must be deterministic")
 	}
 	// A focused element that only moved is the same focus.

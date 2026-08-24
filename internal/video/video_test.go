@@ -270,7 +270,7 @@ func TestManagerReplacesDeadSession(t *testing.T) {
 	m := NewManager(stubVideo(t), 30)
 	defer m.CloseAll()
 
-	ch, cancel, err := m.Subscribe(context.Background(), "UDID-1")
+	_, cancel, err := m.Subscribe(context.Background(), "UDID-1")
 	if err != nil {
 		t.Fatalf("Subscribe: %v", err)
 	}
@@ -297,7 +297,7 @@ func TestManagerReplacesDeadSession(t *testing.T) {
 		}
 	}
 
-	ch, cancel, err = m.Subscribe(context.Background(), "UDID-1")
+	ch, cancel, err := m.Subscribe(context.Background(), "UDID-1")
 	if err != nil {
 		t.Fatalf("Subscribe after death: %v", err)
 	}
