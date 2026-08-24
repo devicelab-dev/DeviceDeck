@@ -96,3 +96,49 @@ func (l *recordingLauncher) ResetApp(_ context.Context, udid, appID string) erro
 	l.resets = append(l.resets, udid+"/"+appID)
 	return nil
 }
+
+// All fans out the same way Booted does; it is exercised separately
+// because the two share only their collect() core, not their call site.
+func TestMultiListerAll(t *testing.T) {
+	m := MultiLister{
+		stubLister{devices: []sim.Device{{UDID: "IOS-1"}}},
+		stubLister{devices: []sim.Device{{UDID: "emulator-5554"}}},
+	}
+	devices, err := m.All(context.Background())
+	if err != nil || len(devices) != 2 {
+		t.Fatalf("All devices = %+v, err %v", devices, err)
+	}
+}
+
+type recordingBooter struct{ calls []string }
+
+func (b *recordingBooter) Boot(_ context.Context, id string) error {
+	b.calls = append(b.calls, id)
+	return nil
+}
+
+// Boot routes Android serials and avd:-prefixed AVD names to the Android
+// booter and every other id to the simulator booter.
+func TestBootRouter(t *testing.T) {
+	tests := []struct{ id, want string }{
+		{"emulator-5554", "android"},
+		{"avd:Pixel_7", "android"},
+		{"EB69B42A-4763", "ios"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.id, func(t *testing.T) {
+			ios, android := &recordingBooter{}, &recordingBooter{}
+			r := BootRouter{IOS: ios, Android: android}
+			if err := r.Boot(context.Background(), tc.id); err != nil {
+				t.Fatal(err)
+			}
+			got := "ios"
+			if len(android.calls) == 1 {
+				got = "android"
+			}
+			if got != tc.want {
+				t.Errorf("id %q routed to %s, want %s", tc.id, got, tc.want)
+			}
+		})
+	}
+}

@@ -35,6 +35,10 @@ const firstTreeSlot = `<script id="dd-first-tree" type="application/json"></scri
 // fires, the same way a server-rendered page is. first may be nil, and
 // a first tree that fails is logged and left out — the page fetches as
 // it always did, and the only cost is that first snapshot.
+//
+// Coverage waiver: the two panics guard fs.Sub/fs.ReadFile against a
+// missing embed. The //go:embed directive makes both failures impossible
+// to produce at runtime, so the arms are unreachable and left uncovered.
 func Handler(first FirstTree) http.Handler {
 	sub, err := fs.Sub(staticFS, "static")
 	if err != nil {

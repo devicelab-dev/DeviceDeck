@@ -141,9 +141,6 @@ func resolveBinary(name, explicit string) (string, error) {
 	}
 	candidates = append(candidates, filepath.Join("sidecar/.build/release", name))
 	for _, c := range candidates {
-		if c == "" {
-			continue
-		}
 		if info, err := os.Stat(c); err == nil && !info.IsDir() {
 			return c, nil
 		}

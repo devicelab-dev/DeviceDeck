@@ -17,6 +17,11 @@ import (
 // wedged. Variable so tests can shorten it.
 var readyTimeout = 15 * time.Second
 
+// execCommand builds the sidecar process. It is a package var so tests can
+// force the otherwise device-only StdinPipe/StdoutPipe failures without a
+// live simulator; production always uses exec.Command.
+var execCommand = exec.Command
+
 // Session is one running devicedeck-hid process bound to a simulator.
 // Frames are written to its stdin; the write lock keeps concurrent HTTP
 // handlers from interleaving partial frames.
@@ -35,7 +40,7 @@ type Session struct {
 // them — tying the process to it kills the sidecar the moment that request
 // completes, mid-injection. Lifetime is owned by Close/Manager.
 func StartSidecar(_ context.Context, binPath, udid string) (*Session, error) {
-	cmd := exec.Command(binPath, udid)
+	cmd := execCommand(binPath, udid)
 	cmd.Stderr = os.Stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

@@ -140,3 +140,42 @@ func TestUsageNamesTheEssentials(t *testing.T) {
 		}
 	}
 }
+
+// With no flag, no env, and nothing on disk next to the executable or in
+// the dev-build path, resolveBinary must report a build-it-yourself error
+// rather than a bare "not found".
+func TestResolveBinaryNotFoundAnywhere(t *testing.T) {
+	os.Unsetenv("DEVICEDECK_HID")
+	t.Chdir(t.TempDir()) // empty cwd: the relative dev-build path misses
+	_, err := resolveBinary("devicedeck-hid", "")
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("err = %v, want a not-found error", err)
+	}
+}
+
+// When the home directory cannot be resolved, defaultRunnerHome must leave
+// MAESTRO_RUNNER_HOME untouched rather than point the runner at a guess.
+func TestDefaultRunnerHomeSkipsWhenHomeIsUnknown(t *testing.T) {
+	t.Setenv("MAESTRO_RUNNER_HOME", "")
+	os.Unsetenv("MAESTRO_RUNNER_HOME")
+	t.Setenv("HOME", "") // os.UserHomeDir errors on an empty $HOME
+	defaultRunnerHome()
+	if got := os.Getenv("MAESTRO_RUNNER_HOME"); got != "" {
+		t.Errorf("MAESTRO_RUNNER_HOME = %q, want left unset", got)
+	}
+}
+
+// arg reads os.Args by position and folds a missing argument into the
+// empty string, so the top-level dispatch reads uniformly whether or not
+// a subcommand was typed.
+func TestArg(t *testing.T) {
+	saved := os.Args
+	t.Cleanup(func() { os.Args = saved })
+	os.Args = []string{"devicedeck", "version"}
+	if got := arg(1); got != "version" {
+		t.Errorf("arg(1) = %q, want version", got)
+	}
+	if got := arg(9); got != "" {
+		t.Errorf("arg past the end = %q, want empty", got)
+	}
+}

@@ -685,3 +685,56 @@ func TestFirstTree(t *testing.T) {
 		t.Error("engine error swallowed")
 	}
 }
+
+// The boot endpoint is thin wiring over the booter, but its success and
+// failure translations (200 vs 502) are the device page's only signal
+// that a boot was accepted, so both are pinned.
+func TestBootEndpoint(t *testing.T) {
+	tests := []struct {
+		name    string
+		bootErr error
+		want    int
+	}{
+		{"boots", nil, http.StatusOK},
+		{"driver refuses", errors.New("no such sim"), http.StatusBadGateway},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &fakeBackend{bootErr: tc.bootErr}
+			rec := do(t, newTestServer(f), "POST", "/api/devices/AAA/boot", "")
+			if rec.Code != tc.want {
+				t.Fatalf("status = %d, want %d (%s)", rec.Code, tc.want, rec.Body)
+			}
+			if tc.bootErr == nil && len(f.booted) != 1 {
+				t.Errorf("booter called %d times, want 1", len(f.booted))
+			}
+		})
+	}
+}
+
+// SetConsole mounts a handler at / that Handler must route to only when
+// one was set; API-only servers leave / unclaimed.
+func TestConsoleMountedAtRoot(t *testing.T) {
+	s := newTestServer(&fakeBackend{})
+	s.SetConsole(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+		_, _ = w.Write([]byte("console"))
+	}))
+	rec := do(t, s, "GET", "/", "")
+	if rec.Code != http.StatusTeapot || rec.Body.String() != "console" {
+		t.Fatalf("console not mounted: %d %s", rec.Code, rec.Body)
+	}
+}
+
+// A capture with no recorded steps must still answer with an empty array,
+// never a JSON null, so a browser can iterate the response unconditionally.
+func TestCaptureNilStepsBecomeEmptyArray(t *testing.T) {
+	fc := &fakeCapture{recording: true} // steps left nil
+	s := newTestServerWithCapture(&fakeBackend{}, fc)
+	if rec := do(t, s, "GET", "/api/devices/AAA/capture", ""); !strings.Contains(rec.Body.String(), `"steps":[]`) {
+		t.Errorf("status steps not normalized: %s", rec.Body)
+	}
+	if rec := do(t, s, "POST", "/api/devices/AAA/capture/stop", "{}"); !strings.Contains(rec.Body.String(), `"steps":[]`) {
+		t.Errorf("stop steps not normalized: %s", rec.Body)
+	}
+}

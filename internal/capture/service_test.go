@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/devicelab-dev/DeviceDeck/internal/input"
@@ -97,5 +98,38 @@ func TestServiceAssert(t *testing.T) {
 	_, _, steps, err := svc.Stop("UDID-1")
 	if err != nil || len(steps) != 1 || steps[0].Kind != "assertVisible" {
 		t.Fatalf("steps = %+v (err %v)", steps, err)
+	}
+}
+
+// trapTrees runs a hook during Snapshot so a test can simulate work — such
+// as a rival Start winning the device — happening while a Start is fetching
+// the initial tree outside the service lock.
+type trapTrees struct {
+	tree   []runner.Node
+	onSnap func()
+}
+
+func (f trapTrees) Snapshot(context.Context, string, string) ([]runner.Node, error) {
+	if f.onSnap != nil {
+		f.onSnap()
+	}
+	return f.tree, nil
+}
+
+// Start snapshots the initial tree outside the lock, so a concurrent Start
+// can claim the device in that window. The re-check after the snapshot must
+// catch it and refuse rather than clobber the live recording.
+func TestStartLosesRaceToConcurrentRecorder(t *testing.T) {
+	svc := NewService(nil)
+	var once sync.Once
+	svc.trees = trapTrees{tree: testTree(), onSnap: func() {
+		once.Do(func() {
+			svc.mu.Lock()
+			svc.recorders["UDID-1"] = &Recorder{} // rival won the device
+			svc.mu.Unlock()
+		})
+	}}
+	if err := svc.Start(context.Background(), "UDID-1", "app"); err == nil {
+		t.Fatal("Start must lose to the concurrent recorder")
 	}
 }

@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -58,6 +60,32 @@ func TestStartSidecarBadHandshake(t *testing.T) {
 func TestStartSidecarMissingBinary(t *testing.T) {
 	if _, err := StartSidecar(context.Background(), "/nonexistent/devicedeck-hid", "booted"); err == nil {
 		t.Fatal("expected start error, got nil")
+	}
+}
+
+func TestStartSidecarStdinPipeError(t *testing.T) {
+	orig := execCommand
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		c := exec.Command(name, args...)
+		c.Stdin = strings.NewReader("") // forces StdinPipe to fail
+		return c
+	}
+	t.Cleanup(func() { execCommand = orig })
+	if _, err := StartSidecar(context.Background(), "/bin/echo", "booted"); err == nil {
+		t.Fatal("expected stdin pipe error")
+	}
+}
+
+func TestStartSidecarStdoutPipeError(t *testing.T) {
+	orig := execCommand
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		c := exec.Command(name, args...)
+		c.Stdout = os.Stdout // stdin pipe succeeds, then StdoutPipe fails
+		return c
+	}
+	t.Cleanup(func() { execCommand = orig })
+	if _, err := StartSidecar(context.Background(), "/bin/echo", "booted"); err == nil {
+		t.Fatal("expected stdout pipe error")
 	}
 }
 

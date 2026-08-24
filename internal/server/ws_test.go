@@ -430,3 +430,103 @@ func TestWatchLivenessStopsWhenTheHandlerReturns(t *testing.T) {
 		t.Fatal("watchLiveness ignored a cancelled context")
 	}
 }
+
+// httptest.ResponseRecorder is not an http.Hijacker, so websocket.Accept
+// fails inside the handler after Subscribe already succeeded. The video
+// handler must return quietly rather than stream to a dead upgrade.
+func TestVideoWSAcceptFailureReturns(t *testing.T) {
+	rec := do(t, newTestServer(&fakeBackend{}), "GET", "/api/devices/AAA/video", "")
+	if rec.Code == http.StatusBadGateway {
+		t.Fatalf("hit Subscribe error instead of the Accept-failure arm: %d", rec.Code)
+	}
+}
+
+// The input handler has no Subscribe step, so a failed upgrade is the very
+// first thing it must survive.
+func TestInputWSAcceptFailureReturns(t *testing.T) {
+	rec := do(t, newTestServer(&fakeBackend{}), "GET", "/api/devices/AAA/input", "")
+	if rec.Code == http.StatusSwitchingProtocols {
+		t.Fatalf("upgrade unexpectedly succeeded on a recorder: %d", rec.Code)
+	}
+}
+
+// videoServer serves handleVideoWS directly (no mux) so a test can drive
+// the request context and the source channel by hand.
+func videoServer(t *testing.T, fv *fakeVideo, done chan<- struct{}) string {
+	t.Helper()
+	b := &fakeBackend{}
+	s := New(b, b, b, b, b, b, fv, &fakeCapture{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.handleVideoWS(w, r)
+		if done != nil {
+			close(done)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return "ws" + strings.TrimPrefix(srv.URL, "http") + "/api/devices/AAA/video"
+}
+
+// When the client vanishes without a close handshake, the next frame the
+// server tries to forward fails to write, and that write error is what
+// ends the stream and releases the subscription.
+func TestVideoWSEndsOnWriteFailure(t *testing.T) {
+	done := make(chan struct{})
+	fv := &fakeVideo{frames: make(chan []byte, 8)}
+	addr := videoServer(t, fv, done)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, addr, nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	conn.CloseNow() // peer disappears; subsequent server writes must fail
+
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			case fv.frames <- []byte{7, 7}:
+			}
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a write to a dead client never ended the stream")
+	}
+}
+
+// A cancelled request context — the server shutting the request down —
+// must stop the stream even while frames are still arriving.
+func TestVideoWSEndsWhenRequestContextIsCancelled(t *testing.T) {
+	fv := &fakeVideo{frames: make(chan []byte, 1)}
+	b := &fakeBackend{}
+	s := New(b, b, b, b, b, b, fv, &fakeCapture{})
+	cancelCh := make(chan context.CancelFunc, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithCancel(r.Context())
+		cancelCh <- cancel
+		s.handleVideoWS(w, r.WithContext(ctx))
+	}))
+	t.Cleanup(srv.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	addr := "ws" + strings.TrimPrefix(srv.URL, "http") + "/api/devices/AAA/video"
+	conn, _, err := websocket.Dial(ctx, addr, nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.CloseNow()
+
+	fv.frames <- []byte{1, 0xAB}
+	if _, _, err := conn.Read(ctx); err != nil {
+		t.Fatalf("first frame: %v", err)
+	}
+	(<-cancelCh)() // cancel the request context
+	if _, _, err := conn.Read(ctx); err == nil {
+		t.Error("stream outlived its cancelled context")
+	}
+}

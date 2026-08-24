@@ -12,6 +12,10 @@ import (
 	"github.com/devicelab-dev/DeviceDeck/internal/video"
 )
 
+// Coverage waiver: main is the process entry point — it reads os.Args,
+// dispatches to runServe/RunAndroidCapture with real backends, and calls
+// os.Exit; the dispatch's testable pieces (arg, usage, version.Line) are
+// covered directly.
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "serve" {
 		if err := runServe(os.Args[2:]); err != nil {

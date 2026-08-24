@@ -72,6 +72,9 @@ func Decode(frame []byte) (Event, bool) {
 	case t == typeGesture:
 		return Event{Kind: EventGesture, Gesture: Gesture(frame[1])}, true
 	default:
+		// Coverage waiver: unreachable — ValidFrame admits only the frame
+		// types the cases above handle; kept as defense so Decode is safe
+		// if a caller ever skips the ValidFrame gate.
 		return Event{}, false
 	}
 }

@@ -203,3 +203,87 @@ func TestIsAndroidSerial(t *testing.T) {
 		t.Error("simulator UDID misclassified as Android")
 	}
 }
+
+// TestRepackIdleFlushError drives the idle-flush branch to an error: a
+// paused stream whose buffered tail is a slice NAL with no SPS/PPS ahead
+// of it. The idle ticker flushes the tail, which fails misalignment.
+func TestRepackIdleFlushError(t *testing.T) {
+	pr, pw := io.Pipe()
+	defer pw.Close()
+	done := make(chan error, 1)
+	go func() { done <- RepackAnnexB(pr, io.Discard) }()
+
+	// A lone slice NAL, no terminating start code and no SPS/PPS. The
+	// stream then goes quiet, so only the idle flush can surface it.
+	if _, err := pw.Write(annexb(true, nal(0x65, frameStart, 0x11))); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected misalignment error from the idle flush")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("idle flush never fired")
+	}
+}
+
+// TestDrainChunksConsumeError exercises drainChunks' error path: a chunk
+// still buffered when the reader errors contains a slice NAL that parses
+// before any SPS/PPS, so consume rejects it mid-drain.
+func TestDrainChunksConsumeError(t *testing.T) {
+	rp := &repacker{w: io.Discard}
+	chunks := make(chan []byte, 1)
+	// Two slices so the first is fully delimited and reaches handleNAL.
+	chunks <- annexb(true, nal(0x65, frameStart, 0x11), nal(0x41, frameStart, 0x22))
+	if _, err := drainChunks(rp, chunks, nil); err == nil {
+		t.Fatal("expected consume error while draining a slice before SPS/PPS")
+	}
+}
+
+// constReader returns a full buffer of zeros on every read and never
+// ends — it keeps readChunks producing so its channel fills.
+type constReader struct{}
+
+func (constReader) Read(p []byte) (int, error) { return len(p), nil }
+
+// TestReadChunksReleasesOnDone fills readChunks' buffered channel with an
+// unbounded reader and never drains it, so the pump blocks mid-send;
+// closing done must release the goroutine through its <-done branch.
+func TestReadChunksReleasesOnDone(t *testing.T) {
+	done := make(chan struct{})
+	chunks, readErr := readChunks(constReader{}, done)
+	time.Sleep(50 * time.Millisecond) // let the 8-deep buffer fill and block
+	close(done)
+	time.Sleep(50 * time.Millisecond) // let the goroutine take the <-done exit
+	// Nothing more should arrive on readErr: the goroutine left via done.
+	select {
+	case err := <-readErr:
+		t.Fatalf("readErr = %v, want silent release on done", err)
+	default:
+	}
+	_ = chunks
+}
+
+// TestConsumeResyncsPastGarbage covers consume's resync: bytes before the
+// first start code (left behind after an idle flush ate a NAL without its
+// terminator) are dropped, and pure garbage keeps only a partial-code tail.
+func TestConsumeResyncsPastGarbage(t *testing.T) {
+	rp := &repacker{w: io.Discard, sps: nal(0x67, 0x42), pps: nal(0x68, 0xCE), sentDesc: true}
+
+	// Leading garbage, then a delimited slice: resync jumps to the code.
+	buf := append([]byte{0xAB, 0xCD, 0xEF},
+		annexb(true, nal(0x41, frameStart, 0x11), nal(0x41, continuation, 0x22))...)
+	if _, err := rp.consume(buf); err != nil {
+		t.Fatalf("consume past leading garbage: %v", err)
+	}
+
+	// Pure garbage, no start code anywhere: keep only the last 3 bytes.
+	rest, err := rp.consume([]byte{1, 2, 3, 4, 5})
+	if err != nil {
+		t.Fatalf("consume of codeless garbage: %v", err)
+	}
+	if len(rest) != 3 {
+		t.Errorf("remainder = % x, want a 3-byte partial-start-code tail", rest)
+	}
+}

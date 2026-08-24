@@ -307,13 +307,18 @@ func (m *Manager) start(_ context.Context, udid string) (*Session, error) {
 	return startSessionCmd(cmd)
 }
 
+// osExecutable resolves the running binary's path. Var so tests can
+// force the (otherwise unfakeable) resolution error captureCommand
+// wraps when re-invoking devicedeck for Android capture.
+var osExecutable = os.Executable
+
 // captureCommand picks the capture process for a device: the Swift
 // sidecar for simulators; for Android, this very binary re-invoked with
 // a hidden subcommand, so the single-binary shape (brief §11.3) holds
 // without a second sidecar.
 func (m *Manager) captureCommand(udid string) (*exec.Cmd, error) {
 	if IsAndroidSerial(udid) {
-		exe, err := os.Executable()
+		exe, err := osExecutable()
 		if err != nil {
 			return nil, fmt.Errorf("resolve devicedeck binary: %w", err)
 		}

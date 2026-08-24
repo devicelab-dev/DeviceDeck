@@ -420,3 +420,48 @@ func TestAssertFlushesPendingText(t *testing.T) {
 		t.Fatalf("expected inputText then assertVisible, got %+v", steps)
 	}
 }
+
+// A legacy Home button (code 0) records the same pressKey as the home
+// gesture; an unrecognized legacy code is dropped rather than invented.
+func TestLegacyHomeButton(t *testing.T) {
+	rec, _ := newTestRecorder(t, testTree())
+	rec.OnEvent(input.Event{Kind: input.EventLegacyButton, Code: 0})
+	rec.OnEvent(input.Event{Kind: input.EventLegacyButton, Code: 2}) // unknown: dropped
+	steps := rec.Steps()
+	if len(steps) != 1 || steps[0].Kind != "pressKey" || steps[0].Input != "Home" {
+		t.Fatalf("steps = %+v", steps)
+	}
+}
+
+// A touch-up with no matching touch-down (a mirror hiccup, or a gesture
+// whose down was swallowed) must be ignored, not turned into a step.
+func TestTouchUpWithoutPendingIsIgnored(t *testing.T) {
+	rec, _ := newTestRecorder(t, testTree())
+	rec.OnEvent(touch(input.TouchUp, 0.5, 0.5))
+	if steps := rec.Steps(); len(steps) != 0 {
+		t.Errorf("orphan touch-up recorded: %+v", steps)
+	}
+}
+
+// A zero-sized application frame yields no normalized bounds — dividing by
+// it would produce NaN/Inf coordinates for the console overlay.
+func TestNormalizedBoundsZeroApp(t *testing.T) {
+	tree := []runner.Node{{Depth: 0, Frame: runner.Rect{Width: 0, Height: 0}}}
+	if got := normalizedBounds(tree, &tree[0]); got != nil {
+		t.Errorf("zero-size app must yield nil bounds, got %+v", got)
+	}
+}
+
+// A node with neither identifier nor label is not a durable target, so
+// hitTest skips it and the tap falls back to coordinates.
+func TestHitTestSkipsAnonymousNodes(t *testing.T) {
+	parent := 0
+	tree := []runner.Node{
+		{Depth: 0, Frame: runner.Rect{Width: 100, Height: 100}},
+		{Depth: 1, ParentIndex: &parent,
+			Frame: runner.Rect{X: 0, Y: 0, Width: 40, Height: 40}}, // no id, no label
+	}
+	if got := hitTest(tree, 0.1, 0.1); got != nil {
+		t.Errorf("anonymous node must not resolve: %+v", got)
+	}
+}

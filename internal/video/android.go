@@ -107,6 +107,10 @@ func (c *androidCapture) runScreenrecordLoop() error {
 
 // runOnce runs a single screenrecord cycle. Returns nil only when the
 // session should end (stdin closed kills the process on purpose).
+//
+// Coverage waiver: StdoutPipe only errors when the command's Stdout is
+// already wired or the process already started — impossible for the
+// fresh cmd built here, so that error branch is unreachable in tests.
 func (c *androidCapture) runOnce() error {
 	cmd := exec.Command("adb", "-s", c.serial, "exec-out",
 		"screenrecord", "--output-format=h264", "--time-limit="+screenrecordLimit, "-")

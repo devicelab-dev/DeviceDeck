@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -436,5 +437,109 @@ func TestPumpSkipsEmptyFrames(t *testing.T) {
 	})
 	if stills != 1 {
 		t.Errorf("stills = %d, want empty frame skipped and real frame kept", stills)
+	}
+}
+
+// TestForcedGRPCReturnsError: with the gRPC path forced, a failing
+// stream must surface its error rather than falling back to screenrecord.
+func TestForcedGRPCReturnsError(t *testing.T) {
+	t.Setenv("DEVICEDECK_ANDROID_CAPTURE", "grpc")
+	old := discoverEndpoint
+	discoverEndpoint = func(string) (emulatorEndpoint, error) {
+		return emulatorEndpoint{addr: "127.0.0.1:1", token: "t"}, nil // dead port
+	}
+	defer func() { discoverEndpoint = old }()
+
+	// Keep stdin open so the session never marks itself closed; the
+	// stream then exhausts its retries and returns the error.
+	stdinR, stdinW := io.Pipe()
+	defer stdinW.Close()
+	if err := RunAndroidCapture("emulator-9999", stdinR, io.Discard); err == nil {
+		t.Fatal("forced gRPC failure must return, not fall back")
+	}
+}
+
+// slowRolloverADB installs a stub whose screenrecord emits a GOP, lingers
+// past the 2-second healthy-cycle threshold, then exits cleanly — a
+// normal 3-minute rollover in miniature, so the loop resets its fast-fail
+// counter (the else branch) before the next cycle.
+func slowRolloverADB(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	script := `#!/bin/bash
+case "$*" in
+*screencap*) printf 'PNGBYTES'; exit 0 ;;
+*screenrecord*)
+  printf '\x00\x00\x00\x01\x67\x42\xc0\x32'
+  printf '\x00\x00\x00\x01\x68\xce'
+  printf '\x00\x00\x00\x01\x65\x80\x11'
+  printf '\x00\x00\x00\x01\x41\x80\x22'
+  sleep 2.3
+  exit 0 ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(dir, "adb"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+// TestRunScreenrecordResetsAfterHealthyCycle: a cycle that runs past the
+// 2-second threshold and rolls over must reset consecutiveFast, so seeing
+// a second cycle's keyframe proves the else branch ran between them.
+func TestRunScreenrecordResetsAfterHealthyCycle(t *testing.T) {
+	slowRolloverADB(t)
+	t.Setenv("DEVICEDECK_ANDROID_CAPTURE", "screenrecord")
+	stdinR, stdinW := io.Pipe()
+	out := &syncBuffer{}
+	done := make(chan error, 1)
+	go func() { done <- RunAndroidCapture("emulator-0000", stdinR, out) }()
+
+	waitForFrames(t, out, func(msg string) { t.Fatal(msg) },
+		func(counts map[byte]int) bool { return counts[TypeKeyframe] >= 2 })
+	_ = stdinW.Close()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("RunAndroidCapture: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("capture did not exit after stdin close")
+	}
+}
+
+// TestRunOnceStartError: with no adb on PATH, StdoutPipe still succeeds
+// but cmd.Start fails to launch — runOnce must return that error.
+func TestRunOnceStartError(t *testing.T) {
+	t.Setenv("PATH", t.TempDir()) // empty dir: adb cannot be resolved
+	c := &androidCapture{serial: "emulator-0000", out: &syncWriter{w: io.Discard}}
+	if err := c.runOnce(); err == nil {
+		t.Fatal("expected start failure when adb is absent from PATH")
+	}
+}
+
+// TestDiscoverEmulatorHomeError forces os.UserHomeDir to fail by clearing
+// HOME, covering discoverEmulator's home-resolution error branch.
+func TestDiscoverEmulatorHomeError(t *testing.T) {
+	t.Setenv("HOME", "")
+	if _, err := discoverEmulator("emulator-5554"); err == nil {
+		t.Fatal("expected home-dir resolution error")
+	}
+}
+
+// TestCaptureCommandExecutableError forces the (otherwise unfakeable)
+// binary-resolution failure, covering captureCommand's wrap and start's
+// propagation of it.
+func TestCaptureCommandExecutableError(t *testing.T) {
+	old := osExecutable
+	osExecutable = func() (string, error) { return "", errors.New("no exe") }
+	defer func() { osExecutable = old }()
+
+	m := NewManager("/opt/devicedeck-video", 30)
+	if _, err := m.captureCommand("emulator-5554"); err == nil {
+		t.Fatal("expected captureCommand to wrap the resolution error")
+	}
+	if _, err := m.start(t.Context(), "emulator-5554"); err == nil {
+		t.Fatal("expected start to propagate the resolution error")
 	}
 }
