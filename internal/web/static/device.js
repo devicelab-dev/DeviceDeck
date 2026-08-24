@@ -725,6 +725,9 @@ mirror.addEventListener("pointerup", (e) => {
   if (!pointerDown) return;
   pointerDown = false;
   pointerAt = Date.now();
+  // A click can focus a field (Cypress/Puppeteer click then type through
+  // the keyboard, never fill()), so this tap arms the typing settle too.
+  focusTapAt = Date.now();
   const at = contentPoint(e.clientX, e.clientY);
   const { x, y } = normalized(e);
   // A drag that runs past the edge ends at the edge; a click's up lands
@@ -886,6 +889,9 @@ function editsAField(e) {
 // every keystroke would land on whatever was focused before.
 function tapField(el) {
   const at = centreOf(el);
+  // The settle before typing is timed from here — the tap that focuses
+  // the field — whether it lands on-screen or is scrolled into view.
+  focusTapAt = Date.now();
   if (!onDevice(at)) return tapOffscreen(el, at);
   input.send(touchFrame(PHASE.down, at.x, at.y));
   input.send(touchFrame(PHASE.up, at.x, at.y));
@@ -898,22 +904,31 @@ function centreOf(el) {
   return contentPoint(r.left + r.width / 2, r.top + r.height / 2);
 }
 
-// After a focus tap the device raises its keyboard and moves focus, and
-// the next tree poll reports it as the field's data-dd-focused. Typing
-// waits for that flag rather than a wall-clock guess: a fixed delay is
-// either too long on a fast device or — the bug this replaces — too
-// short on a slow one, where the next field's first keystroke arrived
-// before focus had moved and bled into the previous field ("devicelab"
-// then a password reached the device as "devicelabr"). Bounded so a
-// field that never reports focus does not hang the edit chain; on
-// timeout the keystrokes are sent anyway, best-effort as before.
-const FOCUS_TIMEOUT_MS = 5000;
-function waitFocused(el) {
+// After a focus tap the device raises its keyboard and moves the caret,
+// which takes from tens of ms to most of a second under load. A keystroke
+// sent inside that window lands on whatever was focused before — fill()
+// on one field then the next bled the second field's first character into
+// the first ("devicelab" then a password reached the device as
+// "devicelabr"). Wait it out, timed from the focus tap so the cost falls
+// once per field and not once per keystroke: browser_type's later
+// characters, already past the window, send immediately, and fill()'s one
+// event waits once.
+//
+// Where the platform reports which node holds focus (data-dd-focused),
+// that ends the wait the moment focus actually lands — load-independent.
+// iOS reports no focus state at all (measured: no focus flag, and no tree
+// change whatsoever when focus moves between two fields with the keyboard
+// already up), so there the cap is the whole wait, sized to cover a focus
+// switch on a loaded device. A field that never reports focus is sent to
+// after the cap rather than hanging the chain — the 5s cap that replaced
+// this stalled browser_type, whose every character then waited the full
+// timeout because iOS never set the flag.
+const FOCUS_SETTLE_MS = 750;
+function waitReady(el) {
   return new Promise((resolve) => {
-    if (el.getAttribute("data-dd-focused") === "true") return resolve();
-    const deadline = Date.now() + FOCUS_TIMEOUT_MS;
     const tick = () => {
-      if (el.getAttribute("data-dd-focused") === "true" || Date.now() >= deadline) resolve();
+      if (el.getAttribute("data-dd-focused") === "true" ||
+          Date.now() - focusTapAt >= FOCUS_SETTLE_MS) resolve();
       else setTimeout(tick, 30);
     };
     tick();
@@ -925,6 +940,10 @@ function waitFocused(el) {
 // caret — measured as scrambled text when a test clicked and then typed.
 const POINTER_FOCUS_MS = 600;
 let pointerAt = 0;
+// When the field last received a focus tap, on either path: fill()/
+// browser_type through the focusin handler's tapField, or a click through
+// the pointer handler. waitReady above times the settle from it.
+let focusTapAt = 0;
 
 // Edits run one at a time, in order. Each used to wait out the settle
 // window on its own timer, and because those delays differed, a later
@@ -955,7 +974,7 @@ mirror.addEventListener("input", (e) => {
   const after = el.value;
   el.dataset.ddValue = after;
   editChain = editChain.then(async () => {
-    await waitFocused(el);
+    await waitReady(el);
     sendEdit(before, after);
   });
   noteActivity();
