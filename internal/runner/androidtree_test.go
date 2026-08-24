@@ -136,3 +136,35 @@ func TestResourceIDSuffix(t *testing.T) {
 		}
 	}
 }
+
+// shellQuoteInputText wraps text for `adb shell input text`: spaces become
+// %s and single quotes are escaped, all inside one single-quoted argument.
+func TestShellQuoteInputText(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"hello", "'hello'"},
+		{"two words", "'two%swords'"},
+		{"it's", `'it'\''s'`},
+		{"", "''"},
+	}
+	for _, tc := range tests {
+		if got := shellQuoteInputText(tc.in); got != tc.want {
+			t.Errorf("shellQuoteInputText(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// parseWmSize prefers the override (active) resolution over the physical
+// one and errors when neither line is present.
+func TestParseWmSize(t *testing.T) {
+	w, h, err := parseWmSize("Physical size: 1080x2340\nOverride size: 720x1560\n")
+	if err != nil || w != 720 || h != 1560 {
+		t.Errorf("override preferred: %d x %d err %v", w, h, err)
+	}
+	w, h, err = parseWmSize("Physical size: 1080x2340\n")
+	if err != nil || w != 1080 || h != 2340 {
+		t.Errorf("physical fallback: %d x %d err %v", w, h, err)
+	}
+	if _, _, err = parseWmSize("garbage\n"); err == nil {
+		t.Error("expected error on unparseable output")
+	}
+}
