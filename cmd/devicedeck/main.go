@@ -24,6 +24,13 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "mcp" {
+		if err := runMCP(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "devicedeck:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	// Hidden subcommand: Android screen capture, spawned by the video
 	// manager against its own binary so no separate sidecar ships.
 	if len(os.Args) > 2 && os.Args[1] == "_video-android" {
@@ -65,10 +72,13 @@ session driven by hand into a replayable test.
 
 Usage:
   devicedeck serve [flags]    start the server and console
+  devicedeck mcp [flags]      run the MCP server (stdio) for an AI agent
   devicedeck version          print the version
   devicedeck help             print this message
 
-Run "devicedeck serve --help" for the server's flags.
+Run "devicedeck serve --help" for the server's flags. "devicedeck mcp" speaks
+the Model Context Protocol on stdin/stdout and drives a running server, so an
+agent can list, boot, launch, and inspect devices; point its MCP client at it.
 
 Once running, open the console at the address it prints (by default
 http://127.0.0.1:8787) to pick a device. Point your own tests at
