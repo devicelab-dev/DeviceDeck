@@ -1,0 +1,13 @@
+{
+  "PostToolUse": [
+    {
+      "matcher": "mcp__devicedeck__*",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "if echo \"$CLAUDE_TOOL_STDOUT\" | grep -qiE '(connection refused|dial tcp)'; then echo '{\"decision\":\"block\",\"reason\":\"No devicedeck server responded. Start it first: run `devicedeck serve` in a terminal, then retry.\"}'; elif echo \"$CLAUDE_TOOL_STDOUT\" | grep -qiE '(device busy|another client is driving)'; then echo '{\"decision\":\"block\",\"reason\":\"That device is already being driven by another tab or test run. Close it, or pick another device with list_devices.\"}'; elif echo \"$CLAUDE_TOOL_STDOUT\" | grep -qiE '(driver crashed on startup)'; then echo '{\"decision\":\"block\",\"reason\":\"The Android driver crashed on startup (a known transient dexopt race). Retry the launch; devicedeck retries the driver start itself.\"}'; fi"
+        }
+      ]
+    }
+  ]
+}

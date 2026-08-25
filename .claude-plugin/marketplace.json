@@ -1,0 +1,28 @@
+{
+  "name": "devicedeck-marketplace",
+  "owner": {
+    "name": "DeviceLab",
+    "url": "https://devicelab.dev"
+  },
+  "metadata": {
+    "description": "DeviceDeck plugin for Claude Code — drive simulators and emulators, and author reviewable mobile tests.",
+    "version": "1.0.0",
+    "pluginRoot": "./"
+  },
+  "plugins": [
+    {
+      "name": "devicedeck",
+      "source": "./",
+      "description": "Drive iOS simulators and Android emulators as a real webpage; author reviewable, real-device-portable tests.",
+      "version": "0.1.0",
+      "author": { "name": "DeviceLab", "url": "https://devicelab.dev" },
+      "homepage": "https://devicelab.dev",
+      "repository": "https://github.com/devicelab-dev/DeviceDeck",
+      "license": "Apache-2.0",
+      "keywords": ["ios", "android", "simulator", "emulator", "automation", "testing", "mcp", "mobile", "maestro"],
+      "category": "development",
+      "tags": ["mobile-testing", "ios", "android", "ui-testing", "device-control", "mcp"],
+      "strict": true
+    }
+  ]
+}
