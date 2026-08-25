@@ -146,21 +146,32 @@ function positionMirror() {
 }
 
 // Identity key for reconciliation: the identifier when present, else
-// type + placeholder (stable while a field's value changes), else the
-// label.
+// type + placeholder (stable while a field's value changes) or label,
+// scoped to the parent.
 //
-// Same-key siblings are disambiguated by occurrence order *within their
+// Unidentified siblings are disambiguated by occurrence order *within their
 // parent*, never across the whole tree. Counting globally means one
 // unidentified node appearing or disappearing anywhere above shifts the
 // ordinal of every later node sharing its base key — they all re-key,
 // their elements are replaced rather than reused, and every automation
 // handle into them (Playwright aria-refs, Selenium elements) dies for a
 // change that never touched them. Unlabelled containers make that the
-// common case, not the corner case.
+// common case, not the corner case. An identified node is the opposite
+// case — its ancestry is the unstable part — so it keys globally by
+// identifier; see below.
 function nodeKey(node, parentKey, counts) {
-  const base =
-    node.identifier || `${node.type}|${node.placeholder || node.label || ""}`;
-  const scoped = `${parentKey}/${base}`;
+  // A stable identifier keys the node on its own, independent of the volatile
+  // ancestry above it. Scoping an identified control to its parent chain
+  // renamed it whenever a transient container reshaped that chain — a nav
+  // bar's Back button flickering in as the keyboard animates inserted an
+  // ancestor, changing the key of the field being typed into. The renamed
+  // node was then treated as new, its element recreated, and any in-flight
+  // reconcile (and a test's held aria-ref) left pointing at an orphan. An
+  // identifier is the promise that identity does not depend on surroundings,
+  // so key it that way; unidentified nodes still key positionally.
+  const scoped = node.identifier
+    ? `#id/${node.identifier}`
+    : `${parentKey}/${node.type}|${node.placeholder || node.label || ""}`;
   const n = counts.get(scoped) || 0;
   counts.set(scoped, n + 1);
   return `${scoped}#${n}`;

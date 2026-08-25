@@ -37,6 +37,23 @@ test("logs into TestHive on a real simulator", async () => {
   await page.click('[data-testid="password-input"]');
   await page.keyboard.type("robustest", { delay: 150 });
 
+  // Wait for the device to echo both fields before submitting. Keys travel
+  // to the simulator as real HID presses and land a moment after the DOM
+  // has them, so a submit fired the instant typing "finished" can race the
+  // last keystrokes onto the device — fill()/Playwright get this settle for
+  // free from their auto-waiting; a raw type() asks for it explicitly. The
+  // echo is the mirror's read-back of the device: `data-dd-device-value`
+  // (a secure field reports bullets, so it is matched by length).
+  await page.waitForFunction(
+    () => {
+      const echo = (id) =>
+        document.querySelector(`[data-testid="${id}"]`)?.dataset.ddDeviceValue || "";
+      return echo("username-input") === "devicelab" &&
+        echo("password-input").length === "robustest".length;
+    },
+    { timeout: 10_000 },
+  );
+
   await page.click('[data-testid="login-button"]');
 
   // Post-login home screen: mirror text comes from native labels.
