@@ -1003,10 +1003,17 @@ mirror.addEventListener("input", (e) => {
   // poll overwrites ddValue with the device's contents once focus leaves.
   // The reconcile below reads it back against the device to catch a bleed.
   el.dataset.ddIntended = after;
+  // First edit of this field: the value shown is the device's own, which on
+  // Android is the field's hint, not its content — an empty EditText reports
+  // its hint as its value. Prefix-diffing the typed text against a hint drops
+  // any shared leading character ("1 Market St" against a hint starting "1"
+  // lost its "1", disabling the form), so the first edit types the whole
+  // value; later keystrokes, now against real content, diff as usual.
+  const firstEdit = !editedFields.has(el);
   editedFields.add(el);
   editChain = editChain.then(async () => {
     await waitReady(el);
-    sendEdit(before, after);
+    sendEdit(before, after, firstEdit);
   });
   scheduleReconcile();
   noteActivity();
@@ -1129,11 +1136,16 @@ async function repairField(el) {
 // it: backspaces for what was removed, characters for what was added.
 // fill() replaces the whole value in a single event, so diffing is the
 // only way to know what the device actually has to be told.
-function sendEdit(before, after) {
+function sendEdit(before, after, firstEdit) {
+  // Shared leading characters are already on the device and are not retyped —
+  // except on a field's first edit, where `before` may be a placeholder hint
+  // rather than real content, so nothing is treated as shared.
   let shared = 0;
-  while (shared < before.length && shared < after.length &&
-         before[shared] === after[shared]) {
-    shared++;
+  if (!firstEdit) {
+    while (shared < before.length && shared < after.length &&
+           before[shared] === after[shared]) {
+      shared++;
+    }
   }
   for (let n = before.length - shared; n > 0; n--) {
     input.send(keyFrame(0, KEY_USAGE.Backspace));
