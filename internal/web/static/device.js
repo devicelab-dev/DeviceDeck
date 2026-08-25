@@ -1028,12 +1028,21 @@ let reconcileTimer = 0;
 
 // fieldMatches reports whether the device holds what the caller asked for.
 // A secure field only reports bullets, so it is matched by length.
+// isMasked reports whether a device value is a secure field's bullets and
+// nothing else, so it can only be compared by length. iOS marks the field
+// type SecureTextField (ddSecure); Android reports a password EditText as a
+// plain TextField but still masks the text, so the value itself is the only
+// signal there — without this the read-back compares bullets against the
+// plaintext, never matches, and "repairs" the password until it is empty.
+function isMasked(s) {
+  return s.length > 0 && [...s].every((c) => c === "•");
+}
+
 function fieldMatches(el) {
   const intended = el.dataset.ddIntended ?? "";
   const device = el.dataset.ddDeviceValue ?? "";
-  return el.dataset.ddSecure === "true"
-    ? device.length === intended.length
-    : device === intended;
+  const secure = el.dataset.ddSecure === "true" || isMasked(device);
+  return secure ? device.length === intended.length : device === intended;
 }
 
 // scheduleReconcile queues one verify pass for after typing goes quiet, so

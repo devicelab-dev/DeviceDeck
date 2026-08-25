@@ -18,17 +18,28 @@ test.beforeEach(async ({ request }) => {
   await new Promise((r) => setTimeout(r, 3000));
 });
 
-test('logs into TestHive on an Android emulator', async ({ page }) => {
+// deviceValue reads what the emulator itself holds, not what the mirror
+// shows — the check that catches the mirror claiming text the device never
+// received.
+async function deviceValue(request: any, identifier: string) {
+  const tree = await (await request.get(`/api/devices/${SERIAL}/tree?app=${APP}`)).json();
+  return tree.nodes.find((n: any) => n.identifier === identifier)?.value;
+}
+
+test('logs into TestHive on an Android emulator', async ({ page, request }) => {
   await page.goto(`/device/${SERIAL}`);
 
   const username = page.getByTestId('username-input');
   await expect(username).toBeVisible({ timeout: 30_000 });
 
-  await username.click();
-  await page.keyboard.type('devicelab', { delay: 120 });
+  await username.fill('devicelab');
+  await page.getByTestId('password-input').fill('robustest');
 
-  await page.getByTestId('password-input').click();
-  await page.keyboard.type('robustest', { delay: 120 });
+  // Assert against the device, not the mirror: fill() returns once the
+  // mirror has the text, but the keystrokes are still on their way to the
+  // emulator behind it. Submitting before they land clicks Sign In on an
+  // empty form. Poll the device until it echoes the value.
+  await expect.poll(() => deviceValue(request, 'username-input')).toBe('devicelab');
 
   await page.getByTestId('login-button').click();
 
