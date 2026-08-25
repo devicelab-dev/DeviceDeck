@@ -51,3 +51,20 @@ unchanged.
 Puppeteer). They verify each keystroke against the device's own read-back —
 the reliability that lives in the mirror — so typing is not reimplemented, and
 not made flaky, on the server side.
+
+## Listing on registries
+
+`glama.json` at the repo root marks the server for [Glama](https://glama.ai/mcp)'s
+registry, which indexes it from the public repository. The listing metadata a
+registry needs:
+
+- **Name** — `dev.devicelab/devicedeck` (reverse-DNS; DeviceLab owns the domain)
+- **Repository** — `https://github.com/devicelab-dev/DeviceDeck`
+- **Run** — `devicedeck mcp` (stdio); install the release binary, no package manager
+- **Tools** — the eight above
+- **Category** — mobile / device automation / testing
+
+DeviceDeck ships as a single Go binary, not an npm/pypi package, so a registry
+entry points at the release archive and the `devicedeck mcp` command rather than
+`npx`. Submitting the listing is a launch step — it needs the repository public;
+the marker and this metadata are ready for it.
