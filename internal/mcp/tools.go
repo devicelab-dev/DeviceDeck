@@ -37,17 +37,35 @@ func (c *Client) Tools() (map[string]Tool, []string) {
 		"ui_tree":         {Description: descUITree, InputSchema: schemaDeviceApp(false), Call: c.uiTree},
 		"boot_device":     {Description: descBoot, InputSchema: schemaDevice(), Call: c.bootDevice},
 		"launch_app":      {Description: descLaunch, InputSchema: schemaLaunch(), Call: c.launchApp},
+		"tap":             {Description: descTap, InputSchema: schemaTap(), Call: c.tap},
+		"assert_visible":  {Description: descAssert, InputSchema: schemaAssert(), Call: c.assertVisible},
 	}
-	order := []string{"list_devices", "device_page_url", "ui_tree", "boot_device", "launch_app"}
+	order := []string{"list_devices", "device_page_url", "ui_tree", "boot_device", "launch_app", "tap", "assert_visible"}
 	return tools, order
 }
 
-// deviceArgs is the shape most tools take: which device, and (where a tree is
-// involved) which app to scope it to.
+// deviceArgs is the shape the tools take: which device, which app to scope a
+// tree to, the fresh/resume toggle, and the selector fields the act tools use.
 type deviceArgs struct {
-	UDID  string `json:"udid"`
-	App   string `json:"app"`
-	Fresh *bool  `json:"fresh"`
+	UDID   string `json:"udid"`
+	App    string `json:"app"`
+	Fresh  *bool  `json:"fresh"`
+	Testid string `json:"testid"`
+	Text   string `json:"text"`
+}
+
+// treeNode is the subset of a mirrored element the act tools read: its
+// identifier (data-testid), accessible text, and on-device frame. Decoded
+// straight from the tree endpoint's JSON, so the MCP stays a thin adapter
+// over the wire shape rather than over the runner's Go types.
+type treeNode struct {
+	Identifier string `json:"identifier"`
+	Label      string `json:"label"`
+	Value      string `json:"value"`
+	Type       string `json:"type"`
+	Frame      struct {
+		X, Y, Width, Height float64
+	} `json:"frame"`
 }
 
 func decodeArgs(raw json.RawMessage) (deviceArgs, error) {
@@ -125,6 +143,117 @@ func (c *Client) launchApp(raw json.RawMessage) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("launched %s on %s", a.App, a.UDID), nil
+}
+
+// tap resolves a data-testid to a point on the device and taps it. The
+// resolution is deterministic — the element's own frame, by identifier — so
+// what the agent taps is reviewable, the same durable selector a captured
+// flow uses, not a coordinate it guessed.
+func (c *Client) tap(raw json.RawMessage) (string, error) {
+	a, err := decodeArgs(raw)
+	if err != nil || a.UDID == "" || a.Testid == "" {
+		return "", fmt.Errorf("udid and testid are required")
+	}
+	nodes, err := c.fetchTree(a.UDID, a.App)
+	if err != nil {
+		return "", err
+	}
+	x, y, err := tapPoint(nodes, a.Testid)
+	if err != nil {
+		return "", err
+	}
+	body, _ := json.Marshal(map[string]float64{"x": x, "y": y})
+	if _, err := c.post("/api/devices/"+url.PathEscape(a.UDID)+"/tap", body); err != nil {
+		return "", err
+	}
+	return "tapped " + a.Testid, nil
+}
+
+// assertVisible reports whether an element is on screen, by testid (exact
+// identifier) or text (a substring of a label or value). A read-only check
+// against the device's own tree — the assertion an agent records is one that
+// holds on real hardware too.
+func (c *Client) assertVisible(raw json.RawMessage) (string, error) {
+	a, err := decodeArgs(raw)
+	if err != nil || a.UDID == "" || (a.Testid == "" && a.Text == "") {
+		return "", fmt.Errorf("udid and one of testid or text are required")
+	}
+	nodes, err := c.fetchTree(a.UDID, a.App)
+	if err != nil {
+		return "", err
+	}
+	target := a.Testid
+	if target == "" {
+		target = a.Text
+	}
+	if nodeVisible(nodes, a.Testid, a.Text) {
+		return "visible: " + target, nil
+	}
+	return "", fmt.Errorf("not visible: %q", target)
+}
+
+// fetchTree pulls and decodes the device's UI tree.
+func (c *Client) fetchTree(udid, app string) ([]treeNode, error) {
+	path := "/api/devices/" + url.PathEscape(udid) + "/tree"
+	if app != "" {
+		path += "?app=" + url.QueryEscape(app)
+	}
+	body, err := c.get(path)
+	if err != nil {
+		return nil, err
+	}
+	var t struct {
+		Nodes []treeNode `json:"nodes"`
+	}
+	if err := json.Unmarshal(body, &t); err != nil {
+		return nil, err
+	}
+	return t.Nodes, nil
+}
+
+// tapPoint resolves a data-testid to a normalized (0-1) tap point: the
+// element's centre over the device's screen dimensions, which the tree's root
+// (Application) node carries. Errors if the screen has no size or the element
+// is absent.
+func tapPoint(nodes []treeNode, testid string) (float64, float64, error) {
+	if len(nodes) == 0 || nodes[0].Frame.Width <= 0 || nodes[0].Frame.Height <= 0 {
+		return 0, 0, fmt.Errorf("no screen dimensions in tree")
+	}
+	w, h := nodes[0].Frame.Width, nodes[0].Frame.Height
+	for _, n := range nodes {
+		if n.Identifier == testid {
+			return clamp01((n.Frame.X + n.Frame.Width/2) / w), clamp01((n.Frame.Y + n.Frame.Height/2) / h), nil
+		}
+	}
+	return 0, 0, fmt.Errorf("no element with testid %q on screen", testid)
+}
+
+// nodeVisible reports whether the tree holds an element matching a testid
+// (exact identifier) or text (case-insensitive substring of a label or value).
+func nodeVisible(nodes []treeNode, testid, text string) bool {
+	for _, n := range nodes {
+		if testid != "" && n.Identifier == testid {
+			return true
+		}
+		if text != "" && (containsFold(n.Label, text) || containsFold(n.Value, text)) {
+			return true
+		}
+	}
+	return false
+}
+
+func clamp01(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
+}
+
+func containsFold(s, sub string) bool {
+	return strings.Contains(strings.ToLower(s), strings.ToLower(sub))
 }
 
 // get issues a GET and returns the body, turning a non-2xx into an error

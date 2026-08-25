@@ -35,10 +35,18 @@ Most MCP clients take a command and args. For example, in a client's config:
 | `boot_device` | Boot one and wait for it to be ready |
 | `launch_app` | Launch an app (fresh by default; `fresh:false` resumes) |
 | `ui_tree` | The device's current UI tree as JSON — what to act on |
+| `tap` | Tap an element by its testid — resolved against the tree, a durable selector, not a coordinate |
+| `assert_visible` | Check an element is on screen, by testid or by visible text |
 | `device_page_url` | The automation-page URL to open with the agent's own browser tools and drive by selector |
 
-The pattern: `list_devices` → `boot_device` → `launch_app` → then either read
-`ui_tree` and reason over it, or open `device_page_url` and drive the mirror
-with browser tools. Acting stays selector-based — the same durable identifiers
-a captured flow uses — so what an agent does here is reviewable and runs on real
-hardware unchanged.
+The pattern: `list_devices` → `boot_device` → `launch_app` → read `ui_tree` to
+see what's on screen → `tap` and `assert_visible` by testid to act and check.
+Everything is selector-based — the same durable identifiers a captured flow
+uses — so what an agent does here is reviewable and runs on real hardware
+unchanged.
+
+**Typing** goes through the device page, not a tool: tap the field, then open
+`device_page_url` and drive the keyboard with your browser tools (Playwright,
+Puppeteer). They verify each keystroke against the device's own read-back —
+the reliability that lives in the mirror — so typing is not reimplemented, and
+not made flaky, on the server side.

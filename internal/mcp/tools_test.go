@@ -19,6 +19,7 @@ type fakeAPI struct {
 	lastBody   string
 	status     int
 	body       string
+	failPost   bool
 }
 
 func newFakeAPI() *fakeAPI {
@@ -26,6 +27,10 @@ func newFakeAPI() *fakeAPI {
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		f.lastMethod, f.lastPath, f.lastQuery, f.lastBody = r.Method, r.URL.Path, r.URL.RawQuery, string(b)
+		if f.failPost && r.Method == "POST" {
+			w.WriteHeader(502)
+			return
+		}
 		w.WriteHeader(f.status)
 		_, _ = io.WriteString(w, f.body)
 	}))
@@ -45,8 +50,8 @@ func TestNewClientTrimsSlash(t *testing.T) {
 
 func TestToolsRegistered(t *testing.T) {
 	tools, order := NewClient("http://x").Tools()
-	if len(tools) != 5 || len(order) != 5 {
-		t.Fatalf("want 5 tools, got %d/%d", len(tools), len(order))
+	if len(tools) != 7 || len(order) != 7 {
+		t.Fatalf("want 7 tools, got %d/%d", len(tools), len(order))
 	}
 	for _, name := range order {
 		if _, ok := tools[name]; !ok {
@@ -219,5 +224,126 @@ func TestUITreeAndLaunchServerError(t *testing.T) {
 	}
 	if _, err := f.client().launchApp(raw(map[string]string{"udid": "u1", "app": "com.x"})); err == nil {
 		t.Error("want launchApp error when server fails")
+	}
+}
+
+// a TestHive-shaped tree: root Application carries the screen size, then a
+// field and a greeting.
+const treeBody = `{"nodes":[
+ {"type":"Application","frame":{"x":0,"y":0,"width":400,"height":800}},
+ {"type":"TextField","identifier":"username-input","label":"Username","frame":{"x":40,"y":100,"width":320,"height":40}},
+ {"type":"StaticText","label":"Hello, devicelab!","frame":{"x":40,"y":300,"width":320,"height":24}}
+]}`
+
+func TestTap(t *testing.T) {
+	f := newFakeAPI()
+	defer f.close()
+	f.body = treeBody
+	got, err := f.client().tap(raw(map[string]string{"udid": "u1", "testid": "username-input"}))
+	if err != nil || got != "tapped username-input" {
+		t.Fatalf("tap = %q, %v", got, err)
+	}
+	// Last call is the POST /tap with the resolved centre: (40+160)/400=0.5, (100+20)/800=0.15.
+	if f.lastMethod != "POST" || f.lastPath != "/api/devices/u1/tap" {
+		t.Errorf("tap called %s %s", f.lastMethod, f.lastPath)
+	}
+	if !strings.Contains(f.lastBody, `"x":0.5`) || !strings.Contains(f.lastBody, `"y":0.15`) {
+		t.Errorf("tap point body = %s", f.lastBody)
+	}
+	// Missing args.
+	if _, err := f.client().tap(raw(map[string]string{"udid": "u1"})); err == nil {
+		t.Error("want error when testid missing")
+	}
+	// Element not on screen.
+	if _, err := f.client().tap(raw(map[string]string{"udid": "u1", "testid": "nope"})); err == nil {
+		t.Error("want error for unknown testid")
+	}
+	// Tree fetch fails.
+	f.status = 502
+	if _, err := f.client().tap(raw(map[string]string{"udid": "u1", "testid": "username-input"})); err == nil {
+		t.Error("want error when tree fetch fails")
+	}
+}
+
+func TestAssertVisible(t *testing.T) {
+	f := newFakeAPI()
+	defer f.close()
+	f.body = treeBody
+	c := f.client()
+	if got, err := c.assertVisible(raw(map[string]string{"udid": "u1", "testid": "username-input"})); err != nil || !strings.Contains(got, "username-input") {
+		t.Errorf("by testid = %q, %v", got, err)
+	}
+	if got, err := c.assertVisible(raw(map[string]string{"udid": "u1", "text": "hello, DEVICELAB"})); err != nil || !strings.Contains(got, "hello") {
+		t.Errorf("by text (case-insensitive) = %q, %v", got, err)
+	}
+	if _, err := c.assertVisible(raw(map[string]string{"udid": "u1", "text": "not here"})); err == nil {
+		t.Error("want error when absent")
+	}
+	if _, err := c.assertVisible(raw(map[string]string{"udid": "u1"})); err == nil {
+		t.Error("want error when neither testid nor text given")
+	}
+	f.status = 502
+	if _, err := c.assertVisible(raw(map[string]string{"udid": "u1", "testid": "x"})); err == nil {
+		t.Error("want error when tree fetch fails")
+	}
+}
+
+func TestTapPointEdges(t *testing.T) {
+	// No screen dimensions.
+	if _, _, err := tapPoint(nil, "x"); err == nil {
+		t.Error("want error on empty tree")
+	}
+	zero := []treeNode{{Type: "Application"}}
+	if _, _, err := tapPoint(zero, "x"); err == nil {
+		t.Error("want error on zero-size screen")
+	}
+	// Off-screen frame clamps into 0-1.
+	nodes := []treeNode{{Type: "Application"}}
+	nodes[0].Frame.Width, nodes[0].Frame.Height = 100, 100
+	off := treeNode{Identifier: "e"}
+	off.Frame.X, off.Frame.Y, off.Frame.Width, off.Frame.Height = 500, -50, 10, 10
+	nodes = append(nodes, off)
+	x, y, err := tapPoint(nodes, "e")
+	if err != nil || x != 1 || y != 0 {
+		t.Errorf("clamp: x=%v y=%v err=%v", x, y, err)
+	}
+}
+
+func TestFetchTreeBadJSON(t *testing.T) {
+	f := newFakeAPI()
+	defer f.close()
+	f.body = "not json"
+	if _, err := f.client().fetchTree("u1", ""); err == nil {
+		t.Error("want error on unparseable tree")
+	}
+}
+
+func TestSchemaTapAssert(t *testing.T) {
+	if req, _ := schemaTap()["required"].([]string); len(req) != 2 {
+		t.Errorf("schemaTap required = %v", schemaTap()["required"])
+	}
+	if req, _ := schemaAssert()["required"].([]string); len(req) != 1 {
+		t.Errorf("schemaAssert required = %v", schemaAssert()["required"])
+	}
+}
+
+func TestTapPostFails(t *testing.T) {
+	f := newFakeAPI()
+	defer f.close()
+	f.body, f.failPost = treeBody, true // tree resolves, the tap POST 502s
+	if _, err := f.client().tap(raw(map[string]string{"udid": "u1", "testid": "username-input"})); err == nil {
+		t.Error("want error when the tap POST fails")
+	}
+}
+
+func TestFetchTreeWithApp(t *testing.T) {
+	f := newFakeAPI()
+	defer f.close()
+	f.body = treeBody
+	if _, err := f.client().fetchTree("u1", "com.x"); err != nil {
+		t.Fatal(err)
+	}
+	if f.lastQuery != "app=com.x" {
+		t.Errorf("fetchTree scoped query = %q", f.lastQuery)
 	}
 }
