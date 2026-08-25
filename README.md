@@ -102,6 +102,14 @@ field's contents live in its value, not its text, which is the one place the mir
 holds flows recorded through the console — including one from a Flutter app and one from React
 Navigation. Note that **a device serves one driver at a time**; run with a single worker.
 
+**Agents drive it through an MCP server.** `devicedeck mcp` speaks the Model Context Protocol on
+stdin/stdout — a thin adapter over the same API — so an agent (Claude, Cursor, any MCP client)
+lists, boots, and launches devices, inspects them (`ui_tree`, `screenshot`), and acts by durable
+selector (`tap`, `assert_visible`), then opens the device page to drive typing with its own browser
+tools. A Claude Code plugin bundles the server with authoring, triage, and flow-capture skills —
+install it with `claude plugin marketplace add devicelab-dev/DeviceDeck`. See
+[`examples/mcp/`](examples/mcp/).
+
 ## Scope
 
 Simulators and emulators only. Real hardware is deliberately out of scope; that is
