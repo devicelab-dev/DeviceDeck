@@ -21,9 +21,12 @@ That is a real iOS Simulator being driven by stock Playwright.
 
 ## Status
 
-Working, not yet released. Both platforms drive end to end, and a captured flow replays
-unchanged under a stock `maestro-runner` — verified at 50/50 on Android with assertions, and a
-deliberate negative control confirming the gate can fail.
+Working, not yet released. Both platforms drive end to end: **Playwright, Cypress and Puppeteer
+each log into TestHive through the same DOM** — it is an ordinary web page, so any browser driver
+works with no mobile-specific code. Typing is checked against the device's own read-back, so a
+keystroke that does not land is retyped rather than lost, on iOS *and* on Android's masked
+password fields. A captured flow replays unchanged under a stock `maestro-runner` — verified at
+50/50 on Android with assertions, and a deliberate negative control confirming the gate can fail.
 
 What that sentence does not cover: it has only ever run on the machine it was built on. Expect
 first-contact problems. See **Known limits** below.
@@ -112,16 +115,21 @@ on durable selectors.
   emulator's gRPC screenshot stream offers no video codec, so every frame is a full PNG.
   Emulators DeviceDeck boots run headless, because macOS throttles an occluded window and the
   emulator's window is occluded exactly when you are watching the browser.
-- **A freshly launched app accepts touches about a second after it appears** in the accessibility
-  tree, and reports itself hittable and stable throughout — so there is nothing to wait on but
-  the effect. Tests should prove the app is taking input before relying on it.
+- **A freshly launched app swallows touches for about a second** after its screen is already in
+  the accessibility tree, reporting itself hittable and stable throughout — so there is nothing
+  to wait on but the effect. `POST /app/launch` waits this window out for you: it returns when the
+  app is actually taking input, so a test that launches through it can act at once. A raw
+  terminate+launch outside the endpoint cannot, and must prove the app is taking input first.
 - **Two-finger gestures are dropped on Android.** They work on iOS; there is no mapping for them
   in the Android driver, and they are discarded rather than guessed at.
 - **A device serves one driver at a time**, and a second claim is refused rather than shared.
   That includes the console: a browser tab left open on a device will refuse your test run,
   and the refused page says so on screen. A driver that dies without closing its socket is
   detected by ping within about half a minute, and the device is released.
-- Relaunching an app does not reset its state.
+- **A raw relaunch does not reset app state** — a native app stays logged in across
+  terminate+launch, the surprise that makes web-style tests flaky against it. `POST /app/launch`
+  wipes the app's data first *by default*, starting at a first-run screen the way a new automation
+  session expects; pass `?reset=no` to resume where the last session left off.
 
 ## Licence
 
