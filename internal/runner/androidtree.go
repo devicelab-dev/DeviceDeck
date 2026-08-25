@@ -111,6 +111,14 @@ func bringUpAndroidDriver(dev *device.AndroidDevice) (*AndroidEngine, error) {
 		_ = dev.StopDeviceLabDriver()
 		return nil, fmt.Errorf("create driver session: %w", err)
 	}
+	tuneAndroidSession(dev, adapter)
+	return &AndroidEngine{dev: dev, client: client, adapter: adapter}, nil
+}
+
+// tuneAndroidSession applies the two settings that keep the mirror usable,
+// both best-effort. Part of bringUpAndroidDriver's e2e coverage waiver: it
+// drives a real adb session and is exercised end-to-end.
+func tuneAndroidSession(dev *device.AndroidDevice, adapter *maestro.Adapter) {
 	// Cap UIAutomator's wait-for-idle: page source runs through it, and
 	// with the default the mirror's tree polls block for seconds during
 	// typing or animation — the page then taps against stale geometry
@@ -126,7 +134,6 @@ func bringUpAndroidDriver(dev *device.AndroidDevice) (*AndroidEngine, error) {
 	if _, err := dev.Shell("settings put secure show_ime_with_hard_keyboard 0"); err != nil {
 		slog.Warn("android driver: disabling soft keyboard failed", "error", err)
 	}
-	return &AndroidEngine{dev: dev, client: client, adapter: adapter}, nil
 }
 
 // Snapshot returns the full UI hierarchy. appBundleID is accepted for
