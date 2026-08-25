@@ -144,3 +144,42 @@ func TestServeWriteError(t *testing.T) {
 		t.Fatal("want write error")
 	}
 }
+
+func TestCallToolRaw(t *testing.T) {
+	tools := map[string]Tool{
+		"shot": {
+			Description: "raw image tool",
+			InputSchema: schemaNone(),
+			Raw: func(args json.RawMessage) ([]any, error) {
+				var a struct {
+					Fail bool `json:"fail"`
+				}
+				_ = json.Unmarshal(args, &a)
+				if a.Fail {
+					return nil, errors.New("no screen")
+				}
+				return []any{map[string]any{"type": "image", "data": "AAAA", "mimeType": "image/png"}}, nil
+			},
+		},
+	}
+	s := NewServer(tools, []string{"shot"})
+
+	// Success: content is the raw items, isError false.
+	ok := s.dispatch(request{Method: "tools/call", ID: json.RawMessage(`1`),
+		Params: json.RawMessage(`{"name":"shot","arguments":{}}`)})
+	r := ok.Result.(map[string]any)
+	if r["isError"] != false {
+		t.Errorf("raw success isError = %v", r["isError"])
+	}
+	if item := r["content"].([]any)[0].(map[string]any); item["type"] != "image" {
+		t.Errorf("raw content = %v", item)
+	}
+
+	// Failure: reported as an isError tool result, not a transport error.
+	bad := s.dispatch(request{Method: "tools/call", ID: json.RawMessage(`2`),
+		Params: json.RawMessage(`{"name":"shot","arguments":{"fail":true}}`)})
+	br := bad.Result.(map[string]any)
+	if br["isError"] != true {
+		t.Errorf("raw failure isError = %v", br["isError"])
+	}
+}

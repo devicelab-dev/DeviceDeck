@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -26,10 +27,11 @@ func NewClient(baseURL string) *Client {
 	}
 }
 
-// Tools returns the DeviceDeck tool set and a stable listing order. Read and
-// device-lifecycle tools only for now: they are what a browser-driving agent
-// cannot do for itself (list, boot, launch, inspect), and handing back the
-// device page URL lets it drive the rest with its own web tools.
+// Tools returns the DeviceDeck tool set and a stable listing order: device
+// lifecycle (list, boot, launch), inspection (ui_tree, screenshot),
+// selector-based acting (tap, assert_visible), and the device page URL to
+// drive typing-heavy flows with the agent's own web tools. Each is a thin
+// wrapper over the server's HTTP API.
 func (c *Client) Tools() (map[string]Tool, []string) {
 	tools := map[string]Tool{
 		"list_devices":    {Description: descListDevices, InputSchema: schemaNone(), Call: c.listDevices},
@@ -39,8 +41,9 @@ func (c *Client) Tools() (map[string]Tool, []string) {
 		"launch_app":      {Description: descLaunch, InputSchema: schemaLaunch(), Call: c.launchApp},
 		"tap":             {Description: descTap, InputSchema: schemaTap(), Call: c.tap},
 		"assert_visible":  {Description: descAssert, InputSchema: schemaAssert(), Call: c.assertVisible},
+		"screenshot":      {Description: descScreenshot, InputSchema: schemaDevice(), Raw: c.screenshot},
 	}
-	order := []string{"list_devices", "device_page_url", "ui_tree", "boot_device", "launch_app", "tap", "assert_visible"}
+	order := []string{"list_devices", "device_page_url", "ui_tree", "boot_device", "launch_app", "tap", "assert_visible", "screenshot"}
 	return tools, order
 }
 
@@ -254,6 +257,26 @@ func clamp01(v float64) float64 {
 
 func containsFold(s, sub string) bool {
 	return strings.Contains(strings.ToLower(s), strings.ToLower(sub))
+}
+
+// screenshot returns the device's current screen as an MCP image content
+// item, so an agent that reasons over pixels can see the device — the
+// complement to ui_tree for one that reasons over structure. Both platforms
+// return PNG.
+func (c *Client) screenshot(raw json.RawMessage) ([]any, error) {
+	a, err := decodeArgs(raw)
+	if err != nil || a.UDID == "" {
+		return nil, fmt.Errorf("udid is required")
+	}
+	body, err := c.get("/api/devices/" + url.PathEscape(a.UDID) + "/screenshot")
+	if err != nil {
+		return nil, err
+	}
+	return []any{map[string]any{
+		"type":     "image",
+		"data":     base64.StdEncoding.EncodeToString(body),
+		"mimeType": "image/png",
+	}}, nil
 }
 
 // get issues a GET and returns the body, turning a non-2xx into an error

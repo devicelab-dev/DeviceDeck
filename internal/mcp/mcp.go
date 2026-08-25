@@ -46,11 +46,14 @@ type rpcError struct {
 
 // Tool is one callable the server exposes. Call receives the raw arguments
 // object and returns the text an agent reads; an error becomes a tool-level
-// failure (isError), not a transport error, so the model can react to it.
+// failure (isError), not a transport error, so the model can react to it. A
+// tool that returns something other than text — a screenshot image — sets Raw
+// instead, which returns MCP content items directly; Raw takes precedence.
 type Tool struct {
 	Description string
 	InputSchema map[string]any
 	Call        func(args json.RawMessage) (string, error)
+	Raw         func(args json.RawMessage) ([]any, error)
 }
 
 // Server routes MCP messages to a set of named tools. It holds no device
@@ -154,6 +157,13 @@ func (s *Server) callTool(req request) response {
 	tool, ok := s.tools[p.Name]
 	if !ok {
 		return errorResponse(req.ID, -32602, fmt.Sprintf("unknown tool %q", p.Name))
+	}
+	if tool.Raw != nil {
+		content, err := tool.Raw(p.Arguments)
+		if err != nil {
+			return okResponse(req.ID, toolResult(err.Error(), true))
+		}
+		return okResponse(req.ID, map[string]any{"content": content, "isError": false})
 	}
 	text, err := tool.Call(p.Arguments)
 	if err != nil {

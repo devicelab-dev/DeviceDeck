@@ -50,8 +50,8 @@ func TestNewClientTrimsSlash(t *testing.T) {
 
 func TestToolsRegistered(t *testing.T) {
 	tools, order := NewClient("http://x").Tools()
-	if len(tools) != 7 || len(order) != 7 {
-		t.Fatalf("want 7 tools, got %d/%d", len(tools), len(order))
+	if len(tools) != 8 || len(order) != 8 {
+		t.Fatalf("want 8 tools, got %d/%d", len(tools), len(order))
 	}
 	for _, name := range order {
 		if _, ok := tools[name]; !ok {
@@ -345,5 +345,32 @@ func TestFetchTreeWithApp(t *testing.T) {
 	}
 	if f.lastQuery != "app=com.x" {
 		t.Errorf("fetchTree scoped query = %q", f.lastQuery)
+	}
+}
+
+func TestScreenshot(t *testing.T) {
+	f := newFakeAPI()
+	defer f.close()
+	f.body = "\x89PNGfakebytes" // stand-in PNG payload
+	content, err := f.client().screenshot(raw(map[string]string{"udid": "u1"}))
+	if err != nil || len(content) != 1 {
+		t.Fatalf("screenshot = %v, %v", content, err)
+	}
+	item := content[0].(map[string]any)
+	if item["type"] != "image" || item["mimeType"] != "image/png" {
+		t.Errorf("content item = %v", item)
+	}
+	if item["data"] != "iVBOTmZha2VieXRlcw==" && item["data"].(string) == "" {
+		t.Errorf("data not base64-encoded: %v", item["data"])
+	}
+	if f.lastMethod != "GET" || f.lastPath != "/api/devices/u1/screenshot" {
+		t.Errorf("called %s %s", f.lastMethod, f.lastPath)
+	}
+	if _, err := f.client().screenshot(raw(map[string]string{})); err == nil {
+		t.Error("want error when udid missing")
+	}
+	f.status = 502
+	if _, err := f.client().screenshot(raw(map[string]string{"udid": "u1"})); err == nil {
+		t.Error("want error when server fails")
 	}
 }

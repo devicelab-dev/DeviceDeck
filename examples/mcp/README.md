@@ -37,6 +37,7 @@ Most MCP clients take a command and args. For example, in a client's config:
 | `ui_tree` | The device's current UI tree as JSON — what to act on |
 | `tap` | Tap an element by its testid — resolved against the tree, a durable selector, not a coordinate |
 | `assert_visible` | Check an element is on screen, by testid or by visible text |
+| `screenshot` | Capture the device screen as a PNG image, for reasoning over pixels |
 | `device_page_url` | The automation-page URL to open with the agent's own browser tools and drive by selector |
 
 The pattern: `list_devices` → `boot_device` → `launch_app` → read `ui_tree` to

@@ -22,6 +22,8 @@ const (
 	descAssert = "Check that an element is on screen, by testid (its accessibility identifier) or by " +
 		"text (a substring of a visible label or value). A read-only assertion against the device's own " +
 		"tree — the same check a captured flow records."
+	descScreenshot = "Capture the device's current screen as a PNG image. Use it to see the device " +
+		"when structure (ui_tree) is not enough — a rendered layout, an image, a visual state."
 )
 
 // schemaNone is the input schema for a tool that takes no arguments.
