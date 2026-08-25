@@ -1040,6 +1040,12 @@ function scheduleReconcile() {
 // tree so it reads fresh device contents, and gives up after MAX_REPAIRS.
 async function reconcileFields() {
   for (let attempt = 0; attempt < MAX_REPAIRS; attempt++) {
+    // Trigger the held poll settledRender waits on, rather than relying on
+    // one already being in flight — a focus switch produces no tree change,
+    // so the scheduling poll can settle and drain before this runs, and the
+    // await would then hang, blocking the whole edit chain until the next
+    // unrelated action happened to note activity.
+    noteActivity();
     await settledRender();
     const drifted = [...editedFields].filter((el) => el.isConnected && !fieldMatches(el));
     for (const el of editedFields) {
@@ -1051,7 +1057,6 @@ async function reconcileFields() {
       await waitReady(el);
       await repairField(el);
     }
-    noteActivity();
   }
 }
 
