@@ -1049,8 +1049,25 @@ function scheduleReconcile() {
 // reconcileFields brings every edited field to the caller's value, re-
 // tapping and retyping any the device did not echo. It waits on a settled
 // tree so it reads fresh device contents, and gives up after MAX_REPAIRS.
-async function reconcileFields() {
-  for (let attempt = 0; attempt < MAX_REPAIRS; attempt++) {
+// fieldsSignature is the edited fields' device values joined by a space, so
+// one settled read can be compared against the next.
+function fieldsSignature() {
+  return [...editedFields].map((el) => el.dataset.ddDeviceValue ?? "").join(" ");
+}
+
+// settledFields waits for a settled screen whose edited-field values have
+// also stopped changing. Keystrokes are sent fire-and-forget and the device
+// applies them one ~100ms HID hold at a time, so the first settled tree
+// after a burst can arrive with the value still climbing — the last keys
+// still in the pipe. Judging drift then reads a half-typed field and
+// retypes onto keys not yet applied, doubling it ("robustest" as eighteen
+// bullets). Requiring the value to repeat across settled reads waits the
+// pipe out on device truth, not a wall-clock guess. Bounded: a value the
+// device keeps changing on its own does not wedge the loop.
+const STABLE_READS = 5;
+async function settledFields() {
+  let prev = null;
+  for (let i = 0; i < STABLE_READS; i++) {
     // Trigger the held poll settledRender waits on, rather than relying on
     // one already being in flight — a focus switch produces no tree change,
     // so the scheduling poll can settle and drain before this runs, and the
@@ -1058,6 +1075,15 @@ async function reconcileFields() {
     // unrelated action happened to note activity.
     noteActivity();
     await settledRender();
+    const sig = fieldsSignature();
+    if (sig === prev) return;
+    prev = sig;
+  }
+}
+
+async function reconcileFields() {
+  for (let attempt = 0; attempt < MAX_REPAIRS; attempt++) {
+    await settledFields();
     const drifted = [...editedFields].filter((el) => el.isConnected && !fieldMatches(el));
     for (const el of editedFields) {
       if (!el.isConnected) editedFields.delete(el);

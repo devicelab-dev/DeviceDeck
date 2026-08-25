@@ -19,6 +19,19 @@ describe("TestHive login", () => {
     cy.get('[data-testid="password-input"]').click();
     cy.get("body").type("robustest", { delay: 150 });
 
+    // Wait for the device to echo both fields before submitting. Keys reach
+    // the simulator as real HID presses a moment after the DOM has them, so
+    // a submit fired the instant typing "finished" can race the last
+    // keystrokes onto the device. `.should()` retries until the mirror's
+    // read-back (`data-dd-device-value`) matches — a secure field reports
+    // bullets, so it is checked by length.
+    cy.get('[data-testid="username-input"]').should(
+      ($el) => expect($el[0].dataset.ddDeviceValue).to.eq("devicelab"),
+    );
+    cy.get('[data-testid="password-input"]').should(
+      ($el) => expect($el[0].dataset.ddDeviceValue).to.have.length("robustest".length),
+    );
+
     cy.get('[data-testid="login-button"]').click();
 
     cy.contains("Hello, devicelab!", { timeout: 20000 }).should("exist");
