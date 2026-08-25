@@ -30,21 +30,68 @@ type AndroidEngine struct {
 	screenH int
 }
 
-// StartAndroidEngine installs (if needed) and starts the devicelab
-// Android driver on serial, returning a ready engine. Mirrors the
-// assembly maestro-runner's CLI performs, minus the flow executor.
+// StartAndroidEngine installs (if needed) and starts the devicelab Android
+// driver on serial, returning a ready engine. Mirrors the assembly
+// maestro-runner's CLI performs, minus the flow executor. The driver start
+// is retried, because it races dexopt on a cold start — see driverStartRetries.
 //
-// Coverage waiver: StartAndroidEngine and Stop drive a real adb +
-// emulator and are exercised end-to-end; conversion logic lives in
-// convertAndroidElements, which is unit-tested.
+// Coverage waiver: StartAndroidEngine, bringUpAndroidDriver, and Stop drive a
+// real adb + emulator and are exercised end-to-end; the retry policy
+// (retryStart) and conversion (convertAndroidElements) are unit-tested.
 func StartAndroidEngine(_ context.Context, serial string) (*AndroidEngine, error) {
 	dev, err := device.New(serial)
 	if err != nil {
 		return nil, fmt.Errorf("android device %s: %w", serial, err)
 	}
+	// Install once, outside the retry: it is idempotent and not the flaky
+	// step. The driver *start* is — see retryStart.
 	if err := dev.InstallDeviceLabDriver(config.GetDriversDir("android")); err != nil {
 		return nil, fmt.Errorf("install devicelab android driver: %w", err)
 	}
+	return retryStart(driverStartRetries,
+		func() (*AndroidEngine, error) { return bringUpAndroidDriver(dev) },
+		func() { _ = dev.StopDeviceLabDriver() })
+}
+
+// driverStartRetries bounds how many times the driver bring-up is
+// re-attempted. The devicelab Android driver crashes on startup roughly one
+// run in ten — a dexopt race where its own crash-check fires while
+// `am instrument` is still warming after a cold start — and the failure
+// surfaces downstream as an empty tree and "element not found". The crash is
+// transient: a fresh start almost always succeeds, so a bounded retry turns
+// a ~10% session-start failure into a negligible one. It belongs here, at
+// our seam around the driver, because maestro-runner does not retry and this
+// is our reliability problem to own, not the dependency's.
+const driverStartRetries = 3
+
+// retryStart runs start up to n times, calling reset between failed attempts
+// to clear a partially-started driver before the next try. Returns the first
+// success, or the last error if every attempt fails. Kept free of any device
+// type so the retry policy is unit-tested without a live emulator; the actual
+// bring-up it wraps (bringUpAndroidDriver) carries the e2e coverage waiver.
+func retryStart(n int, start func() (*AndroidEngine, error), reset func()) (*AndroidEngine, error) {
+	var err error
+	for attempt := 1; attempt <= n; attempt++ {
+		var eng *AndroidEngine
+		if eng, err = start(); err == nil {
+			return eng, nil
+		}
+		slog.Warn("android driver start failed; retrying",
+			"attempt", attempt, "of", n, "error", err)
+		reset()
+	}
+	return nil, err
+}
+
+// bringUpAndroidDriver starts the driver on an installed device and opens a
+// session, returning a ready engine. Split from StartAndroidEngine so the
+// retry loop can re-run exactly the flaky part. Cleans up its own partial
+// state on failure so a retry starts clean.
+//
+// Coverage waiver: this and Stop drive a real adb + emulator and are
+// exercised end-to-end; the retry policy (retryStart) and conversion logic
+// (convertAndroidElements) are unit-tested.
+func bringUpAndroidDriver(dev *device.AndroidDevice) (*AndroidEngine, error) {
 	if err := dev.StartDeviceLabDriver(device.DefaultDeviceLabDriverConfig()); err != nil {
 		return nil, fmt.Errorf("start devicelab android driver: %w", err)
 	}

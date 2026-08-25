@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"fmt"
 	"testing"
 
 	dlandroid "github.com/devicelab-dev/maestro-runner/pkg/driver/devicelab"
@@ -166,5 +167,57 @@ func TestParseWmSize(t *testing.T) {
 	}
 	if _, _, err = parseWmSize("garbage\n"); err == nil {
 		t.Error("expected error on unparseable output")
+	}
+}
+
+// TestRetryStart covers the driver-start retry policy: success first try,
+// success after transient failures, and exhausting every attempt.
+func TestRetryStart(t *testing.T) {
+	errBoom := fmt.Errorf("driver crashed on startup: process exited (no log output)")
+	okEngine := &AndroidEngine{}
+
+	tests := []struct {
+		name       string
+		n          int
+		failFirst  int // fail this many attempts, then succeed
+		alwaysFail bool
+		wantErr    bool
+		wantStarts int
+		wantResets int
+	}{
+		{name: "first try", n: 3, failFirst: 0, wantStarts: 1, wantResets: 0},
+		{name: "third try", n: 3, failFirst: 2, wantStarts: 3, wantResets: 2},
+		{name: "exhausted", n: 3, alwaysFail: true, wantErr: true, wantStarts: 3, wantResets: 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			starts, resets := 0, 0
+			start := func() (*AndroidEngine, error) {
+				starts++
+				if tt.alwaysFail || starts <= tt.failFirst {
+					return nil, errBoom
+				}
+				return okEngine, nil
+			}
+			reset := func() { resets++ }
+
+			eng, err := retryStart(tt.n, start, reset)
+
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr && eng != nil {
+				t.Fatalf("engine = %v on failure, want nil", eng)
+			}
+			if !tt.wantErr && eng != okEngine {
+				t.Fatalf("engine = %v, want the started engine", eng)
+			}
+			if starts != tt.wantStarts {
+				t.Errorf("starts = %d, want %d", starts, tt.wantStarts)
+			}
+			if resets != tt.wantResets {
+				t.Errorf("resets = %d, want %d", resets, tt.wantResets)
+			}
+		})
 	}
 }
