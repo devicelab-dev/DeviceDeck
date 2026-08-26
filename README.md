@@ -46,8 +46,7 @@ Because the device is a web page, you bring nothing new to mobile:
 - **Your tests just work.** Playwright, Cypress, or Puppeteer drive it by selector — `getByRole`,
   `getByTestId`, `fill`, `click`. Zero adapter, no Appium.
 - **Your agents just work.** An AI agent that already drives web apps drives your mobile app the same
-  way — it reuses the browser skills it already has. The others make the agent learn a bespoke tool
-  set or a vision model; here there is nothing to learn.
+  way — it reuses the browser skills it already has, with nothing new to learn.
 - **You can just click it.** Open the console and drive the device by hand in the browser — boot,
   watch, tap, type, and **Inspect** the native tree.
 
@@ -67,13 +66,6 @@ URL and drive devices from their own browser, tests, or agent. No Xcode, no Andr
 simulator on the client at all. A device serves one driver at a time, so it is a farm of *N* devices
 for *N* people. (Automation is cheap over the network — a test reads the lightweight DOM tree, not
 video; the pixel stream is only for a human watching.)
-
-## Why not Appium
-
-Every mobile testing framework rebuilds the same four primitives — a driver, a selector language, a
-way to send input, a way to read the tree. DeviceDeck doesn't ship any of them. It makes the device
-a **web page**, so a web driver you already have *is* the driver, its selectors *are* the selectors,
-and its assertions *are* the assertions.
 
 ## Status
 
