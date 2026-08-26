@@ -53,6 +53,7 @@ type FrameSender interface {
 // TreeSource fetches the UI tree for a device.
 type TreeSource interface {
 	Snapshot(ctx context.Context, udid, appBundleID string) ([]runner.Node, error)
+	SnapshotState(ctx context.Context, udid, appBundleID string) (runner.Snapshot, error)
 }
 
 // CaptureService records manual sessions as flows.
@@ -210,8 +211,8 @@ func (s *Server) handleLaunchApp(w http.ResponseWriter, r *http.Request) {
 // snapshotter binds the tree source to one device and app, which is the
 // shape the settle logic wants.
 func (s *Server) snapshotter(udid, app string) runner.Snapshotter {
-	return func(ctx context.Context) ([]runner.Node, error) {
-		return s.trees.Snapshot(ctx, udid, app)
+	return func(ctx context.Context) (runner.Snapshot, error) {
+		return s.trees.SnapshotState(ctx, udid, app)
 	}
 }
 
@@ -228,7 +229,7 @@ func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleTree(w http.ResponseWriter, r *http.Request) {
 	udid := r.PathValue("udid")
 	snap := s.snapshotter(udid, r.URL.Query().Get("app"))
-	var nodes []runner.Node
+	var got runner.Snapshot
 	var err error
 	// ?after=<interaction hash> turns the poll into a barrier: the
 	// response is held until the screen has moved on from that hash and
@@ -237,9 +238,9 @@ func (s *Server) handleTree(w http.ResponseWriter, r *http.Request) {
 	// that waits on the page's own requests — playwright-mcp does —
 	// waits for the device without knowing it.
 	if after, held := r.URL.Query()["after"]; held {
-		nodes, err = runner.Settle(r.Context(), snap, after[0], s.settle)
+		got, err = runner.Settle(r.Context(), snap, after[0], s.settle)
 	} else {
-		nodes, err = snap(r.Context())
+		got, err = snap(r.Context())
 	}
 	if err != nil {
 		// Logged, not just returned: a failed snapshot reaches the page
@@ -251,7 +252,7 @@ func (s *Server) handleTree(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadGateway, err)
 		return
 	}
-	writeJSON(w, treePayload(nodes))
+	writeJSON(w, treePayload(got))
 }
 
 // treePayload is the tree as every consumer receives it. The hashes
@@ -260,7 +261,8 @@ func (s *Server) handleTree(w http.ResponseWriter, r *http.Request) {
 // "hash" is the screen, for settledness and the fingerprint;
 // "interaction" adds focus, and is what a client hands back as ?after=
 // so that moving between fields counts as a change.
-func treePayload(nodes []runner.Node) map[string]any {
+func treePayload(snap runner.Snapshot) map[string]any {
+	nodes := snap.Nodes
 	if nodes == nil {
 		nodes = []runner.Node{}
 	}
@@ -268,6 +270,12 @@ func treePayload(nodes []runner.Node) map[string]any {
 		"nodes":       nodes,
 		"hash":        runner.ScreenHash(nodes),
 		"interaction": runner.InteractionHash(nodes),
+		// foreground is false only when the app reports a background or
+		// not-running state. An empty state — Android, or a runner that
+		// did not send one — is treated as foreground: absence of the
+		// signal must not read as "backgrounded" and block nothing.
+		"foreground": snap.AppState == "" || snap.AppState == "runningForeground",
+		"appState":   snap.AppState,
 	}
 }
 
@@ -275,11 +283,11 @@ func treePayload(nodes []runner.Node) map[string]any {
 // waits for quiet alone — there is no earlier screen to have moved on
 // from — under the same cap as any other held tree.
 func (s *Server) FirstTree(ctx context.Context, udid, app string) ([]byte, error) {
-	nodes, err := runner.Settle(ctx, s.snapshotter(udid, app), "", s.settle)
+	got, err := runner.Settle(ctx, s.snapshotter(udid, app), "", s.settle)
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(treePayload(nodes))
+	return json.Marshal(treePayload(got))
 }
 
 type tapRequest struct {

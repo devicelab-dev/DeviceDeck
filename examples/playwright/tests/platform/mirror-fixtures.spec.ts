@@ -198,3 +198,16 @@ test('the canvas takes the device dimensions from the tree, with no video', asyn
   expect(size.w).toBe(Math.round(app.width));
   expect(size.h).toBe(Math.round(app.height));
 });
+
+test('a backgrounded app is announced in the root name, not hidden', async ({ page }) => {
+  const tree = await serveMirror(page, 'products');
+  // The same screen, now reported backgrounded. iOS keeps a backgrounded
+  // app's whole tree, so every control is still here — the mirror must
+  // annotate, not hide, so an agent knows the screen is not on the device.
+  await page.route('**/api/devices/*/tree*', (r) =>
+    r.fulfill({ json: { ...tree, foreground: false, appState: 'runningBackground' } }));
+  await expect(page.locator('#mirror')).toHaveAttribute('aria-label', /app not in foreground/, { timeout: 5_000 });
+  await expect(page.locator('#mirror')).toHaveAttribute('data-dd-foreground', 'false');
+  // Annotated, never hidden: the controls are all still present and clickable.
+  await expect(page.locator('#mirror [data-dd-node]').first()).toBeVisible();
+});

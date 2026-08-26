@@ -6,10 +6,22 @@ import (
 	"time"
 )
 
+// Snapshot is a UI tree together with the app-lifecycle state that came
+// with it — the target's XCUIApplication.state on iOS, empty where the
+// platform does not report one. The state travels with the tree because
+// it is the same dump: no signal in the nodes reports foreground/
+// background reliably (per-node hittable oscillates while a screen
+// animates into the background), so a caller reads AppState, not the
+// tree, to know the app is frontmost.
+type Snapshot struct {
+	Nodes    []Node
+	AppState string
+}
+
 // Snapshotter is the one tree operation settling needs. Narrow on purpose:
 // it lets the settle logic be exercised against a scripted sequence of
 // trees, with no engine and no device.
-type Snapshotter func(ctx context.Context) ([]Node, error)
+type Snapshotter func(ctx context.Context) (Snapshot, error)
 
 // SettleOptions bounds a settle wait. Zero values take the defaults below.
 type SettleOptions struct {
@@ -64,19 +76,19 @@ func (o SettleOptions) withDefaults() SettleOptions {
 //
 // An empty `after` asks only for quiet, which is what a caller wants on
 // first contact, before it has any hash to compare against.
-func Settle(ctx context.Context, snap Snapshotter, after string, opts SettleOptions) ([]Node, error) {
+func Settle(ctx context.Context, snap Snapshotter, after string, opts SettleOptions) (Snapshot, error) {
 	opts = opts.withDefaults()
 	deadline := time.Now().Add(opts.Cap)
-	var last []Node
+	var last Snapshot
 	lastScreen, quiet := "", 0
 	for {
-		nodes, err := snap(ctx)
+		got, err := snap(ctx)
 		if err != nil {
-			return nil, err
+			return Snapshot{}, err
 		}
-		last = nodes
-		quiet, lastScreen = countQuiet(nodes, lastScreen, quiet)
-		changed := after == "" || InteractionHash(nodes) != after
+		last = got
+		quiet, lastScreen = countQuiet(got.Nodes, lastScreen, quiet)
+		changed := after == "" || InteractionHash(got.Nodes) != after
 		if changed && quiet >= opts.Quiet {
 			return last, nil
 		}
@@ -198,8 +210,8 @@ func awaitAppeared(ctx context.Context, snap Snapshotter, opts LaunchOptions) er
 	deadline := time.Now().Add(opts.Appear)
 	var lastErr error
 	for {
-		nodes, err := snap(ctx)
-		if err == nil && hasControl(nodes) {
+		got, err := snap(ctx)
+		if err == nil && hasControl(got.Nodes) {
 			return nil
 		}
 		lastErr = err

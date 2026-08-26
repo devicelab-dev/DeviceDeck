@@ -26,13 +26,13 @@ func focused(label string) []Node {
 // took.
 func scripted(trees ...[]Node) (Snapshotter, *int) {
 	calls := 0
-	return func(ctx context.Context) ([]Node, error) {
+	return func(ctx context.Context) (Snapshot, error) {
 		i := calls
 		calls++
 		if i >= len(trees) {
 			i = len(trees) - 1
 		}
-		return trees[i], nil
+		return Snapshot{Nodes: trees[i]}, nil
 	}, &calls
 }
 
@@ -91,8 +91,8 @@ func TestSettle(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if got[0].Label != tc.wantLabel {
-				t.Errorf("settled on %q, want %q", got[0].Label, tc.wantLabel)
+			if got.Nodes[0].Label != tc.wantLabel {
+				t.Errorf("settled on %q, want %q", got.Nodes[0].Label, tc.wantLabel)
 			}
 			if *calls < tc.minCalls {
 				t.Errorf("took %d samples, want at least %d", *calls, tc.minCalls)
@@ -103,7 +103,7 @@ func TestSettle(t *testing.T) {
 
 func TestSettleSnapshotErrorIsReturned(t *testing.T) {
 	boom := errors.New("engine down")
-	snap := func(ctx context.Context) ([]Node, error) { return nil, boom }
+	snap := func(ctx context.Context) (Snapshot, error) { return Snapshot{}, boom }
 	if _, err := Settle(context.Background(), snap, "", fast); !errors.Is(err, boom) {
 		t.Fatalf("got %v, want %v", err, boom)
 	}
@@ -115,7 +115,7 @@ func TestSettleStopsOnCancel(t *testing.T) {
 	cancel()
 	// Cancelled before the first sleep: one sample, then out.
 	got, err := Settle(ctx, snap, InteractionHash(screen("zzz")), SettleOptions{Interval: time.Hour, Cap: 2 * time.Hour})
-	if err != nil || got == nil {
+	if err != nil || got.Nodes == nil {
 		t.Fatalf("cancel should still hand back the last tree, got %v, %v", got, err)
 	}
 	if *calls != 1 {
@@ -168,7 +168,7 @@ func TestAwaitLaunched(t *testing.T) {
 	})
 	t.Run("a snapshot error explains the timeout", func(t *testing.T) {
 		boom := errors.New("engine down")
-		snap := func(ctx context.Context) ([]Node, error) { return nil, boom }
+		snap := func(ctx context.Context) (Snapshot, error) { return Snapshot{}, boom }
 		if err := AwaitLaunched(context.Background(), snap, fastLaunch); !errors.Is(err, boom) {
 			t.Fatalf("got %v, want %v", err, boom)
 		}

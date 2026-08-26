@@ -90,6 +90,11 @@ func (f *fakeBackend) Snapshot(_ context.Context, udid, app string) ([]runner.No
 	return f.nodes, f.nodesErr
 }
 
+func (f *fakeBackend) SnapshotState(_ context.Context, udid, app string) (runner.Snapshot, error) {
+	f.treeApp = app
+	return runner.Snapshot{Nodes: f.nodes}, f.nodesErr
+}
+
 func (f *fakeBackend) SendFrame(_ context.Context, udid string, frame []byte) error {
 	if f.framesErr != nil {
 		return f.framesErr
@@ -736,5 +741,28 @@ func TestCaptureNilStepsBecomeEmptyArray(t *testing.T) {
 	}
 	if rec := do(t, s, "POST", "/api/devices/AAA/capture/stop", "{}"); !strings.Contains(rec.Body.String(), `"steps":[]`) {
 		t.Errorf("stop steps not normalized: %s", rec.Body)
+	}
+}
+
+// TestTreePayloadForeground covers the app-lifecycle → foreground mapping:
+// an empty or foreground state reads as foreground (absence of the signal
+// must never block), any background/not-running state as not.
+func TestTreePayloadForeground(t *testing.T) {
+	cases := map[string]bool{
+		"":                           true,
+		"runningForeground":          true,
+		"runningBackground":          false,
+		"runningBackgroundSuspended": false,
+		"notRunning":                 false,
+		"unknown":                    false,
+	}
+	for state, wantFg := range cases {
+		p := treePayload(runner.Snapshot{AppState: state})
+		if p["foreground"] != wantFg {
+			t.Errorf("appState %q: foreground=%v, want %v", state, p["foreground"], wantFg)
+		}
+		if p["appState"] != state {
+			t.Errorf("appState %q not echoed on payload: %v", state, p["appState"])
+		}
 	}
 }

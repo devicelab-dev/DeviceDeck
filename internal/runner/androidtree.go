@@ -155,6 +155,16 @@ func (e *AndroidEngine) Snapshot(_ context.Context, _ string) ([]Node, error) {
 	return convertAndroidElements(elems, w, h), nil
 }
 
+// SnapshotState satisfies engineAPI. Like the rest of AndroidEngine it runs
+// only against a real emulator (coverage waiver, as AndroidEngine.Snapshot).
+// Android's AccessibilityService page source carries no app-lifecycle state,
+// so AppState is empty and a caller treats "unknown" and empty alike — the
+// foreground annotation is simply absent, never a false claim.
+func (e *AndroidEngine) SnapshotState(ctx context.Context, appBundleID string) (Snapshot, error) {
+	nodes, err := e.Snapshot(ctx, appBundleID)
+	return Snapshot{Nodes: nodes}, err
+}
+
 // Stop tears the session down, gracefully first.
 func (e *AndroidEngine) Stop(context.Context) error {
 	e.mu.Lock()

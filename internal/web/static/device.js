@@ -564,8 +564,18 @@ let lastHash = null;
 // goes in the root's name because a name is the only thing a snapshot
 // carries, and the root is ours — putting it anywhere else would add our
 // words to the app's own content.
-function nameScreen(hash) {
-  mirror.setAttribute("aria-label", hash ? `device screen ${hash.slice(0, 8)}` : "device");
+function nameScreen(hash, foreground) {
+  const base = hash ? `device screen ${hash.slice(0, 8)}` : "device";
+  // When the app is not frontmost the mirror still holds its last
+  // screen — iOS keeps a backgrounded app's tree, so the controls are
+  // all still here and would still be clicked. The tree cannot show
+  // this; the app's own lifecycle state can. It goes in the root name,
+  // the one channel a snapshot carries, so an agent reads "app not in
+  // foreground" rather than acting on a screen that is not on the
+  // device. Annotated, never blocked: the tap still forwards, because a
+  // wrong state read must not strand a caller.
+  mirror.setAttribute("aria-label", foreground === false ? `${base} — app not in foreground` : base);
+  mirror.setAttribute("data-dd-foreground", foreground === false ? "false" : "true");
 }
 
 // The server decides what counts as a change — it excludes geometry noise
@@ -639,7 +649,7 @@ async function syncTree() {
 function applyTree(payload, held) {
   const before = lastTreeJSON;
   renderMirror(payload.nodes);
-  nameScreen(payload.hash);
+  nameScreen(payload.hash, payload.foreground);
   lastInteraction = payload.interaction || "";
   if (lastTreeJSON !== before) lastActivity = Date.now();
   if (payload.hash !== lastHash) resetScroll();

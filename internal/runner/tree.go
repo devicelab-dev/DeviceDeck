@@ -51,21 +51,30 @@ func NewTreeClient(host string, port int) *TreeClient {
 // Snapshot returns the full UI tree for appBundleID (empty = foreground app,
 // runner-side default).
 func (t *TreeClient) Snapshot(ctx context.Context, appBundleID string) ([]Node, error) {
+	snap, err := t.SnapshotState(ctx, appBundleID)
+	return snap.Nodes, err
+}
+
+// SnapshotState is Snapshot plus the app's lifecycle state, read from the
+// same dump. A snapshot is not an interaction command, so the runner does
+// not activate the app first: AppState is its true frontmost/background
+// state, which the node tree cannot report reliably.
+func (t *TreeClient) SnapshotState(ctx context.Context, appBundleID string) (Snapshot, error) {
 	data, err := t.client.Call(ctx, dlios.Command{
 		Command:     dlios.CmdSnapshot,
 		AppBundleID: appBundleID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("runner snapshot: %w", err)
+		return Snapshot{}, fmt.Errorf("runner snapshot: %w", err)
 	}
 	if data == nil {
-		return nil, fmt.Errorf("runner snapshot: empty response")
+		return Snapshot{}, fmt.Errorf("runner snapshot: empty response")
 	}
 	// Culled here rather than in the browser: the console, the device
 	// page and Flow Capture all read this tree, and a flow recorded
 	// against a screen nobody can see is the failure that survives to
 	// real hardware.
-	return OnScreen(convertNodes(data.Nodes)), nil
+	return Snapshot{Nodes: OnScreen(convertNodes(data.Nodes)), AppState: data.AppState}, nil
 }
 
 func convertNodes(in []dlios.SnapshotNode) []Node {
@@ -102,9 +111,10 @@ type Engine struct {
 
 // StartEngine builds (first run only) and launches the runner on udid.
 //
-// Coverage waiver: StartEngine, Engine.Snapshot, and Engine.Stop wrap the
-// xcodebuild-driven runner lifecycle and only execute against a real booted
-// simulator; they are exercised by end-to-end runs, not unit tests.
+// Coverage waiver: StartEngine, Engine.Snapshot, Engine.SnapshotState, and
+// Engine.Stop wrap the xcodebuild-driven runner lifecycle and only execute
+// against a real booted simulator; they are exercised by end-to-end runs,
+// not unit tests.
 func StartEngine(ctx context.Context, udid string) (*Engine, error) {
 	// Embedded, not installed: the runner source ships inside the pinned
 	// maestro-runner module, so the runner DeviceDeck builds always
@@ -129,6 +139,11 @@ func (e *Engine) Snapshot(ctx context.Context, appBundleID string) ([]Node, erro
 	return e.tree.Snapshot(ctx, appBundleID)
 }
 
+// SnapshotState fetches the UI tree and the app's lifecycle state.
+func (e *Engine) SnapshotState(ctx context.Context, appBundleID string) (Snapshot, error) {
+	return e.tree.SnapshotState(ctx, appBundleID)
+}
+
 // Stop shuts the runner down, gracefully first.
 func (e *Engine) Stop(ctx context.Context) error {
 	return dlios.GracefulShutdown(ctx, e.client, e.handle)
@@ -138,6 +153,7 @@ func (e *Engine) Stop(ctx context.Context) error {
 // by test fakes so cache behavior is testable without xcodebuild.
 type engineAPI interface {
 	Snapshot(ctx context.Context, appBundleID string) ([]Node, error)
+	SnapshotState(ctx context.Context, appBundleID string) (Snapshot, error)
 	Stop(ctx context.Context) error
 }
 
@@ -172,21 +188,28 @@ func NewEngines() *Engines {
 // alive; restarting a live engine over an app-level error (APP_NOT_RUNNING,
 // a caught in-runner exception) just burns the startup cost for nothing.
 func (s *Engines) Snapshot(ctx context.Context, udid, appBundleID string) ([]Node, error) {
+	snap, err := s.SnapshotState(ctx, udid, appBundleID)
+	return snap.Nodes, err
+}
+
+// SnapshotState is Snapshot carrying the app's lifecycle state, with the
+// same evict-and-retry behavior.
+func (s *Engines) SnapshotState(ctx context.Context, udid, appBundleID string) (Snapshot, error) {
 	e, err := s.engine(ctx, udid)
 	if err != nil {
-		return nil, err
+		return Snapshot{}, err
 	}
-	nodes, err := e.Snapshot(ctx, appBundleID)
+	snap, err := e.SnapshotState(ctx, appBundleID)
 	var runnerErr *dlios.RunnerError
 	if err == nil || ctx.Err() != nil || errors.As(err, &runnerErr) {
-		return nodes, err
+		return snap, err
 	}
 	slog.Warn("tree snapshot failed, restarting engine", "udid", udid, "error", err)
 	s.evict(ctx, udid, e)
 	if e, err = s.engine(ctx, udid); err != nil {
-		return nil, fmt.Errorf("restart tree engine: %w", err)
+		return Snapshot{}, fmt.Errorf("restart tree engine: %w", err)
 	}
-	return e.Snapshot(ctx, appBundleID)
+	return e.SnapshotState(ctx, appBundleID)
 }
 
 // evict drops failed from the cache and stops it — unless a concurrent

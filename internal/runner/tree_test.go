@@ -107,7 +107,10 @@ type fakeEngine struct {
 }
 
 func (f *fakeEngine) Snapshot(context.Context, string) ([]Node, error) { return f.nodes, f.err }
-func (f *fakeEngine) Stop(context.Context) error                       { f.stopped = true; return nil }
+func (f *fakeEngine) SnapshotState(context.Context, string) (Snapshot, error) {
+	return Snapshot{Nodes: f.nodes}, f.err
+}
+func (f *fakeEngine) Stop(context.Context) error { f.stopped = true; return nil }
 
 func TestEnginesCachesPerUDID(t *testing.T) {
 	started := map[string]int{}
