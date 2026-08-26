@@ -9,6 +9,10 @@ already use to drive the web. No Appium, no new framework, no new agent to learn
 
 <sub>iOS&nbsp;+&nbsp;Android&nbsp;·&nbsp;native UI mirrored as **real DOM**&nbsp;·&nbsp;your web tools &amp; agents, zero adapter&nbsp;·&nbsp;drive it by hand too, from any machine</sub>
 
+<img src="docs/demo-login.gif" width="300" alt="Stock Playwright driving TestHive on an iOS Simulator through the DOM mirror: typing into the native username and password fields, tapping Sign In, and landing on the logged-in home screen — no mobile-specific code.">
+
+<sub>Stock Playwright — `getByTestId().fill()`, `.click()` — driving a real iOS Simulator through the DOM. No mobile code, no coordinates.</sub>
+
 ![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)
 ![Platform](https://img.shields.io/badge/host-macOS-lightgrey?logo=apple)
 ![iOS + Android](https://img.shields.io/badge/devices-iOS_%2B_Android-success)
