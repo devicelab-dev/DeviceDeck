@@ -1,13 +1,31 @@
+<div align="center">
+
 # DeviceDeck
 
-**Your simulators and emulators in a browser — and the session you drive by hand becomes a test
-your existing framework can run.**
+**Your simulators and emulators become a webpage — drive them with the test tools you already
+own, and turn a session you did by hand into a test that runs unchanged on real hardware.**
+
+<sub>iOS&nbsp;+&nbsp;Android&nbsp;·&nbsp;native UI mirrored as **real DOM**&nbsp;·&nbsp;Flow&nbsp;Capture&nbsp;·&nbsp;MCP&nbsp;server&nbsp;for&nbsp;agents&nbsp;·&nbsp;Playwright&nbsp;/&nbsp;Cypress&nbsp;/&nbsp;Puppeteer&nbsp;with&nbsp;zero&nbsp;adapter</sub>
+
+![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)
+![Platform](https://img.shields.io/badge/platform-macOS-lightgrey?logo=apple)
+![iOS + Android](https://img.shields.io/badge/devices-iOS_%2B_Android-success)
+![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
+![Single binary](https://img.shields.io/badge/ships-single_binary-brightgreen)
+
+[Quick start](#quick-start) · [Examples](examples/) · [Drive with an agent](examples/mcp/) · [How it works](#the-mirror-is-the-point) · [Known limits](#known-limits)
+
+</div>
+
+---
+
+## The mirror is the point
 
 A single Go binary. It streams an iOS Simulator or Android emulator to a browser, mirrors the
 app's native UI tree as **real DOM**, and records what you do into a replayable Maestro flow.
 
-The mirror is the point. Because the device is an ordinary web page, the tools you already own
-drive it with no mobile-specific code and no Appium:
+Because the device is an ordinary web page, the tools you already own drive it with no
+mobile-specific code, no Appium, and no coordinates:
 
 ```ts
 await page.goto(`/device/${udid}?app=dev.devicelab.testhive`);
@@ -17,7 +35,34 @@ await page.getByRole('button', { name: 'Sign In' }).click();
 await expect(page.getByText('Hello, devicelab!')).toBeVisible();
 ```
 
-That is a real iOS Simulator being driven by stock Playwright.
+That is a real iOS Simulator being driven by stock Playwright. The same page, the same selectors,
+drive an Android emulator — and an AI agent drives it through an MCP server.
+
+## What you get
+
+- **A device that is a webpage.** The native accessibility tree is mirrored as real DOM —
+  `data-testid` from identifiers, ARIA roles from element types — so `getByTestId`, `getByRole`,
+  `click`, and `fill` all just work. No driver, no DSL, no coordinates.
+- **The tools you already know.** Playwright, Cypress, and Puppeteer each drive both platforms
+  with zero adapter; any browser driver does. See runnable [`examples/`](examples/).
+- **Flow Capture.** Record a session by hand and it becomes a Maestro flow with **durable
+  selectors** that replays unchanged on real hardware — the funnel from "I did this once" to
+  "this is a test."
+- **Agents, first-class.** `devicedeck mcp` is a Model Context Protocol server, and a
+  [Claude Code plugin](examples/mcp/) ships with it — an agent lists, boots, launches, inspects,
+  taps, and screenshots devices through the one core.
+- **Typing that actually lands.** Every keystroke is verified against the device's own read-back
+  and retyped if it drifted, so a loaded machine does not silently drop a character.
+- **One binary.** No relay, no agent split, no per-tool fork — the same core behind every surface.
+
+## Why not Appium
+
+Every mobile testing framework rebuilds the same four primitives — a driver, a selector language,
+a way to send input, a way to read the tree. DeviceDeck doesn't ship any of them. It makes the
+device a **web page**, so a web driver you already have *is* the driver, its selectors *are* the
+selectors, and its assertions *are* the assertions. The one thing it insists on is **durable
+selectors over coordinates**, because that is what lets a flow captured on a simulator run
+unchanged on a real device — which is the whole point.
 
 ## Status
 
@@ -29,16 +74,16 @@ password fields. A captured flow replays unchanged under a stock `maestro-runner
 50/50 on Android with assertions, and a deliberate negative control confirming the gate can fail.
 
 What that sentence does not cover: it has only ever run on the machine it was built on. Expect
-first-contact problems. See **Known limits** below.
+first-contact problems. See [**Known limits**](#known-limits) below.
 
 ## Requirements
 
-- macOS (the video and input sidecars talk to CoreSimulator)
-- Xcode with at least one iOS Simulator runtime — **iOS 26.2 or newer is strongly recommended**;
-  on 18.6 the simulator's render server crashes under repeated capture
-- For Android: the Android SDK with `adb` and `emulator` on `PATH`
+- **macOS** (the video and input sidecars talk to CoreSimulator)
+- **Xcode** with at least one iOS Simulator runtime — **iOS 26.2 or newer is strongly
+  recommended**; on 18.6 the simulator's render server crashes under repeated capture
+- **For Android:** the Android SDK with `adb` and `emulator` on `PATH`
 
-## Install
+## Quick start
 
 Download a release and run it — the archive holds the binary and its two sidecars, which it
 expects to find beside itself:
@@ -49,7 +94,10 @@ cd devicedeck-<version>-darwin-arm64
 ./devicedeck serve
 ```
 
-From source:
+Then open **<http://127.0.0.1:8787>**, pick a device, and it boots and starts streaming.
+
+<details>
+<summary><strong>Build from source</strong></summary>
 
 ```bash
 make sidecar      # builds the Swift sidecars (macOS, Xcode toolchain)
@@ -57,7 +105,7 @@ make build
 ./devicedeck serve
 ```
 
-Then open <http://127.0.0.1:8787>.
+</details>
 
 ## Using it
 
@@ -98,9 +146,10 @@ field's contents live in its value, not its text, which is the one place the mir
 "every native node is a div".
 
 **Your own tests** point at `/device/{udid}?app={bundleId}` and use ordinary selectors.
-`examples/` has runnable Playwright, Cypress and Puppeteer projects, and `examples/captured/`
-holds flows recorded through the console — including one from a Flutter app and one from React
-Navigation. Note that **a device serves one driver at a time**; run with a single worker.
+[`examples/`](examples/) has runnable Playwright, Cypress and Puppeteer projects — each with a
+login and a checkout journey — and [`examples/captured/`](examples/captured/) holds flows recorded
+through the console, including one from a Flutter app and one from React Navigation. Note that
+**a device serves one driver at a time**; run with a single worker.
 
 **Agents drive it through an MCP server.** `devicedeck mcp` speaks the Model Context Protocol on
 stdin/stdout — a thin adapter over the same API — so an agent (Claude, Cursor, any MCP client)
@@ -141,14 +190,14 @@ on durable selectors.
 
 ## Licence
 
-Apache License 2.0 — see `LICENSE`.
+Apache License 2.0 — see [`LICENSE`](LICENSE).
 
 ## Built on
 
 [maestro-runner](https://github.com/devicelab-dev/maestro-runner) for device drivers and flow
 replay, both Apache-2.0. The Swift sidecars derive from
 [baguette](https://github.com/tddworks/baguette) (Apache-2.0) and
-[tapflow](https://github.com/jo-duchan/tapflow) (MIT); `ATTRIBUTION.md` records what was reused
-and where it lives.
+[tapflow](https://github.com/jo-duchan/tapflow) (MIT); [`ATTRIBUTION.md`](ATTRIBUTION.md) records
+what was reused and where it lives.
 
-Built by [DeviceLab.dev](https://devicelab.dev)
+Built by [**DeviceLab.dev**](https://devicelab.dev)
