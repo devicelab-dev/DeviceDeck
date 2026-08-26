@@ -2,10 +2,12 @@
 
 # DeviceDeck
 
-**Your iOS Simulators and Android emulators as a webpage — use them by hand, automate them with
-the test tools you already own, or hand them to an AI agent. From any machine.**
+### Automate your iOS and Android app like a web app.
 
-<sub>iOS&nbsp;+&nbsp;Android&nbsp;·&nbsp;native UI mirrored as **real DOM**&nbsp;·&nbsp;Playwright&nbsp;/&nbsp;Cypress&nbsp;/&nbsp;Puppeteer with zero adapter&nbsp;·&nbsp;MCP&nbsp;server&nbsp;for&nbsp;agents</sub>
+**With the tools you already know — Playwright, Cypress, Puppeteer — and the same AI agents you
+already use to drive the web. No Appium, no new framework, no new agent to learn.**
+
+<sub>iOS&nbsp;+&nbsp;Android&nbsp;·&nbsp;native UI mirrored as **real DOM**&nbsp;·&nbsp;your web tools &amp; agents, zero adapter&nbsp;·&nbsp;drive it by hand too, from any machine</sub>
 
 ![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)
 ![Platform](https://img.shields.io/badge/host-macOS-lightgrey?logo=apple)
@@ -13,7 +15,7 @@ the test tools you already own, or hand them to an AI agent. From any machine.**
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
 ![Single binary](https://img.shields.io/badge/ships-single_binary-brightgreen)
 
-[Quick start](#quick-start) · [Three ways to drive it](#three-ways-to-drive-it) · [From any machine](#from-any-machine) · [Examples](examples/) · [Known limits](#known-limits)
+[Quick start](#quick-start) · [No new tool, no new skill](#no-new-tool-no-new-skill) · [From any machine](#from-any-machine) · [Examples](examples/) · [Known limits](#known-limits)
 
 </div>
 
@@ -37,15 +39,19 @@ await expect(page.getByText('Hello, devicelab!')).toBeVisible();
 That is a real iOS Simulator driven by stock Playwright. The same page and the same selectors drive
 an Android emulator — or an AI agent through the MCP server.
 
-## Three ways to drive it
+## No new tool, no new skill
 
-| Surface | Who | How |
-| --- | --- | --- |
-| **Manual** | a person | the console — boot a device, watch the live stream, click and type, **Inspect** the native tree |
-| **Automation** | your tests / CI | Playwright, Cypress, or Puppeteer against the DOM mirror — **zero adapter** |
-| **Agents** | an AI | the `devicedeck mcp` server + a Claude Code plugin |
+Because the device is a web page, you bring nothing new to mobile:
 
-Same web-based core behind all three — no per-surface fork, no Xcode project to open, no Appium.
+- **Your tests just work.** Playwright, Cypress, or Puppeteer drive it by selector — `getByRole`,
+  `getByTestId`, `fill`, `click`. Zero adapter, no Appium.
+- **Your agents just work.** An AI agent that already drives web apps drives your mobile app the same
+  way — it reuses the browser skills it already has. The others make the agent learn a bespoke tool
+  set or a vision model; here there is nothing to learn.
+- **You can just click it.** Open the console and drive the device by hand in the browser — boot,
+  watch, tap, type, and **Inspect** the native tree.
+
+One core behind all three — no per-surface fork, no Xcode project to open.
 
 ## From any machine
 
