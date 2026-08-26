@@ -54,6 +54,10 @@ drive an Android emulator — and an AI agent drives it through an MCP server.
 - **Typing that actually lands.** Every keystroke is verified against the device's own read-back
   and retyped if it drifted, so a loaded machine does not silently drop a character.
 - **One binary.** No relay, no agent split, no per-tool fork — the same core behind every surface.
+- **One host, any client.** The device is a webpage, so one Mac runs the whole simulator and
+  emulator farm and serves it on your network (`serve --addr 0.0.0.0:8787`); teammates on Linux,
+  Windows, or another Mac drive them from their own browser, tests, or agent — no macOS on the
+  client side. A device serves one driver at a time, so it is a farm of *N* devices for *N* people.
 
 ## Why not Appium
 
@@ -78,7 +82,9 @@ first-contact problems. See [**Known limits**](#known-limits) below.
 
 ## Requirements
 
-- **macOS** (the video and input sidecars talk to CoreSimulator)
+- **macOS to *host*** — iOS Simulators, `simctl`/CoreSimulator, and the Swift sidecars are
+  macOS-only, so the machine that runs the devices is a Mac. **Clients are any OS:** the surface is
+  a web page, so tests and agents drive it from Linux, Windows, or another Mac over the network
 - **Xcode** with at least one iOS Simulator runtime — **iOS 26.2 or newer is strongly
   recommended**; on 18.6 the simulator's render server crashes under repeated capture
 - **For Android:** the Android SDK with `adb` and `emulator` on `PATH`
@@ -187,6 +193,10 @@ on durable selectors.
   terminate+launch, the surprise that makes web-style tests flaky against it. `POST /app/launch`
   wipes the app's data first *by default*, starting at a first-run screen the way a new automation
   session expects; pass `?reset=no` to resume where the last session left off.
+- **The server is unauthenticated.** It binds to `127.0.0.1` by default; exposing it with
+  `--addr` to share devices with a team is fine on a trusted network, but there is no access
+  control yet — do not hang it on the open internet as-is. A LAN/tunnel-with-auth story is planned,
+  not built.
 
 ## Licence
 
