@@ -40,8 +40,9 @@ SRC="$(find "$TMP" -maxdepth 1 -type d -name 'devicedeck-*' | head -1)"
 say "Installing to ${LIBDIR}…"
 mkdir -p "$LIBDIR"
 cp "$SRC"/devicedeck "$SRC"/devicedeck-hid "$SRC"/devicedeck-video "$LIBDIR"/
-# The release binaries are not notarized yet, so strip the download quarantine
-# or Gatekeeper blocks them on first run.
+# Signed + notarized builds pass Gatekeeper on their own, and curl does not set
+# the quarantine bit anyway — this strip is a harmless fallback for unsigned/dev
+# archives or a browser-downloaded tarball.
 xattr -dr com.apple.quarantine "$LIBDIR" 2>/dev/null || true
 
 # Symlink all three next to each other on PATH — the server looks for each
