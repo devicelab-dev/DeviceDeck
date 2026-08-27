@@ -93,8 +93,25 @@ problems. See [**Known limits**](#known-limits).
 
 ## Quick start
 
-Download a release and run it — the archive holds the binary and its two sidecars, which it expects
-to find beside itself:
+Install it and start the server:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/devicelab-dev/DeviceDeck/main/install.sh | bash
+devicedeck serve
+```
+
+Then open **<http://127.0.0.1:8787>**, pick a device, and it boots and starts streaming.
+
+<details>
+<summary><strong>Other ways to install</strong></summary>
+
+**Homebrew** (once the tap is set up):
+
+```bash
+brew install devicelab-dev/devicedeck/devicedeck
+```
+
+**From a release archive** — it holds the binary and its two sidecars, which it expects beside itself:
 
 ```bash
 tar xzf devicedeck-<version>-darwin-arm64.tar.gz
@@ -102,13 +119,10 @@ cd devicedeck-<version>-darwin-arm64
 ./devicedeck serve
 ```
 
-Then open **<http://127.0.0.1:8787>**, pick a device, and it boots and starts streaming.
-
-<details>
-<summary><strong>Build from source</strong></summary>
+**From source** (needs the Xcode toolchain for the Swift sidecars):
 
 ```bash
-make sidecar      # builds the Swift sidecars (macOS, Xcode toolchain)
+make sidecar
 make build
 ./devicedeck serve
 ```

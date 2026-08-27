@@ -1,0 +1,46 @@
+# Cut a release when a v* tag is pushed: build the Swift sidecars and the Go
+# binary on macOS, package them side by side with `make release`, and upload
+# the archive to the GitHub Release that install.sh downloads.
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# macOS runner because the sidecars link CoreSimulator. Both arches are built
+# as separate jobs so Intel and Apple Silicon each get a native archive.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - runner: macos-14      # Apple Silicon
+            arch: arm64
+          - runner: macos-13      # Intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Version from tag
+        id: v
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build sidecars + binary and package
+        run: make release VERSION=${{ steps.v.outputs.version }}
+
+      - name: Upload archive to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/devicedeck-${{ steps.v.outputs.version }}-darwin-${{ matrix.arch }}.tar.gz
+          fail_on_unmatched_files: true
