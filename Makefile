@@ -32,8 +32,11 @@ lint:
 # before falling back to the Swift build directory. macOS only — the sidecars
 # talk to CoreSimulator, so there is nothing to ship elsewhere.
 stage: sidecar
-	go build -trimpath -ldflags "$(LDFLAGS)" -o $(DIST)/$(BINARY) ./cmd/devicedeck
+	go build -trimpath -ldflags "$(LDFLAGS) -s -w" -o $(DIST)/$(BINARY) ./cmd/devicedeck
 	cp sidecar/.build/release/devicedeck-hid sidecar/.build/release/devicedeck-video $(DIST)/
+	# Scrub any absolute local paths (embedded dep contents, Swift build paths)
+	# and fail the build if any survive. Runs before signing.
+	./scripts/redact-local-paths.sh $(DIST)
 	# The archive is a distribution, so it carries the terms with it:
 	# Apache-2.0 asks that recipients get the licence, and the upstream
 	# notices travel with the sidecars they describe.
