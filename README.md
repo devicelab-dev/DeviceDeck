@@ -19,11 +19,36 @@ already use to drive the web. No Appium, no new framework, no new agent to learn
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
 ![Single binary](https://img.shields.io/badge/ships-single_binary-brightgreen)
 
-[Quick start](#quick-start) · [No new tool, no new skill](#no-new-tool-no-new-skill) · [From any machine](#from-any-machine) · [Examples](examples/) · [Known limits](#known-limits)
+[Two commands](#two-commands-two-superpowers) · [Quick start](#quick-start) · [From any machine](#from-any-machine) · [Examples](examples/) · [Known limits](#known-limits)
 
 </div>
 
 ---
+
+## Two commands, two superpowers
+
+**1. Share your simulators — for manual testing.**
+
+```bash
+devicedeck serve --addr 0.0.0.0:8787
+```
+
+Anyone on your team then drives any simulator or emulator **from their own browser, on any
+machine** — tap, type, **Inspect** the native tree — with no Xcode, no Android Studio, and no
+local device. Your Macs' sims, shared like a web app.
+
+**2. Automate it — with the tools you already use.**
+
+```bash
+claude mcp add playwright npx @playwright/mcp@latest    # the browser tool your agent already has
+claude plugin marketplace add devicelab-dev/DeviceDeck  # DeviceDeck's skills (+ optional MCP)
+```
+
+Your AI agent now drives your mobile app through **Playwright MCP** — the same browser tool it uses
+for the web — and your Playwright/Cypress **tests** drive it by selector too. It's real DOM, so: no
+Appium, no new tool, no new skill.
+
+One binary behind both — nothing to fork, no Xcode project to open.
 
 ## A device is a webpage
 
@@ -42,19 +67,6 @@ await expect(page.getByText('Hello, devicelab!')).toBeVisible();
 
 That is a real iOS Simulator driven by stock Playwright. The same page and the same selectors drive
 an Android emulator — or an AI agent through the browser tools it already has.
-
-## No new tool, no new skill
-
-Because the device is a web page, you bring nothing new to mobile:
-
-- **Your tests just work.** Playwright, Cypress, or Puppeteer drive it by selector — `getByRole`,
-  `getByTestId`, `fill`, `click`. Zero adapter, no Appium.
-- **Your agents just work.** An AI agent that already drives web apps drives your mobile app the same
-  way — it reuses the browser skills it already has, with nothing new to learn.
-- **You can just click it.** Open the console and drive the device by hand in the browser — boot,
-  watch, tap, type, and **Inspect** the native tree.
-
-One core behind all three — no per-surface fork, no Xcode project to open.
 
 ## From any machine
 
