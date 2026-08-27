@@ -79,3 +79,7 @@ boot, install, and launch, DeviceDeck's MCP adds `list_devices`, `boot_device`, 
 (a `.app` for a Simulator or a `.apk` for an emulator — not a device `.ipa`), and `launch_app`
 (which also takes an `appFile` to install-then-launch in one call); `device_page_url` returns the
 page to hand to Playwright MCP. Otherwise a booted device plus Playwright MCP is all you need.
+
+**If the app is not installed** (a launch fails with *"is it installed?"*) **or you were not given
+its file, ask the user** for the `.app`/`.apk` path or the bundle id — do not guess a bundle id or
+fabricate a path.

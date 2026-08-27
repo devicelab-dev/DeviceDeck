@@ -35,3 +35,7 @@ Simulator or a `.apk` for an emulator, not a device `.ipa`), `launch_app` (which
 `appFile` to install-then-launch), and `device_page_url` (which returns the page to hand to the
 browser MCP). It's optional: driving a booted, installed device needs only your browser MCP. See
 [`examples/mcp/`](../examples/mcp/).
+
+If the app is not installed (a launch fails with *"is it installed?"*) or the agent was not given
+its file, it should **ask the user** for the `.app`/`.apk` path or the bundle id — not guess a
+bundle id or fabricate a path.
