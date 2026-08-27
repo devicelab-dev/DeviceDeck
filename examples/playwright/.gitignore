@@ -2,4 +2,5 @@ node_modules/
 test-results/
 playwright-report/
 demo/out/
+demo/out-agent/
 demo/login.gif
