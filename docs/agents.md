@@ -29,7 +29,9 @@ elsewhere, point the agent at [`skills/`](../skills/) with one line in your proj
 
 ## When the agent manages devices itself
 
-To have the agent *pick, boot, and launch* devices (not a pre-booted one), DeviceDeck ships its own
-MCP — `devicedeck mcp` — with `list_devices`, `boot_device`, `launch_app`, and `device_page_url`
-(which returns the page to hand to the browser MCP). It's optional: driving a booted device needs
-only your browser MCP. See [`examples/mcp/`](../examples/mcp/).
+To have the agent *pick, boot, install, and launch* devices (not a pre-booted one), DeviceDeck ships
+its own MCP — `devicedeck mcp` — with `list_devices`, `boot_device`, `install_app` (a `.app` for a
+Simulator or a `.apk` for an emulator, not a device `.ipa`), `launch_app` (which also accepts an
+`appFile` to install-then-launch), and `device_page_url` (which returns the page to hand to the
+browser MCP). It's optional: driving a booted, installed device needs only your browser MCP. See
+[`examples/mcp/`](../examples/mcp/).

@@ -75,6 +75,21 @@ func (c *Client) LaunchApp(ctx context.Context, serial, appID string) error {
 	return nil
 }
 
+// Install adds an APK to the emulator. -r reinstalls over an existing copy
+// so re-running a build does not fail on "already installed". adb can
+// report a failure on stdout with a zero exit code, so the output is
+// checked as well as the process error.
+func (c *Client) Install(ctx context.Context, serial, apkPath string) error {
+	out, err := c.run(ctx, "adb", "-s", serial, "install", "-r", apkPath)
+	if err != nil {
+		return fmt.Errorf("install %s on %s: %w", apkPath, serial, err)
+	}
+	if strings.Contains(string(out), "Failure") {
+		return fmt.Errorf("install %s on %s: %s", apkPath, serial, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 // Kill powers the emulator off via its console. DeviceDeck calls this on
 // exit for the emulators it drove — the counterpart to the simulator's
 // Shutdown — so a session leaves no detached emulator running. `adb emu

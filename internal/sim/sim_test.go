@@ -220,3 +220,26 @@ func TestResetAppWipeFailure(t *testing.T) {
 		t.Fatalf("expected a reset error, got %v", err)
 	}
 }
+
+func TestInstall(t *testing.T) {
+	var got string
+	c := &Client{run: func(_ context.Context, name string, args ...string) ([]byte, error) {
+		got = name + " " + strings.Join(args, " ")
+		return nil, nil
+	}}
+	if err := c.Install(context.Background(), "UDID-1", "/path/My.app"); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if !strings.Contains(got, "simctl install UDID-1 /path/My.app") {
+		t.Fatalf("call = %q", got)
+	}
+}
+
+func TestInstallError(t *testing.T) {
+	c := &Client{run: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		return nil, errors.New("no such file")
+	}}
+	if err := c.Install(context.Background(), "UDID-1", "/x.app"); err == nil {
+		t.Fatal("expected an install error")
+	}
+}

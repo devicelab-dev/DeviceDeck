@@ -33,14 +33,15 @@ Most MCP clients take a command and args. For example, in a client's config:
 | --- | --- |
 | `list_devices` | Every simulator/emulator, with udid/serial, name, and boot state |
 | `boot_device` | Boot one and wait for it to be ready |
-| `launch_app` | Launch an app (fresh by default; `fresh:false` resumes) |
+| `install_app` | Install a `.app` (Simulator) or `.apk` (emulator) from a path — not a device `.ipa` |
+| `launch_app` | Launch an app (fresh by default; `fresh:false` resumes; `appFile` installs first) |
 | `ui_tree` | The device's current UI tree as JSON — what to act on |
 | `tap` | Tap an element by its testid — resolved against the tree, a durable selector, not a coordinate |
 | `assert_visible` | Check an element is on screen, by testid or by visible text |
 | `screenshot` | Capture the device screen as a PNG image, for reasoning over pixels |
 | `device_page_url` | The automation-page URL to open with the agent's own browser tools and drive by selector |
 
-The pattern: `list_devices` → `boot_device` → `launch_app` → read `ui_tree` to
+The pattern: `list_devices` → `boot_device` → `install_app` (if needed) → `launch_app` → read `ui_tree` to
 see what's on screen → `tap` and `assert_visible` by testid to act and check.
 Everything is selector-based — the same durable identifiers a captured flow
 uses — so what an agent does here is reviewable and runs on real hardware

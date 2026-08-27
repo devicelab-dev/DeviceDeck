@@ -38,6 +38,7 @@ type DeviceBooter interface {
 type AppLauncher interface {
 	LaunchApp(ctx context.Context, udid, appID string) error
 	ResetApp(ctx context.Context, udid, appID string) error
+	Install(ctx context.Context, udid, appPath string) error
 }
 
 // Screenshotter captures a device's screen as PNG bytes.
@@ -124,6 +125,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/devices", s.handleDevices)
 	mux.HandleFunc("POST /api/devices/{udid}/boot", s.handleBoot)
 	mux.HandleFunc("POST /api/devices/{udid}/app/launch", s.handleLaunchApp)
+	mux.HandleFunc("POST /api/devices/{udid}/app/install", s.handleInstallApp)
 	mux.HandleFunc("GET /api/devices/{udid}/screenshot", s.handleScreenshot)
 	mux.HandleFunc("GET /api/devices/{udid}/tree", s.handleTree)
 	mux.HandleFunc("GET /api/devices/{udid}/video", s.handleVideoWS)
@@ -164,7 +166,12 @@ func (s *Server) handleBoot(w http.ResponseWriter, r *http.Request) {
 }
 
 type launchRequest struct {
-	App string `json:"app"`
+	App     string `json:"app"`
+	AppFile string `json:"appFile,omitempty"`
+}
+
+type installRequest struct {
+	AppFile string `json:"appFile"`
 }
 
 // handleLaunchApp starts an app at a first-run screen by default — data
@@ -180,6 +187,18 @@ func (s *Server) handleLaunchApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	udid := r.PathValue("udid")
+	// An app file installs it first — the one-call "ready" path: install,
+	// then reset + launch below.
+	if req.AppFile != "" {
+		if err := validateAppFile(udid, req.AppFile); err != nil {
+			httpError(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := s.launch.Install(r.Context(), udid, req.AppFile); err != nil {
+			httpError(w, http.StatusBadGateway, err)
+			return
+		}
+	}
 	// Launch fresh by default: wipe the app's stored data first so the run
 	// begins at a first-run screen — logged out — which is the clean slate
 	// a new automation session expects (Appium resets between sessions
@@ -206,6 +225,27 @@ func (s *Server) handleLaunchApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, okResponse("launch"))
+}
+
+// handleInstallApp installs a .app (iOS Simulator) or .apk (Android
+// emulator) onto a device from a path on the machine running the server.
+// The guard rejects a device .ipa and a platform mismatch with a clear
+// message before simctl/adb is even called.
+func (s *Server) handleInstallApp(w http.ResponseWriter, r *http.Request) {
+	var req installRequest
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	udid := r.PathValue("udid")
+	if err := validateAppFile(udid, req.AppFile); err != nil {
+		httpError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.launch.Install(r.Context(), udid, req.AppFile); err != nil {
+		httpError(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, okResponse("install"))
 }
 
 // snapshotter binds the tree source to one device and app, which is the

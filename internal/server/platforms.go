@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 
 	"github.com/devicelab-dev/DeviceDeck/internal/platform"
@@ -82,6 +84,40 @@ func (r LaunchRouter) ResetApp(ctx context.Context, udid, appID string) error {
 		return r.Android.ResetApp(ctx, udid, appID)
 	}
 	return r.IOS.ResetApp(ctx, udid, appID)
+}
+
+// Install implements AppLauncher with platform routing.
+func (r LaunchRouter) Install(ctx context.Context, udid, appPath string) error {
+	if platform.IsAndroidSerial(udid) {
+		return r.Android.Install(ctx, udid, appPath)
+	}
+	return r.IOS.Install(ctx, udid, appPath)
+}
+
+// validateAppFile rejects an install path that cannot work before the
+// install is attempted, with a message that says what to do instead: a
+// Simulator runs a simulator build (`.app`), not a device `.ipa`, and an
+// emulator takes a `.apk` — and the extension must match the target.
+func validateAppFile(udid, path string) error {
+	if path == "" {
+		return fmt.Errorf("appFile path is required")
+	}
+	android := platform.IsAndroidSerial(udid)
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".apk":
+		if !android {
+			return fmt.Errorf("%s is an Android APK, but %s is an iOS Simulator", filepath.Base(path), udid)
+		}
+	case ".app":
+		if android {
+			return fmt.Errorf("%s is an iOS app bundle, but %s is an Android emulator", filepath.Base(path), udid)
+		}
+	case ".ipa":
+		return fmt.Errorf("%s is a device build (.ipa); an iOS Simulator needs the .app (a simulator build)", filepath.Base(path))
+	default:
+		return fmt.Errorf("unsupported app file %q — use a .app (iOS Simulator) or .apk (Android emulator)", filepath.Base(path))
+	}
+	return nil
 }
 
 // ScreenshotRouter picks the platform's screenshot backend per device.

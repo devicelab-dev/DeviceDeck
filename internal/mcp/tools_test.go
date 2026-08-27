@@ -50,8 +50,8 @@ func TestNewClientTrimsSlash(t *testing.T) {
 
 func TestToolsRegistered(t *testing.T) {
 	tools, order := NewClient("http://x").Tools()
-	if len(tools) != 8 || len(order) != 8 {
-		t.Fatalf("want 8 tools, got %d/%d", len(tools), len(order))
+	if len(tools) != 9 || len(order) != 9 {
+		t.Fatalf("want 9 tools, got %d/%d", len(tools), len(order))
 	}
 	for _, name := range order {
 		if _, ok := tools[name]; !ok {
@@ -153,6 +153,32 @@ func TestLaunchApp(t *testing.T) {
 	}
 	if _, err := f.client().launchApp(raw(map[string]string{"udid": "u1"})); err == nil {
 		t.Error("want error when app missing")
+	}
+}
+
+func TestInstallApp(t *testing.T) {
+	f := newFakeAPI()
+	defer f.close()
+	got, err := f.client().installApp(raw(map[string]string{"udid": "u1", "appFile": "/x/My.app"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.lastPath != "/api/devices/u1/app/install" || !strings.Contains(f.lastBody, "/x/My.app") {
+		t.Errorf("install: %s body=%s", f.lastPath, f.lastBody)
+	}
+	if !strings.Contains(got, "installed") {
+		t.Errorf("result = %q", got)
+	}
+	f.failPost = true
+	if _, err := f.client().installApp(raw(map[string]string{"udid": "u1", "appFile": "/x.app"})); err == nil {
+		t.Error("want error when the install POST fails")
+	}
+	f.failPost = false
+	if _, err := f.client().installApp(raw(map[string]string{"udid": "u1"})); err == nil {
+		t.Error("want error when appFile missing")
+	}
+	if _, err := f.client().installApp(raw(map[string]string{"appFile": "/x.app"})); err == nil {
+		t.Error("want error when udid missing")
 	}
 }
 

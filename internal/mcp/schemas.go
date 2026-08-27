@@ -12,6 +12,10 @@ const (
 		"identifier, role, label, value, and frame. Read it to decide what to act on."
 	descBoot = "Boot a simulator or emulator by udid/serial and wait for it to be ready. A no-op if it " +
 		"is already booted."
+	descInstall = "Install an app on a device from a file path on the machine running the server: a " +
+		".app for an iOS Simulator, a .apk for an Android emulator (not a device .ipa — that is a " +
+		"real-device build). Use it before launch_app when the app is not yet installed; launch_app " +
+		"also accepts an appFile to install-then-launch in one call."
 	descLaunch = "Launch an app on a device and wait until it is taking input. Fresh by default — the " +
 		"app's data is wiped so it starts at a first-run screen, the clean slate a new session expects; " +
 		"pass fresh=false to resume where the last session left off."
@@ -63,6 +67,16 @@ func schemaLaunch() map[string]any {
 		},
 	}
 	return object(props, []string{"udid", "app"})
+}
+
+func schemaInstall() map[string]any {
+	return object(map[string]any{
+		"udid": deviceProp(),
+		"appFile": map[string]any{
+			"type":        "string",
+			"description": "Path to the app file on the server machine: a .app (iOS Simulator) or .apk (Android emulator).",
+		},
+	}, []string{"udid", "appFile"})
 }
 
 // schemaTap is the schema for tap: a device, the testid to tap, and an

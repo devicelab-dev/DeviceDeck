@@ -74,7 +74,8 @@ matter here:
 
 ## Optional: let the agent manage devices
 
-The above assumes a booted device. If you want the **agent itself** to pick, boot, and launch a
-device, DeviceDeck's MCP adds `list_devices`, `boot_device`, and `launch_app`; `device_page_url`
-returns the page to hand to Playwright MCP. Otherwise a booted device plus Playwright MCP is all
-you need.
+The above assumes a booted device with your app installed. If you want the **agent itself** to pick,
+boot, install, and launch, DeviceDeck's MCP adds `list_devices`, `boot_device`, `install_app`
+(a `.app` for a Simulator or a `.apk` for an emulator — not a device `.ipa`), and `launch_app`
+(which also takes an `appFile` to install-then-launch in one call); `device_page_url` returns the
+page to hand to Playwright MCP. Otherwise a booted device plus Playwright MCP is all you need.

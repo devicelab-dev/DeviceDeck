@@ -104,6 +104,18 @@ func (c *Client) ResetApp(ctx context.Context, udid, appID string) error {
 	return nil
 }
 
+// Install adds an app bundle to the simulator. It takes a `.app` — a
+// simulator build — not a device `.ipa`: an `.ipa` carries an on-device
+// (arm64) slice that will not run on a simulator, and simctl rejects it.
+// The caller validates the extension and gives that guidance; this just
+// runs the install.
+func (c *Client) Install(ctx context.Context, udid, appPath string) error {
+	if _, err := c.run(ctx, "xcrun", "simctl", "install", udid, appPath); err != nil {
+		return fmt.Errorf("install %s on %s: %w", appPath, udid, err)
+	}
+	return nil
+}
+
 func (c *Client) Booted(ctx context.Context) ([]Device, error) {
 	all, err := c.list(ctx)
 	if err != nil {

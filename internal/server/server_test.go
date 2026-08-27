@@ -33,6 +33,8 @@ type fakeBackend struct {
 	launchErr  error
 	reset      []string
 	resetErr   error
+	installed  []string
+	installErr error
 	// failAfter, when > 0, makes SendFrame fail once that many frames
 	// have been accepted — exercises mid-gesture sidecar death.
 	failAfter int
@@ -79,6 +81,13 @@ func (f *fakeBackend) ResetApp(_ context.Context, udid, appID string) error {
 	defer f.mu.Unlock()
 	f.reset = append(f.reset, udid+"/"+appID)
 	return f.resetErr
+}
+
+func (f *fakeBackend) Install(_ context.Context, udid, appPath string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.installed = append(f.installed, udid+"/"+appPath)
+	return f.installErr
 }
 
 func (f *fakeBackend) Screenshot(_ context.Context, udid string) ([]byte, error) {
@@ -550,6 +559,88 @@ func TestLaunchApp(t *testing.T) {
 	// Fresh by default: a plain launch resets first.
 	if len(f.reset) != 1 || f.reset[0] != "AAA/com.example" {
 		t.Errorf("plain launch did not reset by default: %v", f.reset)
+	}
+}
+
+func TestInstallApp(t *testing.T) {
+	f := &fakeBackend{}
+	rec := do(t, newTestServer(f), "POST", "/api/devices/EB69B42A/app/install", `{"appFile":"/x/My.app"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("install: %d %s", rec.Code, rec.Body)
+	}
+	if len(f.installed) != 1 || f.installed[0] != "EB69B42A//x/My.app" {
+		t.Errorf("installed = %v", f.installed)
+	}
+}
+
+func TestInstallAppMissingFile(t *testing.T) {
+	f := &fakeBackend{}
+	rec := do(t, newTestServer(f), "POST", "/api/devices/EB69B42A/app/install", `{}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("missing appFile: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestInstallAppBadBody(t *testing.T) {
+	f := &fakeBackend{}
+	rec := do(t, newTestServer(f), "POST", "/api/devices/EB69B42A/app/install", `{bad`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad body: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestInstallAppRejectsIPA(t *testing.T) {
+	f := &fakeBackend{}
+	rec := do(t, newTestServer(f), "POST", "/api/devices/EB69B42A/app/install", `{"appFile":"/x/App.ipa"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("ipa: %d %s", rec.Code, rec.Body)
+	}
+	if len(f.installed) != 0 {
+		t.Errorf("installed despite validation error: %v", f.installed)
+	}
+}
+
+func TestInstallAppError(t *testing.T) {
+	f := &fakeBackend{installErr: errors.New("simctl failed")}
+	rec := do(t, newTestServer(f), "POST", "/api/devices/EB69B42A/app/install", `{"appFile":"/x/My.app"}`)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("install error: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestLaunchAppInstallsFirst(t *testing.T) {
+	f := &fakeBackend{nodes: []runner.Node{{Type: "Button", Label: "Sign In", Enabled: true}}}
+	rec := do(t, newTestServer(f), "POST", "/api/devices/EB69B42A/app/launch",
+		`{"app":"com.example","appFile":"/x/My.app"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("launch+install: %d %s", rec.Code, rec.Body)
+	}
+	if len(f.installed) != 1 || len(f.launched) != 1 {
+		t.Errorf("installed=%v launched=%v", f.installed, f.launched)
+	}
+}
+
+func TestLaunchAppInstallValidationFails(t *testing.T) {
+	f := &fakeBackend{}
+	rec := do(t, newTestServer(f), "POST", "/api/devices/EB69B42A/app/launch",
+		`{"app":"com.example","appFile":"/x/App.ipa"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("ipa in launch: %d %s", rec.Code, rec.Body)
+	}
+	if len(f.launched) != 0 {
+		t.Errorf("launched despite bad appFile: %v", f.launched)
+	}
+}
+
+func TestLaunchAppInstallFails(t *testing.T) {
+	f := &fakeBackend{installErr: errors.New("simctl failed")}
+	rec := do(t, newTestServer(f), "POST", "/api/devices/EB69B42A/app/launch",
+		`{"app":"com.example","appFile":"/x/My.app"}`)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("install fail in launch: %d %s", rec.Code, rec.Body)
+	}
+	if len(f.launched) != 0 {
+		t.Errorf("launched despite install failure: %v", f.launched)
 	}
 }
 

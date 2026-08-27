@@ -250,3 +250,35 @@ func TestKill(t *testing.T) {
 		t.Error("expected a kill error when adb fails")
 	}
 }
+
+func TestInstall(t *testing.T) {
+	var got string
+	c := &Client{run: func(_ context.Context, name string, args ...string) ([]byte, error) {
+		got = name + " " + strings.Join(args, " ")
+		return []byte("Success\n"), nil
+	}}
+	if err := c.Install(context.Background(), "emulator-5554", "/path/app.apk"); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if !strings.Contains(got, "adb -s emulator-5554 install -r /path/app.apk") {
+		t.Fatalf("call = %q", got)
+	}
+}
+
+func TestInstallFailureOnStdout(t *testing.T) {
+	c := &Client{run: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		return []byte("Failure [INSTALL_FAILED_INVALID_APK]"), nil
+	}}
+	if err := c.Install(context.Background(), "emulator-5554", "/x.apk"); err == nil {
+		t.Fatal("expected an error on Failure output")
+	}
+}
+
+func TestInstallError(t *testing.T) {
+	c := &Client{run: func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		return nil, errors.New("device offline")
+	}}
+	if err := c.Install(context.Background(), "emulator-5554", "/x.apk"); err == nil {
+		t.Fatal("expected an install error")
+	}
+}

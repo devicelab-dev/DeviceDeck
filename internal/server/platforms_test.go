@@ -80,11 +80,42 @@ func TestLaunchRouter(t *testing.T) {
 	if len(android.resets) != 1 || len(ios.resets) != 1 {
 		t.Errorf("reset routing wrong: ios=%v android=%v", ios.resets, android.resets)
 	}
+	// Install routes by the same rule.
+	if err := r.Install(context.Background(), "emulator-5554", "/x.apk"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Install(context.Background(), "EB69B42A-4763", "/x.app"); err != nil {
+		t.Fatal(err)
+	}
+	if len(android.installs) != 1 || len(ios.installs) != 1 {
+		t.Errorf("install routing wrong: ios=%v android=%v", ios.installs, android.installs)
+	}
+}
+
+func TestValidateAppFile(t *testing.T) {
+	const ios, android = "EB69B42A-4763", "emulator-5554"
+	for _, c := range []struct{ udid, path string }{{ios, "/x/My.app"}, {android, "/x/app.apk"}} {
+		if err := validateAppFile(c.udid, c.path); err != nil {
+			t.Errorf("validateAppFile(%s, %s) = %v, want nil", c.udid, c.path, err)
+		}
+	}
+	for _, c := range []struct{ udid, path string }{
+		{ios, ""},              // missing path
+		{ios, "/x/App.ipa"},    // device build on a simulator
+		{ios, "/x/app.apk"},    // apk on iOS
+		{android, "/x/My.app"}, // .app on Android
+		{ios, "/x/thing.zip"},  // unknown extension
+	} {
+		if err := validateAppFile(c.udid, c.path); err == nil {
+			t.Errorf("validateAppFile(%s, %q) = nil, want error", c.udid, c.path)
+		}
+	}
 }
 
 type recordingLauncher struct {
-	calls  []string
-	resets []string
+	calls    []string
+	resets   []string
+	installs []string
 }
 
 func (l *recordingLauncher) LaunchApp(_ context.Context, udid, appID string) error {
@@ -94,6 +125,11 @@ func (l *recordingLauncher) LaunchApp(_ context.Context, udid, appID string) err
 
 func (l *recordingLauncher) ResetApp(_ context.Context, udid, appID string) error {
 	l.resets = append(l.resets, udid+"/"+appID)
+	return nil
+}
+
+func (l *recordingLauncher) Install(_ context.Context, udid, appPath string) error {
+	l.installs = append(l.installs, udid+"/"+appPath)
 	return nil
 }
 

@@ -38,23 +38,25 @@ func (c *Client) Tools() (map[string]Tool, []string) {
 		"device_page_url": {Description: descPageURL, InputSchema: schemaDeviceApp(true), Call: c.devicePageURL},
 		"ui_tree":         {Description: descUITree, InputSchema: schemaDeviceApp(false), Call: c.uiTree},
 		"boot_device":     {Description: descBoot, InputSchema: schemaDevice(), Call: c.bootDevice},
+		"install_app":     {Description: descInstall, InputSchema: schemaInstall(), Call: c.installApp},
 		"launch_app":      {Description: descLaunch, InputSchema: schemaLaunch(), Call: c.launchApp},
 		"tap":             {Description: descTap, InputSchema: schemaTap(), Call: c.tap},
 		"assert_visible":  {Description: descAssert, InputSchema: schemaAssert(), Call: c.assertVisible},
 		"screenshot":      {Description: descScreenshot, InputSchema: schemaDevice(), Raw: c.screenshot},
 	}
-	order := []string{"list_devices", "device_page_url", "ui_tree", "boot_device", "launch_app", "tap", "assert_visible", "screenshot"}
+	order := []string{"list_devices", "device_page_url", "ui_tree", "boot_device", "install_app", "launch_app", "tap", "assert_visible", "screenshot"}
 	return tools, order
 }
 
 // deviceArgs is the shape the tools take: which device, which app to scope a
 // tree to, the fresh/resume toggle, and the selector fields the act tools use.
 type deviceArgs struct {
-	UDID   string `json:"udid"`
-	App    string `json:"app"`
-	Fresh  *bool  `json:"fresh"`
-	Testid string `json:"testid"`
-	Text   string `json:"text"`
+	UDID    string `json:"udid"`
+	App     string `json:"app"`
+	AppFile string `json:"appFile"`
+	Fresh   *bool  `json:"fresh"`
+	Testid  string `json:"testid"`
+	Text    string `json:"text"`
 }
 
 // treeNode is the subset of a mirrored element the act tools read: its
@@ -146,6 +148,19 @@ func (c *Client) launchApp(raw json.RawMessage) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("launched %s on %s", a.App, a.UDID), nil
+}
+
+func (c *Client) installApp(raw json.RawMessage) (string, error) {
+	a, err := decodeArgs(raw)
+	if err != nil || a.UDID == "" || a.AppFile == "" {
+		return "", fmt.Errorf("udid and appFile are required")
+	}
+	path := "/api/devices/" + url.PathEscape(a.UDID) + "/app/install"
+	body, _ := json.Marshal(map[string]string{"appFile": a.AppFile})
+	if _, err := c.post(path, body); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("installed %s on %s", a.AppFile, a.UDID), nil
 }
 
 // tap resolves a data-testid to a point on the device and taps it. The
