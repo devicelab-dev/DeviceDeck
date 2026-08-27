@@ -1185,6 +1185,11 @@ window.devicedeck = {
   gesture: (kind) => api("/gesture", { kind }),
   button: (button) => api("/button", { button }),
   key: (usage, modifiers = 0) => api("/key", { usage, modifiers }),
+  // The device video renders to the #video canvas, so a data URL of it is the
+  // device screen alone — no browser chrome, no mirror overlay — which is what
+  // an agent wants to reason over. Needs video streaming; the canvas is
+  // otherwise blank.
+  screenshot: () => canvas.toDataURL("image/png"),
 };
 
 window.addEventListener("resize", positionMirror);
