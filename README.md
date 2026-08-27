@@ -210,4 +210,8 @@ The Swift sidecars derive from [baguette](https://github.com/tddworks/baguette) 
 [tapflow](https://github.com/jo-duchan/tapflow) (MIT); [`ATTRIBUTION.md`](ATTRIBUTION.md) records what
 was reused and where it lives.
 
-Built by [**DeviceLab.dev**](https://devicelab.dev)
+<p align="center">
+  <a href="https://devicelab.dev"><img src="docs/devicelab-logo.png" width="34" alt="DeviceLab"></a>
+  <br>
+  Built by <a href="https://devicelab.dev"><strong>devicelab.dev</strong></a>
+</p>
