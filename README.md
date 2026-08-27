@@ -177,8 +177,8 @@ the ceiling is physics, not an artificial limit.
 
 ## Known limits
 
-- **Android video is ~18 fps** against iOS's ~25, and costs roughly ten times the bandwidth: the
-  emulator's gRPC screenshot stream offers no video codec, so every frame is a full PNG. Emulators
+- **Android video is ~18 fps and much heavier than iOS.** The emulator's gRPC screenshot stream
+  offers no video codec, so every frame is a full PNG rather than an H.264 delta. Emulators
   DeviceDeck boots run headless, because macOS throttles an occluded window and the emulator's window
   is occluded exactly when you are watching the browser.
 - **A freshly launched app swallows touches for about a second** after its screen is already in the
