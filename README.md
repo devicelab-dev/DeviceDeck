@@ -41,7 +41,7 @@ await expect(page.getByText('Hello, devicelab!')).toBeVisible();
 ```
 
 That is a real iOS Simulator driven by stock Playwright. The same page and the same selectors drive
-an Android emulator — or an AI agent through the MCP server.
+an Android emulator — or an AI agent through the browser tools it already has.
 
 ## No new tool, no new skill
 
@@ -154,12 +154,23 @@ say **Add**, work out which one belongs to *Maestro*, and add exactly that:
 That is the disambiguation an [included spec](examples/playwright/tests/platform/mcp-agent.spec.ts)
 drives end to end, and it passes — the agent reuses the browser skills it already has.
 
-`devicedeck mcp` speaks the Model Context Protocol on stdin/stdout — a thin adapter over the same
-API — so an agent (Claude, Cursor, any MCP client) lists, boots, and launches devices, inspects them
-(`ui_tree`, `screenshot`), and acts by durable selector (`tap`, `assert_visible`), then opens the
-device page to drive typing with its own browser tools. A Claude Code plugin bundles the server with
-authoring and triage skills — install it with `claude plugin marketplace add devicelab-dev/DeviceDeck`.
-See [`examples/mcp/`](examples/mcp/).
+The driver is the **browser MCP you already use for the web** — nothing DeviceDeck-specific to learn.
+Add [Playwright MCP](https://github.com/microsoft/playwright-mcp) and DeviceDeck's plugin, then just
+describe the test:
+
+```bash
+claude mcp add playwright npx @playwright/mcp@latest    # the driver — works with any MCP agent
+claude plugin marketplace add devicelab-dev/DeviceDeck  # DeviceDeck's skills (+ optional MCP)
+```
+
+The plugin's **skills** teach the agent the device layer a web agent wouldn't know: durable
+`data-testid` selectors, waiting for the device to echo a typed value before submitting, and native
+gestures on `window.devicedeck`. It works with **any MCP agent** (Claude Code, Cursor, …) — in Claude
+Code the skills load automatically; elsewhere, point the agent at [`skills/`](skills/).
+
+DeviceDeck also ships its own MCP (`devicedeck mcp`) for when the **agent itself** should pick, boot,
+and launch devices (`list_devices`, `boot_device`, `launch_app`) — optional, since driving a booted
+device needs only your browser MCP. See [`examples/mcp/`](examples/mcp/).
 
 ### By hand — the console
 
