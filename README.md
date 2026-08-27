@@ -93,41 +93,35 @@ problems. See [**Known limits**](#known-limits).
 
 ## Quick start
 
-Install it and start the server:
+Install DeviceDeck whichever way you prefer, then run `devicedeck serve`.
+
+**One-line script** — fetches the latest release and puts it on your `PATH`:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/devicelab-dev/DeviceDeck/main/install.sh | bash
-devicedeck serve
 ```
 
-Then open **<http://127.0.0.1:8787>**, pick a device, and it boots and starts streaming.
-
-<details>
-<summary><strong>Other ways to install</strong></summary>
-
-**Homebrew** (once the tap is set up):
-
-```bash
-brew install devicelab-dev/devicedeck/devicedeck
-```
-
-**From a release archive** — it holds the binary and its two sidecars, which it expects beside itself:
+**Release archive** — download it from [Releases](https://github.com/devicelab-dev/DeviceDeck/releases), extract, and run in place (the two sidecars sit beside the binary):
 
 ```bash
 tar xzf devicedeck-<version>-darwin-arm64.tar.gz
 cd devicedeck-<version>-darwin-arm64
-./devicedeck serve
 ```
 
-**From source** (needs the Xcode toolchain for the Swift sidecars):
+**From source** — needs the Xcode toolchain for the Swift sidecars:
 
 ```bash
 make sidecar
 make build
-./devicedeck serve
 ```
 
-</details>
+Then start the server and open the console:
+
+```bash
+devicedeck serve        # → http://127.0.0.1:8787
+```
+
+Pick a device in the console and it boots and starts streaming.
 
 ## Using it
 
