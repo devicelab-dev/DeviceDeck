@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# DeviceDeck installer — downloads the latest release archive (the binary and
-# its two Swift sidecars) and puts `devicedeck` on your PATH.
+# DeviceDeck installer — downloads a release archive (the binary and its two
+# Swift sidecars) and puts `devicedeck` on your PATH.
 #
-#   curl -fsSL https://raw.githubusercontent.com/devicelab-dev/DeviceDeck/main/install.sh | bash
+#   curl -fsSL https://open.devicelab.dev/install/devicedeck | bash
+#   curl -fsSL https://open.devicelab.dev/install/devicedeck | bash -s -- --version 0.1.0
 #
 # macOS only (the sidecars talk to CoreSimulator). Apple Silicon and Intel.
 set -euo pipefail
@@ -22,9 +23,24 @@ case "$(uname -m)" in
   *) err "unsupported architecture: $(uname -m)" ;;
 esac
 
-say "Finding the latest release…"
-TAG="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1)"
-[ -n "$TAG" ] || err "could not find a published release yet — see https://github.com/${REPO}/releases"
+# --version <x> pins a release; with no flag the latest is resolved.
+REQ_VERSION=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --version) REQ_VERSION="${2:-}"; shift 2 ;;
+    --version=*) REQ_VERSION="${1#*=}"; shift ;;
+    *) err "unknown option: $1 (only --version <x> is supported)" ;;
+  esac
+done
+
+if [ -n "$REQ_VERSION" ]; then
+  TAG="v${REQ_VERSION#v}"
+  say "Installing DeviceDeck ${TAG}…"
+else
+  say "Finding the latest release…"
+  TAG="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1)"
+  [ -n "$TAG" ] || err "could not find a published release yet — see https://github.com/${REPO}/releases"
+fi
 VERSION="${TAG#v}"
 ASSET="devicedeck-${VERSION}-darwin-${ARCH}.tar.gz"
 URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"

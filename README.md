@@ -88,10 +88,12 @@ problems. See [**Known limits**](#known-limits).
 
 Install DeviceDeck whichever way you prefer, then run `devicedeck serve`.
 
-**One-line script** — fetches the latest release and puts it on your `PATH`:
+**Install script** — fetches a release and puts `devicedeck` on your `PATH`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/devicelab-dev/DeviceDeck/main/install.sh | bash
+curl -fsSL https://open.devicelab.dev/install/devicedeck | bash
+# a specific version:
+curl -fsSL https://open.devicelab.dev/install/devicedeck | bash -s -- --version 0.1.0
 ```
 
 **Release archive** — download it from [Releases](https://github.com/devicelab-dev/DeviceDeck/releases), extract, and run in place (the two sidecars sit beside the binary):
