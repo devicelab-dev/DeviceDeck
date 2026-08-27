@@ -19,7 +19,7 @@ already use to drive the web. No Appium, no new framework, no new agent to learn
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
 ![Single binary](https://img.shields.io/badge/ships-single_binary-brightgreen)
 
-[Two commands](#two-commands-two-superpowers) · [Quick start](#quick-start) · [From any machine](#from-any-machine) · [Examples](examples/) · [Known limits](#known-limits)
+[Two commands](#two-commands-two-superpowers) · [Quick start](#quick-start) · [Using it](#using-it) · [Docs](docs/) · [Known limits](#known-limits)
 
 </div>
 
@@ -67,21 +67,6 @@ await expect(page.getByText('Hello, devicelab!')).toBeVisible();
 
 That is a real iOS Simulator driven by stock Playwright. The same page and the same selectors drive
 an Android emulator — or an AI agent through the browser tools it already has.
-
-## From any machine
-
-Because the device is a webpage, the machine that *runs* the simulators and the machine that
-*drives* them don't have to be the same. Bind the server to your network —
-
-```bash
-devicedeck serve --addr 0.0.0.0:8787
-```
-
-— and one Mac becomes a **shared device farm**: teammates on Linux, Windows, or another Mac open the
-URL and drive devices from their own browser, tests, or agent. No Xcode, no Android Studio, no local
-simulator on the client at all. A device serves one driver at a time, so it is a farm of *N* devices
-for *N* people. (Automation is cheap over the network — a test reads the lightweight DOM tree, not
-video; the pixel stream is only for a human watching.)
 
 ## Status
 
@@ -139,67 +124,34 @@ Pick a device in the console and it boots and starts streaming.
 
 ### With your tests
 
-Point Playwright, Cypress, or Puppeteer at `/device/{udid}?app={bundleId}` and use ordinary
-selectors — the app's accessibility identifiers are `data-testid`, and roles and labels are ARIA:
-
-```ts
-await page.getByTestId('username-input').fill('devicelab');
-await page.getByTestId('login-button').click();
-await expect(page.getByTestId('cart-button')).toBeVisible();
-```
-
-[`examples/`](examples/) has runnable Playwright, Cypress, and Puppeteer projects — each with a login
-and a checkout journey, written the same way so you can compare the tools side by side. A device
-serves one driver at a time, so run with a single worker.
+Point Playwright, Cypress, or Puppeteer at `/device/{udid}?app={bundleId}` — accessibility ids are
+`data-testid`, roles and labels are ARIA, so you drive it with ordinary selectors (a single worker;
+one driver per device). [`examples/`](examples/) has runnable login + checkout projects for all
+three. **Guide:** [docs/testing.md](docs/testing.md).
 
 ### With an agent
 
 An AI agent drives the device the same way it drives the web: it **snapshots the page**, reasons over
 the tree, and acts by ref — no bespoke tool, no coordinates, no vision model. Here one uses stock
-[Playwright MCP](https://github.com/microsoft/playwright-mcp) to read a list where five buttons all
-say **Add**, work out which one belongs to *Maestro*, and add exactly that:
+[Playwright MCP](https://github.com/microsoft/playwright-mcp) to pick the right **Add** among five
+identical ones and add *Maestro* to the cart:
 
 <div align="center">
 <img src="docs/demo-agent.gif" width="820" alt="An AI agent using Playwright MCP: browser_snapshot returns the product screen as an accessibility tree with five identical Add buttons, a reasoning step picks the one after Maestro (add-to-cart-2, ref e24), browser_click adds it, and opening the cart confirms Maestro was added — not Appium.">
 </div>
 
-That is the disambiguation an [included spec](examples/playwright/tests/platform/mcp-agent.spec.ts)
-drives end to end, and it passes — the agent reuses the browser skills it already has.
-
-The driver is the **browser MCP you already use for the web** — nothing DeviceDeck-specific to learn.
-Add [Playwright MCP](https://github.com/microsoft/playwright-mcp) and DeviceDeck's plugin, then just
-describe the test:
-
-```bash
-claude mcp add playwright npx @playwright/mcp@latest    # the driver — works with any MCP agent
-claude plugin marketplace add devicelab-dev/DeviceDeck  # DeviceDeck's skills (+ optional MCP)
-```
-
-The plugin's **skills** teach the agent the device layer a web agent wouldn't know: durable
-`data-testid` selectors, waiting for the device to echo a typed value before submitting, and native
-gestures on `window.devicedeck`. It works with **any MCP agent** (Claude Code, Cursor, …) — in Claude
-Code the skills load automatically; elsewhere, point the agent at [`skills/`](skills/).
-
-DeviceDeck also ships its own MCP (`devicedeck mcp`) for when the **agent itself** should pick, boot,
-and launch devices (`list_devices`, `boot_device`, `launch_app`) — optional, since driving a booted
-device needs only your browser MCP. See [`examples/mcp/`](examples/mcp/).
+That disambiguation is an [included spec](examples/playwright/tests/platform/mcp-agent.spec.ts) that
+passes end to end. Setup is the two commands from [Two commands](#two-commands-two-superpowers), and
+the plugin's skills teach the agent the device layer. **Guide:** [docs/agents.md](docs/agents.md).
 
 ### By hand — the console
 
-The console lists every simulator and emulator on the machine, running or not. Click one to boot it
-and start streaming. Drive it with your mouse and keyboard, exactly as you would the real thing;
-**Inspect** overlays the native tree so you can read an element's identifier, role, and value.
+The console lists every simulator and emulator, running or not. Click one to boot and stream it;
+drive it with your mouse and keyboard, and **Inspect** overlays the native tree. Share it across a
+team with `--addr` → [docs/device-farm.md](docs/device-farm.md).
 
-### Good to know
-
-- **Only the screen you are on is mirrored.** iOS keeps a screen in the hierarchy after the app
-  navigates away, so the tree reports views nobody can see — a login form, credentials still in its
-  fields, present on every screen that follows. Those are culled, because a selector that resolves to
-  an invisible screen fails silently.
-- **Text fields are real `<input>` elements**, so `fill()`, `inputValue()`, and `toHaveValue()` work
-  as they would on any page — and so does the `browser_type` an AI agent reaches for first. A field's
-  contents live in its value, not its text, the one place the mirror departs from "every native node
-  is a div".
+The mirror has a few quirks a web test wouldn't expect — only the current screen is mirrored, fields
+are real `<input>`s, typing is verified. See [docs/behaviors.md](docs/behaviors.md).
 
 ## Scope
 
