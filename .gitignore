@@ -24,3 +24,10 @@ PLAN-*.md
 RESEARCH-*.md
 research/
 docs_local/
+ROADMAP.md
+LAUNCH-PLAN.md
+
+# Internal AI / dev config — kept local (functional), never published
+CLAUDE.md
+.claude/
+scripts/README.md
