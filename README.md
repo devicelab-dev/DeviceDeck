@@ -4,14 +4,14 @@
 
 ### Automate your iOS and Android app like a web app.
 
-**With the tools you already know — Playwright, Cypress, Puppeteer — and the same AI agents you
-already use to drive the web. No Appium, no new framework, no new agent to learn.**
+**Your AI agent drives it with the browser tools it already uses for the web — and so do your
+Playwright and Cypress tests. No Appium, no new tool.**
 
 <sub>iOS&nbsp;+&nbsp;Android&nbsp;·&nbsp;native UI mirrored as **real DOM**&nbsp;·&nbsp;your web tools &amp; agents, zero adapter&nbsp;·&nbsp;drive it by hand too, from any machine</sub>
 
 <img src="docs/demo-login.gif" width="820" alt="A stock Playwright test on the left runs line by line — page.goto() to a Simulator on a Mac at 10.0.4.21, getByRole().fill() for username and password, click Sign In, expect the logged-in screen — while a browser tab on the right shows the iOS Simulator reacting live and the runner goes green.">
 
-<sub>A stock Playwright test — `page.goto()`, `getByRole().fill()`, `.click()` — running from another machine against an iOS Simulator on a Mac, through the DOM. No Appium, no coordinates.</sub>
+<sub>Stock Playwright driving a real iOS Simulator from another machine — the same DOM an AI agent drives too.</sub>
 
 ![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)
 ![Platform](https://img.shields.io/badge/host-macOS-lightgrey?logo=apple)
@@ -45,28 +45,24 @@ claude plugin marketplace add devicelab-dev/DeviceDeck  # DeviceDeck's skills (+
 ```
 
 Your AI agent now drives your mobile app through **Playwright MCP** — the same browser tool it uses
-for the web — and your Playwright/Cypress **tests** drive it by selector too. It's real DOM, so: no
-Appium, no new tool, no new skill.
+for the web — and your Playwright/Cypress **tests** drive it by selector too. Nothing mobile-specific.
 
 One binary behind both — nothing to fork, no Xcode project to open.
 
-## A device is a webpage
+## How it works
 
-A single Go binary streams an iOS Simulator or Android emulator to a browser and mirrors the app's
-native UI tree as **real DOM** — `data-testid` from accessibility identifiers, ARIA roles from
-element types. So a person clicks it in a browser tab, and the automation tools you already own
-drive it with no mobile-specific code, no Appium, and no coordinates:
+The native UI tree is mirrored as **real DOM** — accessibility ids become `data-testid`, element
+types become ARIA roles — so stock selectors drive it, whether from an agent or a test:
 
 ```ts
 await page.goto(`/device/${udid}?app=dev.devicelab.testhive`);
 await page.getByRole('textbox', { name: 'Username' }).fill('devicelab');
-await page.getByRole('textbox', { name: 'Password' }).fill('robustest');
 await page.getByRole('button', { name: 'Sign In' }).click();
 await expect(page.getByText('Hello, devicelab!')).toBeVisible();
 ```
 
-That is a real iOS Simulator driven by stock Playwright. The same page and the same selectors drive
-an Android emulator — or an AI agent through the browser tools it already has.
+A single Go binary streams the Simulator or emulator to the browser and serves that DOM — the same
+page and selectors drive iOS and Android alike.
 
 ## Status
 
