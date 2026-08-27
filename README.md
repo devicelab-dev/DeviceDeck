@@ -140,6 +140,18 @@ serves one driver at a time, so run with a single worker.
 
 ### With an agent
 
+An AI agent drives the device the same way it drives the web: it **snapshots the page**, reasons over
+the tree, and acts by ref — no bespoke tool, no coordinates, no vision model. Here one uses stock
+[Playwright MCP](https://github.com/microsoft/playwright-mcp) to read a list where five buttons all
+say **Add**, work out which one belongs to *Maestro*, and add exactly that:
+
+<div align="center">
+<img src="docs/demo-agent.gif" width="820" alt="An AI agent using Playwright MCP: browser_snapshot returns the product screen as an accessibility tree with five identical Add buttons, a reasoning step picks the one after Maestro (add-to-cart-2, ref e24), browser_click adds it, and opening the cart confirms Maestro was added — not Appium.">
+</div>
+
+That is the disambiguation an [included spec](examples/playwright/tests/platform/mcp-agent.spec.ts)
+drives end to end, and it passes — the agent reuses the browser skills it already has.
+
 `devicedeck mcp` speaks the Model Context Protocol on stdin/stdout — a thin adapter over the same
 API — so an agent (Claude, Cursor, any MCP client) lists, boots, and launches devices, inspects them
 (`ui_tree`, `screenshot`), and acts by durable selector (`tap`, `assert_visible`), then opens the
