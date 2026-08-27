@@ -117,12 +117,6 @@ make build
 
 ## Using it
 
-### By hand — the console
-
-The console lists every simulator and emulator on the machine, running or not. Click one to boot it
-and start streaming. Drive it with your mouse and keyboard, exactly as you would the real thing;
-**Inspect** overlays the native tree so you can read an element's identifier, role, and value.
-
 ### With your tests
 
 Point Playwright, Cypress, or Puppeteer at `/device/{udid}?app={bundleId}` and use ordinary
@@ -158,6 +152,12 @@ API — so an agent (Claude, Cursor, any MCP client) lists, boots, and launches 
 device page to drive typing with its own browser tools. A Claude Code plugin bundles the server with
 authoring and triage skills — install it with `claude plugin marketplace add devicelab-dev/DeviceDeck`.
 See [`examples/mcp/`](examples/mcp/).
+
+### By hand — the console
+
+The console lists every simulator and emulator on the machine, running or not. Click one to boot it
+and start streaming. Drive it with your mouse and keyboard, exactly as you would the real thing;
+**Inspect** overlays the native tree so you can read an element's identifier, role, and value.
 
 ### Good to know
 
