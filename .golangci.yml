@@ -22,8 +22,19 @@ linters:
     - gosec          # security: weak crypto, file perms, path handling
     - gocritic       # extra correctness/style diagnostics
     - revive         # targeted correctness rules (see settings.revive)
+    - nestif         # KISS: nesting deeper than 3 levels (CLAUDE.md guardrail)
+    - dupl           # DRY: duplicated code blocks (CLAUDE.md guardrail)
 
   settings:
+    nestif:
+      # >3 nesting levels is the KISS guardrail; min-complexity 4 is the
+      # first level past it. Length is deliberately NOT linted — whether a
+      # function should be split is a design judgment, not a static one.
+      min-complexity: 4
+    dupl:
+      # ~100 tokens is a meaningful duplicated block, not an incidental
+      # two-line coincidence. Test files are exempt (table setup repeats).
+      threshold: 100
     errcheck:
       check-type-assertions: true # x.(T) without ok on a decode path is a bug
     revive:
@@ -80,3 +91,4 @@ linters:
           - errorlint
           - gocritic
           - revive
+          - dupl

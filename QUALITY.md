@@ -54,7 +54,14 @@ make cover-gaps       # lists files below 100%
 
 `.golangci.yml` turns on the correctness-focused set (errorlint, nilerr,
 makezero, durationcheck, bodyclose, copyloopvar, gosec, unconvert, plus a small
-revive rule set). A handful of gosec rules are excluded with rationale in the
+revive rule set), and the two mechanical halves of the KISS/DRY guardrail:
+`nestif` (nesting deeper than 3 levels) and `dupl` (duplicated blocks).
+
+Function **length** is deliberately *not* linted. Whether a function should be
+split is a design judgment, not a static one — a length rule only ever produces
+forced splits or `//nolint` lines. The `check-kiss-dry.sh` reminder and
+`/code-quality`'s human review own that call; the linter owns nesting and
+duplication, which are mechanical. A handful of gosec rules are excluded with rationale in the
 file — they are false-positive-prone against DeviceDeck's shape (binary
 responses, JSON-escaped HTML, operator-supplied file paths). Test files relax
 the style-only linters but keep the correctness ones.
