@@ -147,9 +147,10 @@ func (r *Recorder) OnEvent(ev input.Event) {
 		// are intentionally not recorded rather than recorded as lies.
 	case input.EventLegacyButton:
 		r.flushTextLocked()
-		if ev.Code == 0 {
+		switch ev.Code {
+		case 0:
 			r.appendStep(Step{Kind: "pressKey", Input: "Home"})
-		} else if ev.Code == 1 {
+		case 1:
 			r.appendStep(Step{Kind: "pressKey", Input: "Lock"})
 		}
 	default:

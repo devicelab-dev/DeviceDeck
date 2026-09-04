@@ -42,7 +42,7 @@ func main() {
 	}
 	switch arg(1) {
 	case "version", "--version", "-version", "-v":
-		fmt.Fprintln(os.Stdout, version.Line())
+		_, _ = fmt.Fprintln(os.Stdout, version.Line())
 	case "", "help", "--help", "-help", "-h":
 		usage(os.Stdout)
 	default:
@@ -65,7 +65,7 @@ func arg(i int) string {
 // it does — which, for a tool distributed as a tarball, is most first
 // contacts. It names the one command that matters and where to go next.
 func usage(w io.Writer) {
-	fmt.Fprintf(w, `%s
+	_, _ = fmt.Fprintf(w, `%s
 
 Streams iOS Simulators and Android emulators to a browser, and turns a
 session driven by hand into a replayable test.

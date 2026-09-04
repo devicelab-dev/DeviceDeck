@@ -68,8 +68,7 @@ func TestTapResolvesToIdentifier(t *testing.T) {
 	b := steps[0].Bounds
 	if b == nil {
 		t.Fatal("resolved step missing bounds")
-	}
-	if b.X < 0.24 || b.X > 0.26 || b.Width < 0.49 || b.Width > 0.51 {
+	} else if b.X < 0.24 || b.X > 0.26 || b.Width < 0.49 || b.Width > 0.51 {
 		t.Errorf("bounds = %+v", b)
 	}
 }

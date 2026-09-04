@@ -155,6 +155,6 @@ func TestStreamViaGRPCFailsWithoutServer(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected failure against dead endpoint")
 	}
-	var netErr error = err
+	netErr := err
 	_ = errors.Unwrap(netErr) // shape not asserted — only that fallback would trigger
 }

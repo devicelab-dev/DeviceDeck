@@ -52,14 +52,14 @@ func (s *Server) handleVideoWS(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	defer conn.Close(websocket.StatusInternalError, "stream ended")
+	defer func() { _ = conn.Close(websocket.StatusInternalError, "stream ended") }()
 
 	ctx := r.Context()
 	for {
 		select {
 		case msg, ok := <-frames:
 			if !ok {
-				conn.Close(websocket.StatusNormalClosure, "capture ended")
+				_ = conn.Close(websocket.StatusNormalClosure, "capture ended")
 				return
 			}
 			if err := conn.Write(ctx, websocket.MessageBinary, msg); err != nil {
@@ -106,7 +106,7 @@ func watchLiveness(ctx context.Context, conn *websocket.Conn, interval, timeout 
 				// peer to acknowledge, and this peer has already been
 				// measured as unable to answer — waiting was observed to
 				// cost ~3s, all of it with the device still claimed.
-				conn.CloseNow()
+				_ = conn.CloseNow()
 				return
 			}
 		}
@@ -122,7 +122,7 @@ func (s *Server) handleInputWS(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	defer conn.Close(websocket.StatusInternalError, "input ended")
+	defer func() { _ = conn.Close(websocket.StatusInternalError, "input ended") }()
 
 	ctx := r.Context()
 	udid := r.PathValue("udid")
@@ -131,7 +131,7 @@ func (s *Server) handleInputWS(w http.ResponseWriter, r *http.Request) {
 	// holds it, because the failure it prevents is otherwise silent.
 	release, err := s.inputs.claim(udid, r.RemoteAddr)
 	if err != nil {
-		conn.Close(websocket.StatusPolicyViolation, truncateReason(err.Error()))
+		_ = conn.Close(websocket.StatusPolicyViolation, truncateReason(err.Error()))
 		return
 	}
 	defer release()
@@ -156,7 +156,7 @@ func (s *Server) handleInputWS(w http.ResponseWriter, r *http.Request) {
 		}
 		held.observe(raw)
 		if err := s.sendFrame(ctx, udid, raw); err != nil {
-			conn.Close(websocket.StatusInternalError, "sidecar unavailable")
+			_ = conn.Close(websocket.StatusInternalError, "sidecar unavailable")
 			return
 		}
 	}

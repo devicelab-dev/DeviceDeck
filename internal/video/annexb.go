@@ -3,6 +3,7 @@ package video
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -67,7 +68,7 @@ func RepackAnnexB(r io.Reader, w io.Writer) error {
 			// still buffered or the stream's tail frames are lost.
 			buf, _ = drainChunks(rp, chunks, buf)
 			ferr := rp.finish(buf)
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				return ferr
 			}
 			return err

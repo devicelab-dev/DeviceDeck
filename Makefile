@@ -1,4 +1,4 @@
-.PHONY: build test lint clean sidecar sidecar-test release release-signed stage sign package
+.PHONY: build test lint quality cover-gaps hooks vet clean sidecar sidecar-test release release-signed stage sign package
 
 BINARY := devicedeck
 PKG := github.com/devicelab-dev/DeviceDeck
@@ -23,8 +23,37 @@ sidecar:
 sidecar-test:
 	swift test --package-path sidecar
 
+# lint runs the full linter set across the whole tree. gofmt is checked as a
+# hard failure (not just listed), then the token-slice guard, then golangci-lint.
 lint:
-	gofmt -l .
+	@unformatted=$$(gofmt -l . | grep -vE '^\.claude/|^\.git/' || true); \
+		if [ -n "$$unformatted" ]; then echo "gofmt needs: $$unformatted"; exit 1; fi
+	bash scripts/lint-token-slice.sh
+	go vet ./...
+	golangci-lint run ./...
+
+# quality is the fast gate that runs on every code change: it checks only what
+# changed against HEAD, so it stays quick. This is what the pre-commit hook and
+# the /code-quality command call. Pass ALL=1 to sweep the whole tree instead.
+quality:
+	bash scripts/check-quality.sh $(if $(ALL),--all,)
+
+# cover-gaps lists hand-written Go files that are below 100% statement coverage
+# — the non-negotiable target for changed files. Generated files are excluded.
+cover-gaps:
+	@go test ./... -coverprofile=coverage.out >/dev/null 2>&1 || true
+	@go tool cover -func=coverage.out | awk '$$3 != "100.0%" && $$1 !~ /\.pb\.go|_generated\.go/ && $$1 != "total:" {print}' \
+		| sort -t% -k1 || echo "  all changed files at 100%"
+
+# hooks installs the pre-commit quality gate into this clone's .git/hooks.
+# Run once after cloning so the gate runs on every commit.
+hooks:
+	@printf '#!/usr/bin/env bash\nexec bash scripts/check-quality.sh\n' > .git/hooks/pre-commit
+	@chmod +x .git/hooks/pre-commit
+	@echo "installed .git/hooks/pre-commit → scripts/check-quality.sh"
+
+# oldlint keeps the original quick vet available under a plain name.
+vet:
 	go vet ./...
 
 # stage puts the three binaries side by side, which is the layout the server

@@ -1,0 +1,82 @@
+# golangci-lint v2 config, adapted from the sibling devicelab project for
+# DeviceDeck: a single Go binary (HTTP server + device drivers) plus Swift
+# sidecars. Bias toward correctness linters (errors, resources, byte/stream
+# protocols); suppress style noise. Every exclusion carries its rationale —
+# keep it that way.
+version: "2"
+
+run:
+  timeout: 10m
+
+linters:
+  # standard set: errcheck, govet, ineffassign, staticcheck, unused
+  default: standard
+  enable:
+    - errorlint      # correct %w wrapping / errors.Is|As usage (our error standard)
+    - unconvert      # redundant type conversions
+    - nilerr         # returning nil right after a non-nil error check
+    - makezero       # append to a non-zero-len slice made with make (buffer bugs)
+    - durationcheck
+    - bodyclose      # unclosed HTTP response bodies (the MCP client, emulator gRPC/webhook)
+    - copyloopvar
+    - gosec          # security: weak crypto, file perms, path handling
+    - gocritic       # extra correctness/style diagnostics
+    - revive         # targeted correctness rules (see settings.revive)
+
+  settings:
+    errcheck:
+      check-type-assertions: true # x.(T) without ok on a decode path is a bug
+    revive:
+      # A deliberately SMALL rule set — correctness over style. context-as-argument
+      # catches the context.Background()-instead-of-ctx class; errorf/error-strings
+      # enforce our %w error convention.
+      rules:
+        - name: error-return
+        - name: error-strings
+        - name: errorf
+        - name: context-as-argument
+        - name: unreachable-code
+        - name: var-declaration
+    gosec:
+      excludes:
+        # G115: integer overflow on conversions. Fires on nearly every
+        # byte<->int conversion in the input-frame and H.264/PNG stream code —
+        # noise. Byte handling is reviewed by hand + covered by tests.
+        - G115
+        # G204: subprocess with variable args. Inherent — DeviceDeck launches
+        # simctl / adb / xcodebuild / the Swift sidecars with device- and
+        # operator-derived args, never attacker-controlled input.
+        - G204
+        # G304: file path from a variable. Inherent — DeviceDeck reads app
+        # bundles (install), sidecar binaries, and simulator container paths by
+        # design, from the operator running the server.
+        - G304
+        # G703: path traversal via taint. Same class as G304 — the tainted
+        # paths are emulator discovery files and operator-supplied app/sidecar
+        # paths, not attacker input.
+        - G703
+        # G705: XSS via taint. False positives here: the device page injects
+        # the UI tree into an inert `application/json` <script> slot with the
+        # `</`→`<\/` escape that blocks a `</script>` breakout (web.go), and
+        # the screenshot handler writes image/png bytes, not HTML (server.go).
+        - G705
+
+  exclusions:
+    generated: lax
+    paths:
+      # generated gRPC/protobuf for the Android emulator controller
+      - internal/emugrpc
+      - ".*\\.pb\\.go$"
+    rules:
+      # Tests may ignore errors and use weaker constructs deliberately: quick
+      # substring slicing, == on sentinel errors, unclosed one-shot response
+      # bodies, redundant var types.
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+          - makezero
+          - bodyclose
+          - errorlint
+          - gocritic
+          - revive

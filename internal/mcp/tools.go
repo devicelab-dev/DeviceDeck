@@ -301,6 +301,7 @@ func (c *Client) get(path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer func() { _ = resp.Body.Close() }()
 	return readOK(resp)
 }
 
@@ -309,11 +310,11 @@ func (c *Client) post(path string, body []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer func() { _ = resp.Body.Close() }()
 	return readOK(resp)
 }
 
 func readOK(resp *http.Response) ([]byte, error) {
-	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err

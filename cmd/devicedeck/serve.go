@@ -130,7 +130,7 @@ func defaultRunnerHome() {
 	}
 	candidate := filepath.Join(home, ".maestro-runner")
 	if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-		os.Setenv("MAESTRO_RUNNER_HOME", candidate)
+		_ = os.Setenv("MAESTRO_RUNNER_HOME", candidate)
 	}
 }
 
