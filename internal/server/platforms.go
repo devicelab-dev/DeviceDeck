@@ -94,6 +94,16 @@ func (r LaunchRouter) Install(ctx context.Context, udid, appPath string) error {
 	return r.IOS.Install(ctx, udid, appPath)
 }
 
+// OpenURL routes a deep link to whichever platform client owns udid, so
+// the HTTP handler and MCP tool need not know whether it is a simulator or
+// an emulator.
+func (r LaunchRouter) OpenURL(ctx context.Context, udid, rawURL string) error {
+	if platform.IsAndroidSerial(udid) {
+		return r.Android.OpenURL(ctx, udid, rawURL)
+	}
+	return r.IOS.OpenURL(ctx, udid, rawURL)
+}
+
 // validateAppFile rejects an install path that cannot work before the
 // install is attempted, with a message that says what to do instead: a
 // Simulator runs a simulator build (`.app`), not a device `.ipa`, and an

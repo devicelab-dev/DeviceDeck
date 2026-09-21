@@ -50,6 +50,11 @@ func TestConvertAndroidElements(t *testing.T) {
 		username.Placeholder != "Username" || !username.Focused {
 		t.Errorf("username = %+v, want TextField with stripped resource-id and hint", username)
 	}
+	// The raw class survives normalisation so a desert lint can tell one
+	// framework from another; Type is mapped, ClassName is not.
+	if username.ClassName != "android.widget.EditText" {
+		t.Errorf("username ClassName = %q, want the raw android.widget.EditText", username.ClassName)
+	}
 	if username.Frame != (Rect{X: 80, Y: 900, Width: 920, Height: 130}) {
 		t.Errorf("username frame = %+v", username.Frame)
 	}

@@ -421,17 +421,45 @@ async function pollCapture() {
 // Flash a highlight rectangle over the video where the last recorded step
 // resolved, labeled with its selector — live confirmation of what the
 // captured flow will actually target.
+// stepGrade colours a recorded step by how durable its selector is,
+// mirroring the export's provenance grades (see export.go): an identifier
+// is green, a text match yellow, a relational qualifier orange, and a
+// positional index or a raw coordinate red. A reviewer sees the weak steps
+// live while capturing, not only later in the flow's comments.
+function stepGrade(step) {
+  const selText = step.id ? `id: ${step.id}` : step.text ? `text: ${step.text}` : "point";
+  let cls = "grade-point";
+  let grade = "point";
+  if (step.id || step.text) {
+    if (step.index) {
+      cls = "grade-index";
+      grade = "index";
+    } else if (step.childOfId) {
+      cls = "grade-relational";
+      grade = "relational";
+    } else if (step.id) {
+      cls = "grade-id";
+      grade = "id";
+    } else {
+      cls = "grade-text";
+      grade = "text";
+    }
+  }
+  return { cls, selText, grade };
+}
+
 function flashResolved(step) {
   positionOverlay();
   overlay.hidden = false;
   const el = document.createElement("div");
-  el.className = "resolved-flash";
+  const g = stepGrade(step);
+  el.className = `resolved-flash ${g.cls}`;
   el.style.left = `${step.bounds.x * 100}%`;
   el.style.top = `${step.bounds.y * 100}%`;
   el.style.width = `${step.bounds.width * 100}%`;
   el.style.height = `${step.bounds.height * 100}%`;
   const tag = document.createElement("span");
-  tag.textContent = step.id ? `id: ${step.id}` : `text: ${step.text}`;
+  tag.textContent = `${g.selText} · ${g.grade}`;
   el.appendChild(tag);
   overlay.appendChild(el);
   setTimeout(() => {

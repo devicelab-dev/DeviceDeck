@@ -1,0 +1,56 @@
+- application "device screen 1bc1b58a" [ref=e50]:
+  - generic:
+    - img "testtube.2" [ref=e51]
+    - generic "TestHive" [ref=e52]
+    - generic "Hello, devicelab!" [ref=e53]
+    - button "Shopping Cart (cart-button)" [ref=e54]: Shopping Cart
+    - button "Drag (line.horizontal.3)" [ref=e55]: Drag
+    - img "Search" [ref=e56]
+    - textbox "Search frameworks... (search-bar)" [ref=e57]:
+      - /placeholder: Search frameworks...
+    - generic:
+      - generic:
+        - button "All" [ref=e58]
+        - button "Mobile Testing" [ref=e59]
+        - button "Android Testing" [ref=e60]
+        - button "Web Testing" [ref=e61]
+    - generic:
+      - generic:
+        - generic:
+          - generic "Appium" [ref=e62]
+          - generic "Mobile Testing" [ref=e63]
+          - generic "$7.50" [ref=e64]
+          - img "Favourite" [ref=e65]
+          - generic "4.5" [ref=e66]
+          - button "Add (add-to-cart-1)" [ref=e67]: Add
+          - generic "Maestro" [ref=e68]
+          - generic "Mobile Testing" [ref=e69]
+          - generic "$5.99" [ref=e70]
+          - img "Favourite" [ref=e71]
+          - generic "4.8" [ref=e72]
+          - button "Add (add-to-cart-2)" [ref=e73]: Add
+          - generic "Espresso" [ref=e74]
+          - generic "Android Testing" [ref=e75]
+          - generic "$1.50" [ref=e76]
+          - img "Favourite" [ref=e77]
+          - generic "4.3" [ref=e78]
+          - button "Add (add-to-cart-3)" [ref=e79]: Add
+          - generic "Selenium" [ref=e80]
+          - generic "Web Testing" [ref=e81]
+          - generic "$2.30" [ref=e82]
+          - img "Favourite" [ref=e83]
+          - generic "4.1" [ref=e84]
+          - button "Add (add-to-cart-4)" [ref=e85]: Add
+          - generic "Cypress" [ref=e86]
+          - generic "Web Testing" [ref=e87]
+          - generic "$8.10" [ref=e88]
+          - img "Favourite" [ref=e89]
+          - generic "4.7" [ref=e90]
+          - button "Add (add-to-cart-5)" [ref=e91]: Add
+          - generic "Playwright" [ref=e92]
+          - generic "Web Testing" [ref=e93]
+          - generic "$9.00" [ref=e94]
+          - img "Favourite" [ref=e95]
+          - generic "4.6" [ref=e96]
+          - generic "Unavailable" [ref=e97]
+      - generic "Vertical scroll bar, 2 pages" [ref=e98]

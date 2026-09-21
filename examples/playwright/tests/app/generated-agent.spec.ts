@@ -49,7 +49,8 @@ test('agent: check out through the shipping form', async ({ page }) => {
   await page.getByTestId('address-input').fill('1 Market St');
   await page.getByTestId('city-input').fill('San Francisco');
   await page.getByTestId('zip-input').fill('94105');
-  await expect(page.getByRole('button', { name: /payment|place|pay/i }).first()).toBeVisible();
+  await page.getByTestId('next-payment-button').click();
+  await expect(page.getByRole('button', { name: "Continue Shopping (continue-shopping-button)" })).toBeVisible();
 });
 
 test('agent: searches the catalogue', async ({ page }) => {

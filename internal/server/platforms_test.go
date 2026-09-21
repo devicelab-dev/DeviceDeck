@@ -90,6 +90,16 @@ func TestLaunchRouter(t *testing.T) {
 	if len(android.installs) != 1 || len(ios.installs) != 1 {
 		t.Errorf("install routing wrong: ios=%v android=%v", ios.installs, android.installs)
 	}
+	// OpenURL routes by the same rule.
+	if err := r.OpenURL(context.Background(), "emulator-5554", "x://a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.OpenURL(context.Background(), "EB69B42A-4763", "x://b"); err != nil {
+		t.Fatal(err)
+	}
+	if len(android.opens) != 1 || len(ios.opens) != 1 {
+		t.Errorf("openurl routing wrong: ios=%v android=%v", ios.opens, android.opens)
+	}
 }
 
 func TestValidateAppFile(t *testing.T) {
@@ -116,10 +126,16 @@ type recordingLauncher struct {
 	calls    []string
 	resets   []string
 	installs []string
+	opens    []string
 }
 
 func (l *recordingLauncher) LaunchApp(_ context.Context, udid, appID string) error {
 	l.calls = append(l.calls, udid+"/"+appID)
+	return nil
+}
+
+func (l *recordingLauncher) OpenURL(_ context.Context, udid, rawURL string) error {
+	l.opens = append(l.opens, udid+"/"+rawURL)
 	return nil
 }
 

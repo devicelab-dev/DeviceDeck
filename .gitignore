@@ -31,3 +31,11 @@ LAUNCH-PLAN.md
 CLAUDE.md
 .claude/
 scripts/README.md
+
+# Local scratch — runner build cache, replay-gate reports, Playwright dumps
+/cache/
+/reports/
+/test-results/
+.playwright-mcp/
+/android-login.yaml
+/android-login.guard.json

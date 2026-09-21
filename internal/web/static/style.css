@@ -129,6 +129,36 @@ main { flex: 1; display: flex; min-height: 0; }
   white-space: nowrap;
 }
 
+/* Recorder confidence grades — DetoxRecorder's scheme: green id, yellow
+   text, orange relational, red index/coordinate. The base .resolved-flash
+   is green, so grade-id needs no override. */
+#overlay .resolved-flash.grade-text {
+  border-color: #e6b800;
+  background: rgba(230, 184, 0, 0.15);
+}
+#overlay .resolved-flash.grade-text span {
+  background: #e6b800;
+  color: #231f00;
+}
+#overlay .resolved-flash.grade-relational {
+  border-color: #e07b39;
+  background: rgba(224, 123, 57, 0.15);
+}
+#overlay .resolved-flash.grade-relational span {
+  background: #e07b39;
+  color: #241000;
+}
+#overlay .resolved-flash.grade-index,
+#overlay .resolved-flash.grade-point {
+  border-color: #e5484d;
+  background: rgba(229, 72, 77, 0.15);
+}
+#overlay .resolved-flash.grade-index span,
+#overlay .resolved-flash.grade-point span {
+  background: #e5484d;
+  color: #2a0708;
+}
+
 @keyframes flash-fade {
   0%, 60% { opacity: 1; }
   100% { opacity: 0; }

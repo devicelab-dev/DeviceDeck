@@ -1,0 +1,29 @@
+# agent-browser drives DeviceDeck end to end (stock CLI, no DeviceDeck code)
+
+$ agent-browser open <device-url>
+[agent-browser] launched browser
+$ agent-browser snapshot -i
+- textbox "Username (username-input)" [ref=e1]
+- textbox "Password (password-input)" [ref=e2]
+- button "Sign In (login-button)" [disabled, ref=e3]
+- button "Forgot Password? (forgot-password-button)" [ref=e4]
+
+$ agent-browser fill @e1 devicelab
+✓ Done
+$ agent-browser fill @e2 robustest
+✓ Done
+# waiting for the device to accept both fields (Sign In enables): enabled after 3 checks
+
+$ agent-browser snapshot -i
+- textbox "Username (username-input)" [ref=e1]: devicelab
+- textbox "Password (password-input)" [ref=e2]: robustest
+- button "Sign In (login-button)" [disabled, ref=e3]
+- button "Forgot Password? (forgot-password-button)" [ref=e4]
+
+$ agent-browser click @e3
+✓ Done
+
+$ agent-browser snapshot -i  (catalog reached)
+- button "Shopping Cart (cart-button)" [ref=e1]
+- button "Add (add-to-cart-1)" [ref=e8]
+- button "Add (add-to-cart-2)" [ref=e9]

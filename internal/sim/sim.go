@@ -57,7 +57,16 @@ func (c *Client) Boot(ctx context.Context, udid string) error {
 	return err
 }
 
-// Booted returns every currently booted simulator.
+// OpenURL opens a URL on the simulator — an https link in Safari, or a
+// custom scheme routed to the app that registered it. It is how a flow jumps
+// straight to a deep-linked screen instead of navigating there by hand.
+func (c *Client) OpenURL(ctx context.Context, udid, rawURL string) error {
+	if _, err := c.run(ctx, "xcrun", "simctl", "openurl", udid, rawURL); err != nil {
+		return fmt.Errorf("open %s on %s: %w", rawURL, udid, err)
+	}
+	return nil
+}
+
 // LaunchApp starts appID fresh on udid, terminating it first if it is
 // already running. Fresh rather than foreground: a flow — or an example
 // spec — that assumes it begins at the app's first screen is otherwise
@@ -116,6 +125,7 @@ func (c *Client) Install(ctx context.Context, udid, appPath string) error {
 	return nil
 }
 
+// Booted returns every currently booted simulator.
 func (c *Client) Booted(ctx context.Context) ([]Device, error) {
 	all, err := c.list(ctx)
 	if err != nil {

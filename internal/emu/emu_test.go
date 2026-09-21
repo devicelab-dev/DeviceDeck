@@ -282,3 +282,33 @@ func TestInstallError(t *testing.T) {
 		t.Fatal("expected an install error")
 	}
 }
+
+func TestOpenURL(t *testing.T) {
+	var got []string
+	c := &Client{run: func(_ context.Context, name string, args ...string) ([]byte, error) {
+		got = append([]string{name}, args...)
+		return nil, nil
+	}}
+	if err := c.OpenURL(context.Background(), "emulator-5554", "https://x.test"); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(got, " ")
+	if !strings.Contains(joined, "am start") || !strings.Contains(joined, "android.intent.action.VIEW") ||
+		!strings.Contains(joined, "https://x.test") {
+		t.Errorf("cmd = %v", got)
+	}
+	// am reports an unresolved intent on stdout with a zero exit.
+	bad := &Client{run: func(context.Context, string, ...string) ([]byte, error) {
+		return []byte("Error: Activity not started, unable to resolve Intent"), nil
+	}}
+	if err := bad.OpenURL(context.Background(), "emulator-5554", "nope://x"); err == nil {
+		t.Error("unresolved intent must error")
+	}
+	// A transport error propagates.
+	fail := &Client{run: func(context.Context, string, ...string) ([]byte, error) {
+		return nil, errors.New("adb down")
+	}}
+	if err := fail.OpenURL(context.Background(), "emulator-5554", "x"); err == nil {
+		t.Error("adb failure must propagate")
+	}
+}

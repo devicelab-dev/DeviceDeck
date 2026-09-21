@@ -56,6 +56,22 @@ func (c *Client) Booted(ctx context.Context) ([]sim.Device, error) {
 	return devices, nil
 }
 
+// OpenURL opens a URL on the emulator via an ACTION_VIEW intent — an http
+// link in the browser, or a custom scheme the app registered — so a flow can
+// jump straight to a deep-linked screen.
+func (c *Client) OpenURL(ctx context.Context, serial, rawURL string) error {
+	out, err := c.run(ctx, "adb", "-s", serial, "shell", "am", "start",
+		"-a", "android.intent.action.VIEW", "-d", rawURL)
+	if err != nil {
+		return fmt.Errorf("open %s on %s: %w", rawURL, serial, err)
+	}
+	// am reports an unresolved intent on stdout with a zero exit code.
+	if strings.Contains(string(out), "Error:") {
+		return fmt.Errorf("open %s on %s: %s", rawURL, serial, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 // LaunchApp starts appID fresh on serial, stopping it first if it is
 // already running — the Android counterpart of the simulator's launch.
 // monkey is used rather than `am start` because it needs only the

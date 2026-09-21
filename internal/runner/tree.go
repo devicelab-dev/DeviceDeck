@@ -28,6 +28,12 @@ type Node struct {
 	Hittable    bool   `json:"hittable"`
 	Depth       int    `json:"depth"`
 	ParentIndex *int   `json:"parentIndex,omitempty"`
+	// ClassName is the platform's raw widget class, carried only on
+	// Android (e.g. "com.facebook.react.views.view.ReactViewGroup"). It is
+	// what tells a React Native screen from a Flutter or Compose one after
+	// Type has been normalised to the shared vocabulary; empty on iOS,
+	// where Type already holds the raw XCUIElementType.
+	ClassName string `json:"className,omitempty"`
 }
 
 // Rect is an element's bounds in device points.

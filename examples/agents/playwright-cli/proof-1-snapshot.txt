@@ -1,0 +1,34 @@
+$ playwright-cli -s=dd open http://127.0.0.1:8787/device/56B22693-2704-4861-8DCF-9DD2ED0483FA?app=dev.devicelab.testhive&reset=yes
+### Browser `dd` opened with pid 50480.
+### Ran Playwright code
+```js
+await page.goto('http://127.0.0.1:8787/device/56B22693-2704-4861-8DCF-9DD2ED0483FA?app=dev.devicelab.testhive&reset=yes');
+```
+### Page
+- Page URL: http://127.0.0.1:8787/device/56B22693-2704-4861-8DCF-9DD2ED0483FA?app=dev.devicelab.testhive&reset=yes
+- Page Title: DeviceDeck Device — hardware keys have no buttons here; call window.devicedeck.gesture('home'|'appSwitcher'|'notificationCenter'|'lockScreen')
+### Snapshot
+- [Snapshot](.playwright-cli/page-2026-09-09T06-00-40-518Z.yml)
+$ playwright-cli -s=dd recording-start
+### Result
+Recording started. Call browser_stop_recording to retrieve the recorded actions.
+$ playwright-cli -s=dd snapshot
+### Page
+- Page URL: http://127.0.0.1:8787/device/56B22693-2704-4861-8DCF-9DD2ED0483FA?app=dev.devicelab.testhive&reset=yes
+- Page Title: DeviceDeck Device — hardware keys have no buttons here; call window.devicedeck.gesture('home'|'appSwitcher'|'notificationCenter'|'lockScreen')
+### Snapshot
+```yaml
+- application "device screen a419e9d5" [ref=e4]:
+  - generic:
+    - img "RobusTest" [ref=e5]
+    - generic "Welcome Back" [ref=e6]
+    - generic "Sign in to continue" [ref=e7]
+    - textbox "Username (username-input)" [ref=e8]:
+      - /placeholder: Username
+    - 'generic "Hint: devicelab or a" [ref=e9]'
+    - textbox "Password (password-input)" [ref=e10]:
+      - /placeholder: Password
+    - 'generic "Hint: robustest or a" [ref=e11]'
+    - button "Sign In (login-button)" [disabled] [ref=e12]: Sign In
+    - button "Forgot Password? (forgot-password-button)" [ref=e13]: Forgot Password?
+```

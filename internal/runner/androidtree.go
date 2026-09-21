@@ -319,6 +319,7 @@ func convertAndroidElements(in []*dlandroid.ParsedElement, screenW, screenH int)
 		n := Node{
 			Index:       i + 1,
 			Type:        buttonIfClickable(androidType(e.ClassName), e.Clickable),
+			ClassName:   e.ClassName,
 			Label:       e.ContentDesc,
 			Identifier:  resourceIDSuffix(e.ResourceID),
 			Value:       e.Text,

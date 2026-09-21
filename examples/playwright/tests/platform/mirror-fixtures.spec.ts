@@ -211,3 +211,52 @@ test('a backgrounded app is announced in the root name, not hidden', async ({ pa
   // Annotated, never hidden: the controls are all still present and clickable.
   await expect(page.locator('#mirror [data-dd-node]').first()).toBeVisible();
 });
+
+// States: the attributes ARIA carries for a role, read from the device.
+// Without them a switch reads as a bare button and a slider as text; an
+// agent can find the control but not tell what it is set to.
+test('checkable, range and selected states reach the snapshot on the roles that own them', async ({ page }) => {
+  await serveMirror(page, 'states');
+  const snap = await agentView(page);
+  expect(snap).toMatch(/switch "Wi-Fi \(wifi-switch\)" \[checked\]/);
+  expect(snap).toMatch(/switch "Bluetooth \(bt-switch\)"(?! \[checked\])/);
+  await expect(page.getByTestId('volume')).toHaveAttribute('aria-valuenow', '50');
+  await expect(page.getByTestId('volume')).toHaveAttribute('aria-valuetext', '50%');
+  await expect(page.getByTestId('qty')).toHaveAttribute('role', 'spinbutton');
+  await expect(page.getByTestId('qty')).toHaveAttribute('aria-valuenow', '3');
+  // A selected segment is a Button on iOS; ARIA has no "selected" for a
+  // button, so it is exposed as pressed, which is what a snapshot prints.
+  expect(snap).toMatch(/button "Weekly" \[pressed\]/);
+  expect(snap).toMatch(/button "Monthly"(?! \[pressed\])/);
+  expect(snap).toMatch(/tab "Home \(tab-home\)" \[selected\]/);
+  await expect(page.getByTestId('period')).toHaveAttribute('role', 'radiogroup');
+  // A checkbox reporting a parsed state gets aria-checked; one whose value
+  // is its own text (Android does not surface the boolean yet) must not —
+  // a spurious [checked] would lie about a control the device never set.
+  expect(snap).toMatch(/checkbox "Remember me \(remember\)" \[checked\]/);
+  expect(snap).toMatch(/checkbox "Newsletter \(newsletter\)"(?! \[checked\])/);
+  await expect(page.getByTestId('newsletter')).not.toHaveAttribute('aria-checked', /.*/);
+});
+
+// The audit names what no agent can address. It reports the app as it
+// is: an icon-only button with no label, and two controls that read the
+// same, are the app's facts, not the mirror's — but an agent must not
+// discover them by acting on the wrong one.
+test('the audit reports unnamed and duplicate controls, and nothing else', async ({ page }) => {
+  await serveMirror(page, 'states');
+  const audit = await page.evaluate(() => (window as any).devicedeck.audit());
+  // A control with an identifier is named by it; only one with neither
+  // label nor identifier is out of reach, and the audit says which.
+  expect(audit.unnamed).toHaveLength(1);
+  expect(audit.unnamed[0]).toMatchObject({ role: 'button', testid: '' });
+  expect(audit.unnamed[0].key).toMatch(/Button/);
+  expect(audit.duplicates).toEqual([{ role: 'button', name: 'Delete', count: 2 }]);
+});
+
+test('every real TestHive screen recorded here is fully addressable', async ({ page }) => {
+  for (const name of ['login', 'login-typed', 'products', 'products-cart-full', 'cart']) {
+    await serveMirror(page, name);
+    const audit = await page.evaluate(() => (window as any).devicedeck.audit());
+    expect(audit, name).toEqual({ unnamed: [], duplicates: [] });
+  }
+});

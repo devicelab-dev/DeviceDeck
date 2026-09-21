@@ -15,14 +15,22 @@ func ptr(i int) *int { return &i }
 func listTree() []runner.Node {
 	return []runner.Node{
 		{Index: 0, Type: "Application", Depth: 0, Frame: runner.Rect{Width: 100, Height: 200}},
-		{Index: 1, Type: "Other", Identifier: "row-alice", Depth: 1, ParentIndex: ptr(0),
-			Frame: runner.Rect{Y: 0, Width: 100, Height: 50}},
-		{Index: 2, Type: "Button", Identifier: "row-cta", Depth: 2, ParentIndex: ptr(1),
-			Frame: runner.Rect{Y: 10, Width: 40, Height: 20}},
-		{Index: 3, Type: "Other", Identifier: "row-bob", Depth: 1, ParentIndex: ptr(0),
-			Frame: runner.Rect{Y: 60, Width: 100, Height: 50}},
-		{Index: 4, Type: "Button", Identifier: "row-cta", Depth: 2, ParentIndex: ptr(3),
-			Frame: runner.Rect{Y: 70, Width: 40, Height: 20}},
+		{
+			Index: 1, Type: "Other", Identifier: "row-alice", Depth: 1, ParentIndex: ptr(0),
+			Frame: runner.Rect{Y: 0, Width: 100, Height: 50},
+		},
+		{
+			Index: 2, Type: "Button", Identifier: "row-cta", Depth: 2, ParentIndex: ptr(1),
+			Frame: runner.Rect{Y: 10, Width: 40, Height: 20},
+		},
+		{
+			Index: 3, Type: "Other", Identifier: "row-bob", Depth: 1, ParentIndex: ptr(0),
+			Frame: runner.Rect{Y: 60, Width: 100, Height: 50},
+		},
+		{
+			Index: 4, Type: "Button", Identifier: "row-cta", Depth: 2, ParentIndex: ptr(3),
+			Frame: runner.Rect{Y: 70, Width: 40, Height: 20},
+		},
 	}
 }
 
@@ -60,10 +68,14 @@ func TestQualifyFallsBackToIndex(t *testing.T) {
 	tree := []runner.Node{
 		{Index: 0, Type: "Application", Depth: 0, Frame: runner.Rect{Width: 100, Height: 200}},
 		{Index: 1, Type: "Other", Depth: 1, ParentIndex: ptr(0), Frame: runner.Rect{Width: 100, Height: 200}},
-		{Index: 2, Type: "Button", Identifier: "tab", Depth: 2, ParentIndex: ptr(1),
-			Frame: runner.Rect{Width: 30, Height: 20}},
-		{Index: 3, Type: "Button", Identifier: "tab", Depth: 2, ParentIndex: ptr(1),
-			Frame: runner.Rect{X: 40, Width: 30, Height: 20}},
+		{
+			Index: 2, Type: "Button", Identifier: "tab", Depth: 2, ParentIndex: ptr(1),
+			Frame: runner.Rect{Width: 30, Height: 20},
+		},
+		{
+			Index: 3, Type: "Button", Identifier: "tab", Depth: 2, ParentIndex: ptr(1),
+			Frame: runner.Rect{X: 40, Width: 30, Height: 20},
+		},
 	}
 	step := qualify(tree, &tree[3], Step{Kind: "tapOn", ID: "tab"})
 	if step.ChildOfID != "" {
@@ -85,12 +97,18 @@ func TestQualifyFallsBackToIndex(t *testing.T) {
 func TestQualifyAppliesToTextSelectors(t *testing.T) {
 	tree := []runner.Node{
 		{Index: 0, Type: "Application", Depth: 0, Frame: runner.Rect{Width: 100, Height: 200}},
-		{Index: 1, Type: "Other", Identifier: "card-two", Depth: 1, ParentIndex: ptr(0),
-			Frame: runner.Rect{Width: 100, Height: 100}},
-		{Index: 2, Type: "Button", Label: "Buy", Depth: 2, ParentIndex: ptr(1),
-			Frame: runner.Rect{Width: 30, Height: 20}},
-		{Index: 3, Type: "Button", Label: "Buy", Depth: 1, ParentIndex: ptr(0),
-			Frame: runner.Rect{Y: 120, Width: 30, Height: 20}},
+		{
+			Index: 1, Type: "Other", Identifier: "card-two", Depth: 1, ParentIndex: ptr(0),
+			Frame: runner.Rect{Width: 100, Height: 100},
+		},
+		{
+			Index: 2, Type: "Button", Label: "Buy", Depth: 2, ParentIndex: ptr(1),
+			Frame: runner.Rect{Width: 30, Height: 20},
+		},
+		{
+			Index: 3, Type: "Button", Label: "Buy", Depth: 1, ParentIndex: ptr(0),
+			Frame: runner.Rect{Y: 120, Width: 30, Height: 20},
+		},
 	}
 	step := qualify(tree, &tree[2], Step{Kind: "tapOn", Text: "Buy"})
 	if step.ChildOfID != "card-two" {
@@ -103,12 +121,18 @@ func TestQualifyAppliesToTextSelectors(t *testing.T) {
 func TestQualifySkipsAncestorThatDoesNotNarrow(t *testing.T) {
 	tree := []runner.Node{
 		{Index: 0, Type: "Application", Depth: 0, Frame: runner.Rect{Width: 100, Height: 200}},
-		{Index: 1, Type: "Other", Identifier: "list", Depth: 1, ParentIndex: ptr(0),
-			Frame: runner.Rect{Width: 100, Height: 200}},
-		{Index: 2, Type: "Button", Identifier: "cta", Depth: 2, ParentIndex: ptr(1),
-			Frame: runner.Rect{Width: 30, Height: 20}},
-		{Index: 3, Type: "Button", Identifier: "cta", Depth: 2, ParentIndex: ptr(1),
-			Frame: runner.Rect{Y: 40, Width: 30, Height: 20}},
+		{
+			Index: 1, Type: "Other", Identifier: "list", Depth: 1, ParentIndex: ptr(0),
+			Frame: runner.Rect{Width: 100, Height: 200},
+		},
+		{
+			Index: 2, Type: "Button", Identifier: "cta", Depth: 2, ParentIndex: ptr(1),
+			Frame: runner.Rect{Width: 30, Height: 20},
+		},
+		{
+			Index: 3, Type: "Button", Identifier: "cta", Depth: 2, ParentIndex: ptr(1),
+			Frame: runner.Rect{Y: 40, Width: 30, Height: 20},
+		},
 	}
 	step := qualify(tree, &tree[3], Step{Kind: "tapOn", ID: "cta"})
 	if step.ChildOfID != "" {
@@ -125,10 +149,14 @@ func TestQualifySkipsAncestorThatDoesNotNarrow(t *testing.T) {
 func TestSelectorWalksTolerateBrokenParentLinks(t *testing.T) {
 	tree := []runner.Node{
 		{Index: 0, Type: "Application", Depth: 0, Frame: runner.Rect{Width: 100, Height: 200}},
-		{Index: 2, Type: "Button", Identifier: "cta", Depth: 2, ParentIndex: ptr(99),
-			Frame: runner.Rect{Width: 30, Height: 20}},
-		{Index: 3, Type: "Button", Identifier: "cta", Depth: 2, ParentIndex: ptr(99),
-			Frame: runner.Rect{Y: 40, Width: 30, Height: 20}},
+		{
+			Index: 2, Type: "Button", Identifier: "cta", Depth: 2, ParentIndex: ptr(99),
+			Frame: runner.Rect{Width: 30, Height: 20},
+		},
+		{
+			Index: 3, Type: "Button", Identifier: "cta", Depth: 2, ParentIndex: ptr(99),
+			Frame: runner.Rect{Y: 40, Width: 30, Height: 20},
+		},
 	}
 	if anc := identifiedAncestor(tree, &tree[1]); anc != nil {
 		t.Errorf("a dangling parent link has no ancestor: %+v", anc)

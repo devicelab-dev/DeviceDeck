@@ -67,7 +67,41 @@ func (s *Service) Stop(udid string) (yaml, guard string, steps []Step, err error
 		return "", "", nil, fmt.Errorf("not recording %s", udid)
 	}
 	steps = rec.Finish()
-	return ExportMaestro(rec.AppID(), steps), ExportGuard(rec.AppID(), steps), steps, nil
+	yaml = ExportMaestroWithLint(rec.AppID(), steps, rec.Lint())
+	if err := exportValidator(yaml); err != nil {
+		return "", "", steps, err
+	}
+	return yaml, ExportGuard(rec.AppID(), steps), steps, nil
+}
+
+// exportValidator is validateExport, indirected through a variable so a
+// test can force the rejection path Stop must handle. A correct emitter
+// never produces a flow that fails validateExport, so this guard is
+// otherwise unreachable through the public API — the indirection exists to
+// prove Stop refuses a bad flow rather than hand one back.
+var exportValidator = validateExport
+
+// validateExport refuses a captured flow that the real runner cannot parse
+// or that leans on a selector field one target platform's driver ignores.
+// A capture has to replay unchanged on both iOS and Android simulators and
+// on devicelab.dev real devices, so it is checked against both platforms
+// before it is ever handed back — a broken flow is a failed capture, not a
+// file the user discovers is wrong at replay time.
+func validateExport(yaml string) error {
+	// UnsupportedFields parses with the real runner and reports fields the
+	// platform's driver ignores, so one call per platform covers both the
+	// parseability contract (a parse error surfaces here) and the
+	// portability contract — no need to parse twice.
+	for _, platform := range []string{"ios", "android"} {
+		bad, err := runner.UnsupportedFields([]byte(yaml), platform)
+		if err != nil {
+			return err
+		}
+		if len(bad) != 0 {
+			return fmt.Errorf("captured flow uses %s-unsupported fields: %v", platform, bad)
+		}
+	}
+	return nil
 }
 
 // Assert records a visibility assertion at a normalized point on udid's

@@ -1,0 +1,50 @@
+$ playwright-cli -s=dd fill e8 devicelab
+### Ran Playwright code
+```js
+await page.getByTestId('username-input').fill('devicelab');
+```
+$ playwright-cli -s=dd fill e10 robustest
+### Ran Playwright code
+```js
+await page.getByTestId('password-input').fill('robustest');
+```
+$ playwright-cli -s=dd snapshot
+    - button "Sign In (login-button)" [disabled] [ref=e12]: Sign In
+$ playwright-cli -s=dd click e12
+### Error
+TimeoutError: Timeout 5000ms exceeded.
+Call log:
+[2m  - waiting for locator('aria-ref=e12')[22m
+[2m    - locator resolved to <div role="button" data-dd-node="" aria-disabled="true" data-dd-enabled="false" data-dd-focused="false" data-dd-hittable="false" data-testid="login-button" data-dd-key="#id/login-button#0" aria-label="Sign In (login-button)">Sign In</div>[22m
+[2m  - attempting click action[22m
+[2m    2 × waiting for element to be visible, enabled and stable[22m
+[2m      - element is not enabled[22m
+[2m    - retrying click action[22m
+[2m    - waiting 20ms[22m
+[2m    - waiting for element to be visible, enabled and stable[22m
+[2m    - element is not enabled[22m
+[2m  2 × retrying click action[22m
+[2m      - waiting 100ms[22m
+[2m      - waiting for element to be visible, enabled and stable[22m
+[2m      - element is not stable[22m
+[2m  8 × retrying click action[22m
+[2m      - waiting 500ms[22m
+[2m      - waiting for element to be visible, enabled and stable[22m
+[2m      - element is not stable[22m
+[2m  - retrying click action[22m
+[2m    - waiting 500ms[22m
+
+$ playwright-cli -s=dd snapshot
+$ playwright-cli -s=dd recording-stop
+### Result
+Recording stopped. Recorded actions:
+
+```js
+await page.getByTestId('username-input').fill('devicelab');
+await page.getByTestId('password-input').fill('robustest');
+```
+### Page
+- Page URL: http://127.0.0.1:8787/device/56B22693-2704-4861-8DCF-9DD2ED0483FA?app=dev.devicelab.testhive&reset=yes
+- Page Title: DeviceDeck Device — hardware keys have no buttons here; call window.devicedeck.gesture('home'|'appSwitcher'|'notificationCenter'|'lockScreen')
+### Snapshot
+- [Snapshot](.playwright-cli/page-2026-09-09T06-01-18-811Z.yml)

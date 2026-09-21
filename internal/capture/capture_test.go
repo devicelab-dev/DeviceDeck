@@ -18,16 +18,24 @@ import (
 func testTree() []runner.Node {
 	parent := 0
 	return []runner.Node{
-		{Index: 0, Type: "Application", Depth: 0,
-			Frame: runner.Rect{X: 0, Y: 0, Width: 402, Height: 874}},
-		{Index: 1, Type: "Other", Depth: 1, ParentIndex: &parent,
-			Frame: runner.Rect{X: 0, Y: 0, Width: 402, Height: 874}},
-		{Index: 2, Type: "Button", Identifier: "loginButton", Label: "Log in", Depth: 2,
+		{
+			Index: 0, Type: "Application", Depth: 0,
+			Frame: runner.Rect{X: 0, Y: 0, Width: 402, Height: 874},
+		},
+		{
+			Index: 1, Type: "Other", Depth: 1, ParentIndex: &parent,
+			Frame: runner.Rect{X: 0, Y: 0, Width: 402, Height: 874},
+		},
+		{
+			Index: 2, Type: "Button", Identifier: "loginButton", Label: "Log in", Depth: 2,
 			Hittable: true, ParentIndex: &parent,
-			Frame: runner.Rect{X: 100, Y: 400, Width: 200, Height: 50}},
-		{Index: 3, Type: "StaticText", Label: "Welcome back", Depth: 2,
+			Frame: runner.Rect{X: 100, Y: 400, Width: 200, Height: 50},
+		},
+		{
+			Index: 3, Type: "StaticText", Label: "Welcome back", Depth: 2,
 			ParentIndex: &parent,
-			Frame:       runner.Rect{X: 50, Y: 100, Width: 300, Height: 40}},
+			Frame:       runner.Rect{X: 50, Y: 100, Width: 300, Height: 40},
+		},
 	}
 }
 
@@ -238,8 +246,10 @@ func TestStaleTreeRefreshedAtResolveTime(t *testing.T) {
 	// refreshed tree, not the splash.
 	splash := []runner.Node{
 		{Depth: 0, Frame: runner.Rect{Width: 402, Height: 874}},
-		{Depth: 1, Type: "Image", Label: "RobusTest",
-			Frame: runner.Rect{X: 0, Y: 0, Width: 402, Height: 874}},
+		{
+			Depth: 1, Type: "Image", Label: "RobusTest",
+			Frame: runner.Rect{X: 0, Y: 0, Width: 402, Height: 874},
+		},
 	}
 	calls := 0
 	rec, err := NewRecorder(context.Background(), "app",
@@ -311,10 +321,14 @@ func TestHitTestEdgeCases(t *testing.T) {
 	parent := 0
 	tree := []runner.Node{
 		{Depth: 0, Frame: runner.Rect{Width: 100, Height: 100}},
-		{Depth: 1, Identifier: "wrap", ParentIndex: &parent,
-			Frame: runner.Rect{X: 0, Y: 0, Width: 60, Height: 60}},
-		{Depth: 2, Label: "leaf", ParentIndex: &parent,
-			Frame: runner.Rect{X: 10, Y: 10, Width: 50, Height: 50}},
+		{
+			Depth: 1, Identifier: "wrap", ParentIndex: &parent,
+			Frame: runner.Rect{X: 0, Y: 0, Width: 60, Height: 60},
+		},
+		{
+			Depth: 2, Label: "leaf", ParentIndex: &parent,
+			Frame: runner.Rect{X: 10, Y: 10, Width: 50, Height: 50},
+		},
 	}
 	got := hitTest(tree, 0.3, 0.3)
 	if got == nil || got.Identifier != "wrap" {
@@ -328,8 +342,10 @@ func TestHitTestIgnoresFullScreenNodes(t *testing.T) {
 	// falls back to coordinates.
 	tree := []runner.Node{
 		{Depth: 0, Frame: runner.Rect{Width: 402, Height: 874}},
-		{Depth: 1, Type: "Image", Label: "RobusTest",
-			Frame: runner.Rect{X: 0, Y: 0, Width: 402, Height: 874}},
+		{
+			Depth: 1, Type: "Image", Label: "RobusTest",
+			Frame: runner.Rect{X: 0, Y: 0, Width: 402, Height: 874},
+		},
 	}
 	if got := hitTest(tree, 0.5, 0.5); got != nil {
 		t.Errorf("full-screen node resolved: %+v", got)
@@ -342,9 +358,15 @@ func TestKeyRuneCoverage(t *testing.T) {
 		shift bool
 		want  rune
 	}{
-		{0x04, false, 'a'}, {0x1D, false, 'z'}, {0x04, true, 'A'},
-		{0x1E, false, '1'}, {0x27, false, '0'}, {0x27, true, ')'},
-		{0x2C, false, ' '}, {0x2D, true, '_'}, {0x34, false, '\''},
+		{0x04, false, 'a'},
+		{0x1D, false, 'z'},
+		{0x04, true, 'A'},
+		{0x1E, false, '1'},
+		{0x27, false, '0'},
+		{0x27, true, ')'},
+		{0x2C, false, ' '},
+		{0x2D, true, '_'},
+		{0x34, false, '\''},
 		{0x38, true, '?'},
 	}
 	for _, tt := range tests {
@@ -363,8 +385,10 @@ func TestKeyRuneCoverage(t *testing.T) {
 func TestAssertRecordsVisibilityWithoutTouching(t *testing.T) {
 	tree := []runner.Node{
 		{Index: 0, Type: "Application", Frame: runner.Rect{Width: 100, Height: 200}},
-		{Index: 1, Type: "Button", Identifier: "products-screen", Depth: 1,
-			Frame: runner.Rect{X: 10, Y: 20, Width: 50, Height: 30}},
+		{
+			Index: 1, Type: "Button", Identifier: "products-screen", Depth: 1,
+			Frame: runner.Rect{X: 10, Y: 20, Width: 50, Height: 30},
+		},
 	}
 	r := &Recorder{now: time.Now, tree: tree, treeAt: time.Now(), appID: "com.example"}
 	if !r.Assert(0.35, 0.175) {
@@ -457,10 +481,144 @@ func TestHitTestSkipsAnonymousNodes(t *testing.T) {
 	parent := 0
 	tree := []runner.Node{
 		{Depth: 0, Frame: runner.Rect{Width: 100, Height: 100}},
-		{Depth: 1, ParentIndex: &parent,
-			Frame: runner.Rect{X: 0, Y: 0, Width: 40, Height: 40}}, // no id, no label
+		{
+			Depth: 1, ParentIndex: &parent,
+			Frame: runner.Rect{X: 0, Y: 0, Width: 40, Height: 40},
+		}, // no id, no label
 	}
 	if got := hitTest(tree, 0.1, 0.1); got != nil {
 		t.Errorf("anonymous node must not resolve: %+v", got)
+	}
+}
+
+// secureTree has a secure field, a normal field, and a button, at known
+// frames, for the masking tests.
+func secureTree() []runner.Node {
+	p := 0
+	return []runner.Node{
+		{Index: 0, Type: "Application", Depth: 0, Frame: runner.Rect{Width: 400, Height: 800}},
+		{
+			Index: 1, Type: "TextField", Identifier: "username-input", Depth: 1, Hittable: true,
+			ParentIndex: &p, Frame: runner.Rect{X: 0, Y: 0, Width: 400, Height: 50},
+		},
+		{
+			Index: 2, Type: "SecureTextField", Identifier: "password-input", Depth: 1, Hittable: true,
+			ParentIndex: &p, Frame: runner.Rect{X: 0, Y: 100, Width: 400, Height: 50},
+		},
+		{
+			Index: 3, Type: "Button", Identifier: "login-button", Label: "Sign In", Depth: 1, Hittable: true,
+			ParentIndex: &p, Frame: runner.Rect{X: 0, Y: 200, Width: 400, Height: 50},
+		},
+	}
+}
+
+// Typing into a secure field must never put the secret in the flow: the
+// step is masked to an env parameter and the exported YAML declares it.
+func TestSecureFieldMasked(t *testing.T) {
+	rec, _ := newTestRecorder(t, secureTree())
+	// Tap the secure field (centre y = 125/800 ≈ 0.156), then type.
+	rec.OnEvent(touch(input.TouchDown, 0.5, 0.156))
+	rec.OnEvent(touch(input.TouchUp, 0.5, 0.156))
+	rec.OnEvent(key(0, 0x1D)) // z
+	rec.OnEvent(key(0, 0x14)) // q
+	rec.OnEvent(key(0, 0x0D)) // j
+	steps := rec.Finish()
+	// tapOn(password) + inputText(secure)
+	if len(steps) != 2 {
+		t.Fatalf("steps = %+v", steps)
+	}
+	in := steps[1]
+	if in.Kind != "inputText" || !in.Secure || in.SecureVar != "PASSWORD_INPUT" || in.Input != "" {
+		t.Fatalf("secure step wrong: %+v", in)
+	}
+	out := ExportMaestro(rec.AppID(), steps)
+	if !strings.Contains(out, "# devicedeck secrets: supply at replay with -e PASSWORD_INPUT=…") {
+		t.Errorf("secrets comment missing:\n%s", out)
+	}
+	if strings.Contains(out, "env:") {
+		t.Errorf("a real env block shadows -e and must not be emitted:\n%s", out)
+	}
+	if !strings.Contains(out, "- inputText: ${PASSWORD_INPUT}") {
+		t.Errorf("masked input missing:\n%s", out)
+	}
+	if strings.Contains(out, "zqj") {
+		t.Errorf("secret text leaked into the flow:\n%s", out)
+	}
+	if _, err := runner.ValidateFlow([]byte(out)); err != nil {
+		t.Fatalf("masked flow invalid: %v\n%s", err, out)
+	}
+}
+
+// Focus follows the last field tapped: typing into a normal field after a
+// secure one is not masked, and vice versa.
+func TestSecureFocusFollowsField(t *testing.T) {
+	rec, _ := newTestRecorder(t, secureTree())
+	// Secure field, type — masked.
+	rec.OnEvent(touch(input.TouchDown, 0.5, 0.156))
+	rec.OnEvent(touch(input.TouchUp, 0.5, 0.156))
+	rec.OnEvent(key(0, 0x04)) // a
+	// Normal field (centre y = 25/800 ≈ 0.031), type — not masked.
+	rec.OnEvent(touch(input.TouchDown, 0.5, 0.031))
+	rec.OnEvent(touch(input.TouchUp, 0.5, 0.031))
+	rec.OnEvent(key(0, 0x04)) // a
+	steps := rec.Finish()
+	var secures, plains int
+	for _, s := range steps {
+		if s.Kind == "inputText" {
+			if s.Secure {
+				secures++
+			} else {
+				plains++
+			}
+		}
+	}
+	if secures != 1 || plains != 1 {
+		t.Fatalf("want one masked and one plain inputText, got %d/%d: %+v", secures, plains, steps)
+	}
+}
+
+// A tap that lands on no field leaves focus alone — text still goes to the
+// field that held it.
+func TestSecureFocusUnchangedByNonFieldTap(t *testing.T) {
+	rec, _ := newTestRecorder(t, secureTree())
+	rec.OnEvent(touch(input.TouchDown, 0.5, 0.156)) // secure field
+	rec.OnEvent(touch(input.TouchUp, 0.5, 0.156))
+	rec.OnEvent(touch(input.TouchDown, 0.5, 0.281)) // button, not a field
+	rec.OnEvent(touch(input.TouchUp, 0.5, 0.281))
+	rec.OnEvent(key(0, 0x04)) // a — still the secure field's text
+	steps := rec.Finish()
+	last := steps[len(steps)-1]
+	if last.Kind != "inputText" || !last.Secure {
+		t.Fatalf("focus should have stayed secure: %+v", steps)
+	}
+}
+
+// secureVarName upper-snakes an identifier and falls back to SECRET.
+func TestSecureVarName(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"password-input", "PASSWORD_INPUT"},
+		{"pin.code", "PIN_CODE"},
+		{"OTP2", "OTP2"},
+		{"", "SECRET"},
+	} {
+		if got := secureVarName(c.in); got != c.want {
+			t.Errorf("secureVarName(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// Two distinct secure fields declare two env vars, sorted and unique.
+func TestSecretsCommentDedupAndSort(t *testing.T) {
+	steps := []Step{
+		{Kind: "inputText", Secure: true, SecureVar: "PIN"},
+		{Kind: "inputText", Secure: true, SecureVar: "PASSWORD"},
+		{Kind: "inputText", Secure: true, SecureVar: "PIN"}, // repeat
+	}
+	out := ExportMaestro("com.example", steps)
+	if !strings.Contains(out, "# devicedeck secrets: supply at replay with -e PASSWORD=… -e PIN=…") {
+		t.Errorf("secrets comment not sorted/deduped:\n%s", out)
+	}
+	if _, err := runner.ValidateFlow([]byte(out)); err != nil {
+		t.Fatalf("multi-secret flow invalid: %v\n%s", err, out)
 	}
 }

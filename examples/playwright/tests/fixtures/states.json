@@ -1,0 +1,258 @@
+{
+ "hash": "states-fixture-0001",
+ "nodes": [
+  {
+   "index": 0,
+   "type": "Application",
+   "label": "States",
+   "frame": {
+    "x": 0,
+    "y": 0,
+    "width": 402,
+    "height": 874
+   },
+   "enabled": true,
+   "hittable": true,
+   "depth": 0
+  },
+  {
+   "index": 1,
+   "type": "Switch",
+   "label": "Wi-Fi",
+   "identifier": "wifi-switch",
+   "value": "1",
+   "frame": {
+    "x": 300,
+    "y": 100,
+    "width": 60,
+    "height": 32
+   },
+   "enabled": true,
+   "hittable": true,
+   "depth": 1,
+   "parentIndex": 0
+  },
+  {
+   "index": 2,
+   "type": "Switch",
+   "label": "Bluetooth",
+   "identifier": "bt-switch",
+   "value": "0",
+   "frame": {
+    "x": 300,
+    "y": 150,
+    "width": 60,
+    "height": 32
+   },
+   "enabled": true,
+   "hittable": true,
+   "depth": 1,
+   "parentIndex": 0
+  },
+  {
+   "index": 3,
+   "type": "Slider",
+   "label": "Volume",
+   "identifier": "volume",
+   "value": "50%",
+   "frame": {
+    "x": 20,
+    "y": 220,
+    "width": 360,
+    "height": 32
+   },
+   "enabled": true,
+   "hittable": true,
+   "depth": 1,
+   "parentIndex": 0
+  },
+  {
+   "index": 4,
+   "type": "Stepper",
+   "label": "Quantity",
+   "identifier": "qty",
+   "value": "3",
+   "frame": {
+    "x": 20,
+    "y": 280,
+    "width": 100,
+    "height": 32
+   },
+   "enabled": true,
+   "hittable": true,
+   "depth": 1,
+   "parentIndex": 0
+  },
+  {
+   "index": 5,
+   "type": "SegmentedControl",
+   "identifier": "period",
+   "frame": {
+    "x": 20,
+    "y": 340,
+    "width": 360,
+    "height": 32
+   },
+   "enabled": true,
+   "hittable": true,
+   "depth": 1,
+   "parentIndex": 0
+  },
+  {
+   "index": 6,
+   "type": "Button",
+   "label": "Weekly",
+   "frame": {
+    "x": 20,
+    "y": 340,
+    "width": 180,
+    "height": 32
+   },
+   "enabled": true,
+   "selected": true,
+   "hittable": true,
+   "depth": 2,
+   "parentIndex": 5
+  },
+  {
+   "index": 7,
+   "type": "Button",
+   "label": "Monthly",
+   "frame": {
+    "x": 200,
+    "y": 340,
+    "width": 180,
+    "height": 32
+   },
+   "enabled": true,
+   "hittable": true,
+   "depth": 2,
+   "parentIndex": 5
+  },
+  {
+   "index": 8,
+   "type": "TabBar",
+   "frame": {
+    "x": 0,
+    "y": 790,
+    "width": 402,
+    "height": 84
+   },
+   "enabled": true,
+   "hittable": true,
+   "depth": 1,
+   "parentIndex": 0
+  },
+  {
+   "index": 9,
+   "type": "Tab",
+   "label": "Home",
+   "identifier": "tab-home",
+   "frame": {
+    "x": 0,
+    "y": 790,
+    "width": 201,
+    "height": 84
+   },
+   "enabled": true,
+   "selected": true,
+   "hittable": true,
+   "depth": 2,
+   "parentIndex": 8
+  },
+  {
+   "index": 10,
+   "type": "Tab",
+   "label": "Settings",
+   "identifier": "tab-settings",
+   "frame": {
+    "x": 201,
+    "y": 790,
+    "width": 201,
+    "height": 84
+   },
+   "enabled": true,
+   "hittable": true,
+   "depth": 2,
+   "parentIndex": 8
+  },
+  {
+   "index": 11,
+   "type": "Button",
+   "frame": {
+    "x": 20,
+    "y": 400,
+    "width": 44,
+    "height": 44
+   },
+   "enabled": true,
+   "hittable": true,
+   "depth": 1,
+   "parentIndex": 0
+  },
+  {
+   "index": 12,
+   "type": "Button",
+   "label": "Delete",
+   "frame": {
+    "x": 20,
+    "y": 460,
+    "width": 100,
+    "height": 44
+   },
+   "enabled": true,
+   "hittable": true,
+   "depth": 1,
+   "parentIndex": 0
+  },
+  {
+   "index": 13,
+   "type": "Button",
+   "label": "Delete",
+   "frame": {
+    "x": 20,
+    "y": 520,
+    "width": 100,
+    "height": 44
+   },
+   "enabled": true,
+   "hittable": true,
+   "depth": 1,
+   "parentIndex": 0
+  },
+  {
+   "index": 14,
+   "type": "CheckBox",
+   "label": "Remember me",
+   "identifier": "remember",
+   "value": "1",
+   "frame": {
+    "x": 20,
+    "y": 580,
+    "width": 200,
+    "height": 32
+   },
+   "enabled": true,
+   "hittable": true,
+   "depth": 1,
+   "parentIndex": 0
+  },
+  {
+   "index": 15,
+   "type": "CheckBox",
+   "label": "Newsletter",
+   "identifier": "newsletter",
+   "value": "Subscribe to the newsletter",
+   "frame": {
+    "x": 20,
+    "y": 620,
+    "width": 200,
+    "height": 32
+   },
+   "enabled": true,
+   "hittable": true,
+   "depth": 1,
+   "parentIndex": 0
+  }
+ ]
+}

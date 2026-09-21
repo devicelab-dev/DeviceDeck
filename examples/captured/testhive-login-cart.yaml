@@ -1,0 +1,30 @@
+appId: dev.devicelab.testhive
+name: testhive
+tags:
+  - devicedeck
+  - capture
+---
+# devicedeck secrets: supply at replay with -e PASSWORD_INPUT=…
+# desert: Screen has actionable elements with no durable id: add a test identifier (iOS accessibilityIdentifier, Android resource-id / Compose testTag, Flutter Semantics.identifier, React Native testID). (4 of 13 actionable elements have no identifier)
+- launchApp:
+    clearState: true
+# devicedeck: tapOn selector=id confidence=high
+- tapOn:
+    id: "username-input"
+    label: "username-input"
+# devicedeck: inputText
+- inputText: "devicelab"
+# devicedeck: tapOn selector=id confidence=high
+- tapOn:
+    id: "password-input"
+    label: "password-input"
+# devicedeck: inputText secret=${PASSWORD_INPUT}
+- inputText: ${PASSWORD_INPUT}
+# devicedeck: tapOn selector=id confidence=high
+- tapOn:
+    id: "login-button"
+    label: "login-button"
+# devicedeck: tapOn selector=id confidence=high
+- tapOn:
+    id: "add-to-cart-1"
+    label: "add-to-cart-1"

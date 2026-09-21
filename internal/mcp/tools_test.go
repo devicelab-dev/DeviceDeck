@@ -50,8 +50,8 @@ func TestNewClientTrimsSlash(t *testing.T) {
 
 func TestToolsRegistered(t *testing.T) {
 	tools, order := NewClient("http://x").Tools()
-	if len(tools) != 9 || len(order) != 9 {
-		t.Fatalf("want 9 tools, got %d/%d", len(tools), len(order))
+	if len(tools) != 16 || len(order) != 16 {
+		t.Fatalf("want 16 tools, got %d/%d", len(tools), len(order))
 	}
 	for _, name := range order {
 		if _, ok := tools[name]; !ok {

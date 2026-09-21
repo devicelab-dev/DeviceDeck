@@ -19,6 +19,8 @@ import (
 )
 
 type fakeBackend struct {
+	opened     []string
+	openErr    error
 	devices    []sim.Device
 	devicesErr error
 	png        []byte
@@ -61,9 +63,11 @@ func (f *fakeBackend) sentUDID() string {
 func (f *fakeBackend) Booted(context.Context) ([]sim.Device, error) {
 	return f.devices, f.devicesErr
 }
+
 func (f *fakeBackend) All(context.Context) ([]sim.Device, error) {
 	return f.devices, f.devicesErr
 }
+
 func (f *fakeBackend) Boot(context.Context, string) error {
 	f.booted = append(f.booted, "boot")
 	return f.bootErr
@@ -88,6 +92,13 @@ func (f *fakeBackend) Install(_ context.Context, udid, appPath string) error {
 	defer f.mu.Unlock()
 	f.installed = append(f.installed, udid+"/"+appPath)
 	return f.installErr
+}
+
+func (f *fakeBackend) OpenURL(_ context.Context, udid, rawURL string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.opened = append(f.opened, udid+"/"+rawURL)
+	return f.openErr
 }
 
 func (f *fakeBackend) Screenshot(_ context.Context, udid string) ([]byte, error) {
@@ -855,5 +866,31 @@ func TestTreePayloadForeground(t *testing.T) {
 		if p["appState"] != state {
 			t.Errorf("appState %q not echoed on payload: %v", state, p["appState"])
 		}
+	}
+}
+
+func TestOpenURL(t *testing.T) {
+	f := &fakeBackend{}
+	rec := do(t, newTestServer(f), "POST", "/api/devices/AAA/openurl", `{"url":"myapp://checkout"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d", rec.Code)
+	}
+	if len(f.opened) != 1 || f.opened[0] != "AAA/myapp://checkout" {
+		t.Errorf("opened = %v", f.opened)
+	}
+	// Missing url is a bad request.
+	rec = do(t, newTestServer(&fakeBackend{}), "POST", "/api/devices/AAA/openurl", `{}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("missing url status = %d", rec.Code)
+	}
+	// A backend failure is a bad gateway.
+	rec = do(t, newTestServer(&fakeBackend{openErr: errors.New("no sim")}), "POST", "/api/devices/AAA/openurl", `{"url":"x://y"}`)
+	if rec.Code != http.StatusBadGateway {
+		t.Errorf("backend failure status = %d", rec.Code)
+	}
+	// A malformed body is rejected before any backend call.
+	rec = do(t, newTestServer(&fakeBackend{}), "POST", "/api/devices/AAA/openurl", `{bad`)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("malformed body status = %d", rec.Code)
 	}
 }

@@ -1,0 +1,7 @@
+$ agent-browser open http://127.0.0.1:8787/device/56B22693-2704-4861-8DCF-9DD2ED0483FA?app=dev.devicelab.testhive&reset=yes
+[agent-browser] launched browser
+✓ DeviceDeck Device — hardware keys have no buttons here; call window.devicedeck.gesture('home'|'appSwitcher'|'notificationCenter'|'lockScreen')
+  http://127.0.0.1:8787/device/56B22693-2704-4861-8DCF-9DD2ED0483FA?app=dev.devicelab.testhive&reset=yes
+
+$ agent-browser snapshot -i
+(no interactive elements)

@@ -80,8 +80,10 @@ func TestServiceStartFailsWhenTreeUnavailable(t *testing.T) {
 func TestServiceAssert(t *testing.T) {
 	svc := NewService(&fakeTrees{tree: []runner.Node{
 		{Index: 0, Type: "Application", Frame: runner.Rect{Width: 100, Height: 200}},
-		{Index: 1, Type: "Button", Identifier: "ok", Depth: 1,
-			Frame: runner.Rect{X: 0, Y: 0, Width: 50, Height: 30}},
+		{
+			Index: 1, Type: "Button", Identifier: "ok", Depth: 1,
+			Frame: runner.Rect{X: 0, Y: 0, Width: 50, Height: 30},
+		},
 	}})
 	if err := svc.Assert("UDID-1", 0.25, 0.075); err == nil {
 		t.Fatal("assert without a recording must fail")
@@ -131,5 +133,57 @@ func TestStartLosesRaceToConcurrentRecorder(t *testing.T) {
 	}}
 	if err := svc.Start(context.Background(), "UDID-1", "app"); err == nil {
 		t.Fatal("Start must lose to the concurrent recorder")
+	}
+}
+
+// validateExport is the capture-side guardrail: it must accept a clean
+// flow, reject one the runner cannot parse, and reject one that uses a
+// field a target platform's driver ignores.
+func TestValidateExport(t *testing.T) {
+	good := ExportMaestro("dev.devicelab.testhive", []Step{{Kind: "tapOn", ID: "login"}})
+	if err := validateExport(good); err != nil {
+		t.Errorf("clean flow rejected: %v", err)
+	}
+	if err := validateExport("appId: x\n---\n- notACommand: 1\n"); err == nil {
+		t.Error("unparseable flow must be rejected")
+	}
+	// css parses but is unsupported on iOS, so validateExport must refuse it.
+	if err := validateExport("appId: x\n---\n- tapOn:\n    css: \".btn\"\n"); err == nil {
+		t.Error("iOS-unsupported field must be rejected")
+	}
+}
+
+// Stop refuses to hand back a flow that fails validation, returning the
+// steps and the error rather than a broken YAML file. The emitter never
+// produces such a flow, so the validator is forced via its seam.
+func TestStopRejectsInvalidFlow(t *testing.T) {
+	orig := exportValidator
+	exportValidator = func(string) error { return errors.New("boom") }
+	defer func() { exportValidator = orig }()
+
+	svc := NewService(&fakeTrees{tree: []runner.Node{
+		{Index: 0, Type: "Application", Frame: runner.Rect{Width: 100, Height: 200}},
+		{
+			Index: 1, Type: "Button", Identifier: "ok", Depth: 1,
+			Frame: runner.Rect{X: 0, Y: 0, Width: 50, Height: 30},
+		},
+	}})
+	if err := svc.Start(context.Background(), "UDID-1", "com.example"); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := svc.Assert("UDID-1", 0.25, 0.075); err != nil {
+		t.Fatalf("Assert: %v", err)
+	}
+	yaml, guard, steps, err := svc.Stop("UDID-1")
+	if err == nil {
+		t.Fatal("Stop must fail when validation fails")
+	}
+	if yaml != "" || guard != "" {
+		t.Errorf("Stop returned artifacts for a rejected flow: yaml=%q guard=%q", yaml, guard)
+	}
+	// The captured steps are still returned so the caller can show what
+	// was recorded even though the flow was refused.
+	if len(steps) != 1 {
+		t.Errorf("Stop dropped the steps on rejection: %+v", steps)
 	}
 }

@@ -1,0 +1,54 @@
+- application "device screen 531a55b2" [ref=e48]:
+  - generic:
+    - generic:
+      - generic "Typing Predictions":
+        - text: Typing Predictions
+        - button "Passwords" [ref=e15]
+  - generic:
+    - generic:
+      - generic "Padding-Left":
+        - text: Padding-Left
+        - generic "q" [ref=e17]
+        - generic "w" [ref=e18]
+        - generic "e" [ref=e19]
+        - generic "r" [ref=e20]
+        - generic "t" [ref=e21]
+        - generic "y" [ref=e22]
+        - generic "u" [ref=e23]
+        - generic "i" [ref=e24]
+        - generic "o" [ref=e25]
+        - generic "p" [ref=e26]
+        - generic "a" [ref=e27]
+        - generic "s" [ref=e28]
+        - generic "d" [ref=e29]
+        - generic "f" [ref=e30]
+        - generic "g" [ref=e31]
+        - generic "h" [ref=e32]
+        - generic "j" [ref=e33]
+        - generic "k" [ref=e34]
+        - generic "l" [ref=e35]
+        - button "shift" [ref=e36]
+        - generic "z" [ref=e37]
+        - generic "x" [ref=e38]
+        - generic "c" [ref=e39]
+        - generic "v" [ref=e40]
+        - generic "b" [ref=e41]
+        - generic "n" [ref=e42]
+        - generic "m" [ref=e43]
+        - generic "delete" [ref=e44]
+        - generic "numbers" [ref=e45]
+        - button "return (Return)" [ref=e47]: return
+  - generic:
+    - img "RobusTest" [ref=e5]
+    - generic "Welcome Back" [ref=e6]
+    - generic "Sign in to continue" [ref=e7]
+    - textbox "Username (username-input)" [ref=e8]:
+      - /placeholder: Username
+      - text: devicelab
+    - 'generic "Hint: devicelab or a" [ref=e9]'
+    - textbox "Password (password-input)" [ref=e10]:
+      - /placeholder: Password
+      - text: ••••••••••••••••••
+    - 'generic "Hint: robustest or a" [ref=e11]'
+    - button "Sign In (login-button)" [ref=e12]: Sign In
+    - button "Forgot Password? (forgot-password-button)" [ref=e13]: Forgot Password?

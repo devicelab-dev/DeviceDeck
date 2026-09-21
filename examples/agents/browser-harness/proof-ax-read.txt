@@ -1,0 +1,6 @@
+# browser-harness reads DeviceDeck's real accessibility tree over CDP (no DeviceDeck-specific code):
+  - image "RobusTest"
+  - textbox "Username (username-input)"
+  - textbox "Password (password-input)"
+  - button "Sign In (login-button)"
+  - button "Forgot Password? (forgot-password-button)"

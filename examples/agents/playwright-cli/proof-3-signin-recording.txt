@@ -1,0 +1,28 @@
+$ playwright-cli -s=dd recording-start
+### Result
+Recording started. Call browser_stop_recording to retrieve the recorded actions.
+$ playwright-cli -s=dd click e12
+### Ran Playwright code
+```js
+await page.getByTestId('login-button').click();
+```
+### Page
+- Page URL: http://127.0.0.1:8787/device/56B22693-2704-4861-8DCF-9DD2ED0483FA?app=dev.devicelab.testhive&reset=yes
+- Page Title: DeviceDeck Device — hardware keys have no buttons here; call window.devicedeck.gesture('home'|'appSwitcher'|'notificationCenter'|'lockScreen')
+### Snapshot
+- [Snapshot](.playwright-cli/page-2026-09-09T06-01-51-611Z.yml)
+$ playwright-cli -s=dd snapshot
+    - button "Shopping Cart (cart-button)" [ref=e54]: Shopping Cart
+          - button "Add (add-to-cart-1)" [ref=e67]: Add
+$ playwright-cli -s=dd recording-stop
+### Result
+Recording stopped. Recorded actions:
+
+```js
+await page.getByRole('application', { name: 'device screen 8c1005d3' }).click();
+```
+### Page
+- Page URL: http://127.0.0.1:8787/device/56B22693-2704-4861-8DCF-9DD2ED0483FA?app=dev.devicelab.testhive&reset=yes
+- Page Title: DeviceDeck Device — hardware keys have no buttons here; call window.devicedeck.gesture('home'|'appSwitcher'|'notificationCenter'|'lockScreen')
+### Snapshot
+- [Snapshot](.playwright-cli/page-2026-09-09T06-01-56-926Z.yml)

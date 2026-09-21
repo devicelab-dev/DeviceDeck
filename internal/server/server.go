@@ -39,6 +39,7 @@ type AppLauncher interface {
 	LaunchApp(ctx context.Context, udid, appID string) error
 	ResetApp(ctx context.Context, udid, appID string) error
 	Install(ctx context.Context, udid, appPath string) error
+	OpenURL(ctx context.Context, udid, rawURL string) error
 }
 
 // Screenshotter captures a device's screen as PNG bytes.
@@ -126,6 +127,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/devices/{udid}/boot", s.handleBoot)
 	mux.HandleFunc("POST /api/devices/{udid}/app/launch", s.handleLaunchApp)
 	mux.HandleFunc("POST /api/devices/{udid}/app/install", s.handleInstallApp)
+	mux.HandleFunc("POST /api/devices/{udid}/openurl", s.handleOpenURL)
 	mux.HandleFunc("GET /api/devices/{udid}/screenshot", s.handleScreenshot)
 	mux.HandleFunc("GET /api/devices/{udid}/tree", s.handleTree)
 	mux.HandleFunc("GET /api/devices/{udid}/video", s.handleVideoWS)
@@ -481,17 +483,29 @@ func (s *Server) handleButton(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, okResponse("button"))
 }
 
+// handleOpenURL opens a URL — an https link or a custom deep-link scheme —
+// on the device, routing to the app that registered the scheme.
+func (s *Server) handleOpenURL(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		URL string `json:"url"`
+	}
+	if !decodeRequired(w, r, &req, func() string { return req.URL }, "url") {
+		return
+	}
+	if err := s.launch.OpenURL(r.Context(), r.PathValue("udid"), req.URL); err != nil {
+		httpError(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, okResponse("openurl"))
+}
+
 // ---------- capture ----------
 
 func (s *Server) handleCaptureStart(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		App string `json:"app"`
 	}
-	if !decodeBody(w, r, &req) {
-		return
-	}
-	if req.App == "" {
-		httpError(w, http.StatusBadRequest, fmt.Errorf("app bundle id is required"))
+	if !decodeRequired(w, r, &req, func() string { return req.App }, "app bundle id") {
 		return
 	}
 	if err := s.capture.Start(r.Context(), r.PathValue("udid"), req.App); err != nil {
@@ -545,6 +559,21 @@ func (s *Server) handleCaptureStatus(w http.ResponseWriter, r *http.Request) {
 func decodeBody(w http.ResponseWriter, r *http.Request, dst any) bool {
 	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
 		httpError(w, http.StatusBadRequest, fmt.Errorf("invalid JSON body: %w", err))
+		return false
+	}
+	return true
+}
+
+// decodeRequired decodes a request body into dst and reports whether the one
+// field the handler needs came back non-empty, writing a 400 otherwise. It
+// collapses the decode-then-require preamble the single-field POST handlers
+// share (openurl, capture start), which is otherwise duplicated verbatim.
+func decodeRequired(w http.ResponseWriter, r *http.Request, dst any, value func() string, name string) bool {
+	if !decodeBody(w, r, dst) {
+		return false
+	}
+	if value() == "" {
+		httpError(w, http.StatusBadRequest, fmt.Errorf("%s is required", name))
 		return false
 	}
 	return true

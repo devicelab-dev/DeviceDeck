@@ -17,3 +17,30 @@ func ValidateFlow(yaml []byte) (int, error) {
 	}
 	return len(parsed.Steps), nil
 }
+
+// UnsupportedFields reports selector fields the exported flow uses that
+// the given platform's driver does not support ("ios", "android", "web").
+// A captured flow must replay unchanged on both simulators and real
+// devices, so an emitter that reaches for a field one platform silently
+// ignores (iOS has no `css` or `checked`) ships a flow that passes here
+// and mismatches there. Parsing reuses maestro-runner's own selector
+// extraction, so this stays honest as the runner's support matrix moves.
+func UnsupportedFields(yaml []byte, platform string) ([]string, error) {
+	parsed, err := flow.Parse(yaml, "captured.yaml")
+	if err != nil {
+		return nil, fmt.Errorf("maestro-runner rejected captured flow: %w", err)
+	}
+	var bad []string
+	seen := map[string]bool{}
+	for _, step := range parsed.Steps {
+		for _, sel := range flow.ExtractSelectors(step) {
+			for _, f := range flow.CheckUnsupportedFields(sel, platform) {
+				if !seen[f] {
+					seen[f] = true
+					bad = append(bad, f)
+				}
+			}
+		}
+	}
+	return bad, nil
+}

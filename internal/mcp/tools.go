@@ -15,15 +15,19 @@ import (
 // is a wrapper over one of its endpoints, so the MCP adds no device logic of
 // its own.
 type Client struct {
-	BaseURL string
-	HTTP    *http.Client
+	BaseURL      string
+	HTTP         *http.Client
+	snaps        *snapshotState
+	AppSkillsDir string
 }
 
 // NewClient targets a running server (default http://127.0.0.1:8787).
 func NewClient(baseURL string) *Client {
 	return &Client{
-		BaseURL: strings.TrimRight(baseURL, "/"),
-		HTTP:    &http.Client{Timeout: 60 * time.Second},
+		BaseURL:      strings.TrimRight(baseURL, "/"),
+		HTTP:         &http.Client{Timeout: 60 * time.Second},
+		snaps:        newSnapshotState(),
+		AppSkillsDir: appSkillsDir(),
 	}
 }
 
@@ -37,26 +41,38 @@ func (c *Client) Tools() (map[string]Tool, []string) {
 		"list_devices":    {Description: descListDevices, InputSchema: schemaNone(), Call: c.listDevices},
 		"device_page_url": {Description: descPageURL, InputSchema: schemaDeviceApp(true), Call: c.devicePageURL},
 		"ui_tree":         {Description: descUITree, InputSchema: schemaDeviceApp(false), Call: c.uiTree},
+		"snapshot":        {Description: descSnapshot, InputSchema: schemaSnapshot(), Call: c.snapshot},
 		"boot_device":     {Description: descBoot, InputSchema: schemaDevice(), Call: c.bootDevice},
 		"install_app":     {Description: descInstall, InputSchema: schemaInstall(), Call: c.installApp},
 		"launch_app":      {Description: descLaunch, InputSchema: schemaLaunch(), Call: c.launchApp},
 		"tap":             {Description: descTap, InputSchema: schemaTap(), Call: c.tap},
+		"long_press":      {Description: descLongPress, InputSchema: schemaTap(), Call: c.longPress},
+		"swipe":           {Description: descSwipe, InputSchema: schemaSwipe(), Call: c.swipe},
+		"press":           {Description: descPress, InputSchema: schemaPress(), Call: c.press},
+		"find_element":    {Description: descFindElement, InputSchema: schemaFind(), Call: c.findElement},
+		"app_skills":      {Description: descAppSkills, InputSchema: schemaApp(), Call: c.appSkillsTool},
+		"open_url":        {Description: descOpenURL, InputSchema: schemaOpenURL(), Call: c.openURL},
 		"assert_visible":  {Description: descAssert, InputSchema: schemaAssert(), Call: c.assertVisible},
 		"screenshot":      {Description: descScreenshot, InputSchema: schemaDevice(), Raw: c.screenshot},
 	}
-	order := []string{"list_devices", "device_page_url", "ui_tree", "boot_device", "install_app", "launch_app", "tap", "assert_visible", "screenshot"}
+	order := []string{"list_devices", "device_page_url", "ui_tree", "snapshot", "boot_device", "install_app", "launch_app", "tap", "long_press", "swipe", "press", "find_element", "app_skills", "open_url", "assert_visible", "screenshot"}
 	return tools, order
 }
 
 // deviceArgs is the shape the tools take: which device, which app to scope a
 // tree to, the fresh/resume toggle, and the selector fields the act tools use.
 type deviceArgs struct {
-	UDID    string `json:"udid"`
-	App     string `json:"app"`
-	AppFile string `json:"appFile"`
-	Fresh   *bool  `json:"fresh"`
-	Testid  string `json:"testid"`
-	Text    string `json:"text"`
+	UDID      string `json:"udid"`
+	App       string `json:"app"`
+	AppFile   string `json:"appFile"`
+	Fresh     *bool  `json:"fresh"`
+	Testid    string `json:"testid"`
+	Text      string `json:"text"`
+	Role      string `json:"role"`
+	Name      string `json:"name"`
+	Direction string `json:"direction"`
+	Key       string `json:"key"`
+	URL       string `json:"url"`
 }
 
 // treeNode is the subset of a mirrored element the act tools read: its
@@ -68,6 +84,7 @@ type treeNode struct {
 	Label      string `json:"label"`
 	Value      string `json:"value"`
 	Type       string `json:"type"`
+	Enabled    *bool  `json:"enabled"`
 	Frame      struct {
 		X, Y, Width, Height float64
 	} `json:"frame"`
@@ -147,7 +164,11 @@ func (c *Client) launchApp(raw json.RawMessage) (string, error) {
 	if _, err := c.post(path, body); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("launched %s on %s", a.App, a.UDID), nil
+	msg := fmt.Sprintf("launched %s on %s", a.App, a.UDID)
+	if skills := appSkills(c.AppSkillsDir, a.App); skills != "" {
+		msg += "\n" + skills
+	}
+	return msg, nil
 }
 
 func (c *Client) installApp(raw json.RawMessage) (string, error) {
@@ -180,11 +201,34 @@ func (c *Client) tap(raw json.RawMessage) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// Re-validate before acting: an element found but disabled is the
+	// screen still settling (a Sign In button that enables once both
+	// fields fill), which is a distinct, retryable state from an element
+	// that is simply not there — say which, so the agent re-snapshots
+	// rather than giving up.
+	if disabledOnScreen(nodes, a.Testid) {
+		return "", fmt.Errorf("element %q is on screen but disabled; the screen may be settling — re-snapshot and retry", a.Testid)
+	}
 	body, _ := json.Marshal(map[string]float64{"x": x, "y": y})
 	if _, err := c.post("/api/devices/"+url.PathEscape(a.UDID)+"/tap", body); err != nil {
 		return "", err
 	}
 	return "tapped " + a.Testid, nil
+}
+
+// disabledOnScreen reports whether the testid resolves to an element the
+// device marks not-enabled. Enabled is a reliable device signal (unlike
+// hittability, which XCUITest computes relative to the app under test and
+// reports false for anything in another window).
+func disabledOnScreen(nodes []treeNode, testid string) bool {
+	for _, n := range nodes {
+		if n.Identifier == testid {
+			// A nil Enabled means the field was absent; only an explicit
+			// false is a disabled control.
+			return n.Enabled != nil && !*n.Enabled
+		}
+	}
+	return false
 }
 
 // assertVisible reports whether an element is on screen, by testid (exact

@@ -1,0 +1,23 @@
+$ agent-browser fill @e1 devicelab
+✓ Done
+$ agent-browser fill @e2 robustest
+✓ Done
+$ agent-browser snapshot -i
+- button "Passwords" [ref=e7]
+- button "shift" [ref=e5]
+- button "return (Return)" [ref=e6]
+- textbox "Username (username-input)" [ref=e1]: devicelab
+- textbox "Password (password-input)" [ref=e2]: robustest
+- button "Sign In (login-button)" [disabled, ref=e3]
+- button "Forgot Password? (forgot-password-button)" [ref=e4]
+$ agent-browser click @e3
+✓ Done
+$ agent-browser snapshot -i
+- button "Passwords" [ref=e7]
+- button "shift" [ref=e5]
+- button "return (Return)" [ref=e6]
+- textbox "Username (username-input)" [ref=e1]: devicelab
+- textbox "Password (password-input)" [ref=e2]: robustest
+- button "Sign In (login-button)" [disabled, ref=e3]
+- button "Forgot Password? (forgot-password-button)" [ref=e4]
+$ agent-browser snapshot | grep

@@ -1,0 +1,29 @@
+$ agent-browser snapshot -i
+- button "Passwords" [ref=e7]
+- button "shift" [ref=e5]
+- button "return (Return)" [ref=e6]
+- textbox "Username (username-input)" [ref=e1]: devicelab
+- textbox "Password (password-input)" [ref=e2]: •••••••••
+- button "Sign In (login-button)" [ref=e3]
+- button "Forgot Password? (forgot-password-button)" [ref=e4]
+$ agent-browser click @e3
+✓ Done
+$ agent-browser snapshot -i
+- button "Shopping Cart (cart-button)" [ref=e1]
+- button "Drag (line.horizontal.3)" [ref=e2]
+- textbox "Search frameworks... (search-bar)" [ref=e3]
+- button "All" [ref=e4]
+- button "Mobile Testing" [ref=e5]
+- button "Android Testing" [ref=e6]
+- button "Web Testing" [ref=e7]
+- button "Add (add-to-cart-1)" [ref=e8]
+- button "Add (add-to-cart-2)" [ref=e9]
+- button "Add (add-to-cart-3)" [ref=e10]
+- button "Add (add-to-cart-4)" [ref=e11]
+- button "Add (add-to-cart-5)" [ref=e12]
+$ agent-browser find text Hello
+      - button "Shopping Cart (cart-button)" [ref=e1]
+        - StaticText "Shopping Cart"
+          - button "Add (add-to-cart-1)" [ref=e8]
+          - button "Add (add-to-cart-2)" [ref=e9]
+          - button "Add (add-to-cart-3)" [ref=e10]

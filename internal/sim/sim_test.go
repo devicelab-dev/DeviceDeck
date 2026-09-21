@@ -164,10 +164,12 @@ func TestResetApp(t *testing.T) {
 		t.Fatalf("ResetApp: %v", err)
 	}
 	rm := calls[len(calls)-1]
-	for _, want := range []string{"rm -rf",
+	for _, want := range []string{
+		"rm -rf",
 		"/data/Containers/Data/Application/ABC/Library",
 		"/data/Containers/Data/Application/ABC/Documents",
-		"/data/Containers/Data/Application/ABC/tmp"} {
+		"/data/Containers/Data/Application/ABC/tmp",
+	} {
 		if !strings.Contains(rm, want) {
 			t.Errorf("rm call %q missing %q", rm, want)
 		}
@@ -241,5 +243,27 @@ func TestInstallError(t *testing.T) {
 	}}
 	if err := c.Install(context.Background(), "UDID-1", "/x.app"); err == nil {
 		t.Fatal("expected an install error")
+	}
+}
+
+func TestOpenURL(t *testing.T) {
+	var got []string
+	c := &Client{run: func(_ context.Context, name string, args ...string) ([]byte, error) {
+		got = append([]string{name}, args...)
+		return nil, nil
+	}}
+	if err := c.OpenURL(context.Background(), "U1", "myapp://checkout"); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"xcrun", "simctl", "openurl", "U1", "myapp://checkout"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("cmd = %v, want %v", got, want)
+	}
+	// A simctl failure is reported.
+	fail := &Client{run: func(context.Context, string, ...string) ([]byte, error) {
+		return nil, errors.New("simctl down")
+	}}
+	if err := fail.OpenURL(context.Background(), "U1", "x"); err == nil {
+		t.Error("openurl failure must propagate")
 	}
 }

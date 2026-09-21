@@ -9,11 +9,13 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/devicelab-dev/DeviceDeck/internal/input"
 	"github.com/devicelab-dev/DeviceDeck/internal/runner"
+	"github.com/devicelab-dev/DeviceDeck/internal/uisem"
 )
 
 // Interaction classification thresholds.
@@ -49,6 +51,11 @@ type Step struct {
 	Index     int    `json:"index,omitempty"`
 	// Input for inputText / key name for pressKey.
 	Input string `json:"input,omitempty"`
+	// Secure marks an inputText typed into a secure field. Its value is
+	// never the typed text: SecureVar names an env parameter, and the
+	// flow reads ${SecureVar} so the secret stays out of the artifact.
+	Secure    bool   `json:"secure,omitempty"`
+	SecureVar string `json:"secureVar,omitempty"`
 	// Normalized coordinates for swipe / tapOnPoint fallback.
 	StartX float64 `json:"startX,omitempty"`
 	StartY float64 `json:"startY,omitempty"`
@@ -101,7 +108,12 @@ type Recorder struct {
 	treeAt  time.Time
 	pending *pendingTouch
 	text    []rune
-	refresh int // refresh generation; stale async refreshes are dropped
+	// secure/secureVar track whether the currently focused field is a
+	// secure one, set when a tap lands on it and read when the buffered
+	// text is flushed — the text belongs to the field last tapped.
+	secure    bool
+	secureVar string
+	refresh   int // refresh generation; stale async refreshes are dropped
 }
 
 type pendingTouch struct {
@@ -214,6 +226,15 @@ func (r *Recorder) Finish() []Step {
 // AppID returns the bundle id the recording targets.
 func (r *Recorder) AppID() string { return r.appID }
 
+// Lint reports the desert findings for the screen the recorder last saw —
+// which frameworks on it offer no durable selector, and how to fix each.
+// Read at Stop time so a capture is handed back with its holes named.
+func (r *Recorder) Lint() []DesertFinding {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return DesertLint(r.tree)
+}
+
 // ---------- touch assembly ----------
 
 func (r *Recorder) onTouch(ev input.Event) {
@@ -254,7 +275,42 @@ func (r *Recorder) finalizeTouch(p *pendingTouch) {
 	if r.now().Sub(p.startedAt) >= longPressAfter {
 		kind = "longPressOn"
 	}
+	r.noteFocus(p.startX, p.startY)
 	r.appendStep(r.resolveTap(kind, p.startX, p.startY))
+}
+
+// noteFocus records whether the field the user just tapped is a secure
+// one, so the text typed next is masked. Focus follows the last field
+// tapped; a tap that lands on no field leaves the previous focus alone,
+// because typing still goes to whatever field held it.
+func (r *Recorder) noteFocus(x, y float64) {
+	node := hitTest(r.tree, x, y)
+	if node == nil || !uisem.TextEntry(node.Type) {
+		return
+	}
+	r.secure = node.Type == "SecureTextField"
+	r.secureVar = secureVarName(node.Identifier)
+}
+
+// secureVarName turns a field's identifier into an env-parameter name
+// ("password-input" -> "PASSWORD_INPUT"). A field with no identifier
+// falls back to a generic SECRET, still keeping the value out of the flow.
+func secureVarName(identifier string) string {
+	if identifier == "" {
+		return "SECRET"
+	}
+	var b strings.Builder
+	for _, r := range identifier {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r - 32)
+		case r >= 'A' && r <= 'Z' || r >= '0' && r <= '9':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
 }
 
 // resolveTap turns a normalized point into a selector-based step, falling
@@ -395,7 +451,13 @@ func (r *Recorder) flushTextLocked() {
 	if len(r.text) == 0 {
 		return
 	}
-	r.appendStep(Step{Kind: "inputText", Input: string(r.text)})
+	if r.secure {
+		// Never emit the typed secret. The step carries the env-var name
+		// the flow will read; the value stays with whoever replays it.
+		r.appendStep(Step{Kind: "inputText", Secure: true, SecureVar: r.secureVar})
+	} else {
+		r.appendStep(Step{Kind: "inputText", Input: string(r.text)})
+	}
 	r.text = nil
 }
 

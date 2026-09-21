@@ -123,8 +123,10 @@ func TestBucketNonFinite(t *testing.T) {
 // judging whether a tap did anything.
 func TestInteractionHashSeesFocusMoves(t *testing.T) {
 	field := func(id string, focused bool) Node {
-		return Node{Index: 1, Type: "TextField", Identifier: id, Depth: 1, Enabled: true,
-			Frame: Rect{X: 0, Y: 0, Width: 100, Height: 40}, Focused: focused}
+		return Node{
+			Index: 1, Type: "TextField", Identifier: id, Depth: 1, Enabled: true,
+			Frame: Rect{X: 0, Y: 0, Width: 100, Height: 40}, Focused: focused,
+		}
 	}
 	app := Node{Index: 0, Type: "Application", Depth: 0, Frame: Rect{Width: 100, Height: 200}}
 	before := []Node{app, field("user", true), field("pass", false)}
@@ -140,10 +142,14 @@ func TestInteractionHashSeesFocusMoves(t *testing.T) {
 
 func TestInteractionHashFollowsTheScreen(t *testing.T) {
 	app := Node{Index: 0, Type: "Application", Depth: 0, Frame: Rect{Width: 100, Height: 200}}
-	one := []Node{app, {Index: 1, Type: "Button", Label: "Log in", Depth: 1, Enabled: true,
-		Frame: Rect{Width: 50, Height: 20}}}
-	two := []Node{app, {Index: 1, Type: "Button", Label: "Log out", Depth: 1, Enabled: true,
-		Frame: Rect{Width: 50, Height: 20}}}
+	one := []Node{app, {
+		Index: 1, Type: "Button", Label: "Log in", Depth: 1, Enabled: true,
+		Frame: Rect{Width: 50, Height: 20},
+	}}
+	two := []Node{app, {
+		Index: 1, Type: "Button", Label: "Log out", Depth: 1, Enabled: true,
+		Frame: Rect{Width: 50, Height: 20},
+	}}
 	if InteractionHash(one) == InteractionHash(two) {
 		t.Error("a screen change must still change InteractionHash")
 	}
@@ -152,10 +158,14 @@ func TestInteractionHashFollowsTheScreen(t *testing.T) {
 		t.Error("InteractionHash must be deterministic")
 	}
 	// A focused element that only moved is the same focus.
-	moved := []Node{app, {Index: 1, Type: "TextField", Identifier: "user", Depth: 1, Enabled: true,
-		Frame: Rect{Y: 400, Width: 50, Height: 20}, Focused: true}}
-	same := []Node{app, {Index: 1, Type: "TextField", Identifier: "user", Depth: 1, Enabled: true,
-		Frame: Rect{Y: 400, Width: 50, Height: 20}, Focused: true}}
+	moved := []Node{app, {
+		Index: 1, Type: "TextField", Identifier: "user", Depth: 1, Enabled: true,
+		Frame: Rect{Y: 400, Width: 50, Height: 20}, Focused: true,
+	}}
+	same := []Node{app, {
+		Index: 1, Type: "TextField", Identifier: "user", Depth: 1, Enabled: true,
+		Frame: Rect{Y: 400, Width: 50, Height: 20}, Focused: true,
+	}}
 	if InteractionHash(moved) != InteractionHash(same) {
 		t.Error("identical trees must hash identically")
 	}

@@ -98,7 +98,11 @@ const ROLES = {
   Slider: "slider",
   CheckBox: "checkbox",
   RadioButton: "radio",
+  RadioGroup: "radiogroup",
   SegmentedControl: "radiogroup",
+  Stepper: "spinbutton",
+  IncrementArrow: "button",
+  DecrementArrow: "button",
   Picker: "listbox",
   PickerWheel: "listbox",
   Image: "img",
@@ -190,6 +194,12 @@ const CONTROL_ROLES = new Set([
 // baseName is a node's own name before an identifier is folded in. A
 // native container repeats this string, not the decorated one, so it is
 // what an ancestor's name has to be compared against.
+//
+// For a field this is placeholder before label — the reverse of the
+// HTML-AAM name computation, which puts placeholder last. Deliberate:
+// the platforms report a field's current contents as its label, so the
+// spec order would rename the field on every keystroke (see syncNode).
+// The placeholder is what the field asks for, and the only stable name.
 function baseName(node) {
   if (FIELD_TYPES.has(node.type) && node.placeholder) return node.placeholder;
   return node.label || node.placeholder || "";
@@ -218,6 +228,50 @@ function accessibleName(node) {
   if (!id || !CONTROL_ROLES.has(ROLES[node.type] || "")) return base;
   if (!base) return id;
   return base === id ? base : `${base} (${id})`;
+}
+
+// ARIA carries a state only on the roles that own it: checked on a
+// checkable role, a value on a range role, selected on a tab, option or
+// row. Chrome drops the attribute anywhere else, so a selected segment of
+// a segmented control — a Button on iOS — is exposed as pressed instead,
+// which is what its aria snapshot prints and what an agent reads.
+const CHECKABLE_ROLES = new Set(["switch", "checkbox", "radio"]);
+const RANGE_ROLES = new Set(["slider", "progressbar", "spinbutton"]);
+
+// checkedState reads a checkable control's state off its device value.
+// iOS reports a switch or checkbox as "1"/"0". Android's page source
+// carries the state in an attribute the runner does not parse yet, so its
+// value is the control's own text — anything but "1"/"0" yields no state
+// rather than a wrong one.
+function checkedState(value) {
+  if (value === "1") return "true";
+  if (value === "0") return "false";
+  return "";
+}
+
+// rangeNumber pulls the number out of a range control's value: iOS
+// reports a slider as "50%" and a stepper as "3".
+function rangeNumber(value) {
+  const m = /-?\d+(\.\d+)?/.exec(value || "");
+  return m ? m[0] : "";
+}
+
+// syncStates mirrors the device's states onto the ARIA attributes that
+// carry them for this role. aria-disabled is always explicit, never
+// removed: it is inherited down the ancestor chain, and a native
+// container frequently reports disabled while an enabled control sits
+// inside it — leaving the attribute off the child would let the
+// container's "true" claim it. An explicit "false" stops the walk at the
+// node itself.
+function syncStates(el, node, role) {
+  el.setAttribute("aria-disabled", node.enabled === false ? "true" : "false");
+  const selected = node.selected ? "true" : "";
+  setOrRemove(el, "aria-pressed", role === "button" ? selected : "");
+  setOrRemove(el, "aria-selected", role === "button" ? "" : selected);
+  setOrRemove(el, "aria-checked", CHECKABLE_ROLES.has(role) ? checkedState(node.value) : "");
+  const range = RANGE_ROLES.has(role);
+  setOrRemove(el, "aria-valuenow", range ? rangeNumber(node.value) : "");
+  setOrRemove(el, "aria-valuetext", range ? node.value || "" : "");
 }
 
 function setOrRemove(el, attr, value) {
@@ -254,13 +308,7 @@ function syncNode(el, node, anchorFrame, owners) {
   // the element's text.
   setOrRemove(el, "aria-label", accessibleName(node));
   setOrRemove(el, "aria-placeholder", node.placeholder || "");
-  // Always explicit, never removed. aria-disabled is inherited down the
-  // ancestor chain, and a native container frequently reports disabled
-  // while an enabled control sits inside it — leaving the attribute off
-  // the child would let the container's "true" claim it. An explicit
-  // "false" stops the walk at the node itself.
-  el.setAttribute("aria-disabled", node.enabled === false ? "true" : "false");
-  setOrRemove(el, "aria-selected", node.selected ? "true" : "");
+  syncStates(el, node, ROLES[node.type] || "");
   // Device truth for the states ARIA cannot carry everywhere:
   // aria-disabled is only honoured for a fixed set of roles, so a
   // role-less container's disabled state is invisible to the web tools
@@ -1166,6 +1214,52 @@ function sendEdit(before, after, firstEdit) {
   }
 }
 
+// ---------- audit: what no agent can address ----------
+
+// Roles an agent acts on. Every ref-minting tool — Playwright's aria
+// snapshot, agent-browser, chrome-devtools-mcp, the Claude browser tool —
+// keys its refs on role + accessible name, and data-testid alone never
+// reaches a snapshot; a control here with no name has no handle at all.
+const ACTIONABLE_ROLES = new Set([
+  ...CONTROL_ROLES, "slider", "spinbutton", "menuitem", "listbox",
+]);
+
+// controlName is the name a snapshot would print for a mirrored control.
+function controlName(el) {
+  const label = el.getAttribute("aria-label");
+  if (label) return label;
+  return el.tagName === "INPUT" ? el.placeholder : el.textContent.trim();
+}
+
+// auditMirror lists the mirrored controls an agent cannot address: those
+// with no name, and the names several controls share on one screen, where
+// an agent asked for one of them is choosing blindly. Both are app facts
+// the mirror reports as they are; an empty result is a fully legible
+// screen. Reachable as devicedeck.audit() from page.evaluate().
+function auditMirror() {
+  const unnamed = [];
+  const seen = new Map();
+  for (const el of mirror.querySelectorAll("[data-dd-node][role]")) {
+    const role = el.getAttribute("role");
+    if (!ACTIONABLE_ROLES.has(role)) continue;
+    const name = controlName(el);
+    const testid = el.getAttribute("data-testid") || "";
+    if (!name) {
+      unnamed.push({ role, testid, key: el.getAttribute("data-dd-key") });
+      continue;
+    }
+    const k = `${role}\u0000${name}`;
+    seen.set(k, (seen.get(k) || 0) + 1);
+  }
+  const duplicates = [];
+  for (const [k, count] of seen) {
+    if (count < 2) continue;
+    const [role, name] = k.split("\u0000");
+    duplicates.push({ role, name, count });
+  }
+  return { unnamed, duplicates };
+}
+
 // ---------- scripting escape hatch ----------
 
 // Gestures DOM events cannot express, callable from page.evaluate().
@@ -1190,6 +1284,8 @@ window.devicedeck = {
   // an agent wants to reason over. Needs video streaming; the canvas is
   // otherwise blank.
   screenshot: () => canvas.toDataURL("image/png"),
+  // What on this screen no agent can address; see auditMirror.
+  audit: auditMirror,
 };
 
 window.addEventListener("resize", positionMirror);

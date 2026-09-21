@@ -165,8 +165,10 @@ func TestCallToolRaw(t *testing.T) {
 	s := NewServer(tools, []string{"shot"})
 
 	// Success: content is the raw items, isError false.
-	ok := s.dispatch(request{Method: "tools/call", ID: json.RawMessage(`1`),
-		Params: json.RawMessage(`{"name":"shot","arguments":{}}`)})
+	ok := s.dispatch(request{
+		Method: "tools/call", ID: json.RawMessage(`1`),
+		Params: json.RawMessage(`{"name":"shot","arguments":{}}`),
+	})
 	r := ok.Result.(map[string]any)
 	if r["isError"] != false {
 		t.Errorf("raw success isError = %v", r["isError"])
@@ -176,8 +178,10 @@ func TestCallToolRaw(t *testing.T) {
 	}
 
 	// Failure: reported as an isError tool result, not a transport error.
-	bad := s.dispatch(request{Method: "tools/call", ID: json.RawMessage(`2`),
-		Params: json.RawMessage(`{"name":"shot","arguments":{"fail":true}}`)})
+	bad := s.dispatch(request{
+		Method: "tools/call", ID: json.RawMessage(`2`),
+		Params: json.RawMessage(`{"name":"shot","arguments":{"fail":true}}`),
+	})
 	br := bad.Result.(map[string]any)
 	if br["isError"] != true {
 		t.Errorf("raw failure isError = %v", br["isError"])
