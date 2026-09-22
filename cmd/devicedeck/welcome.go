@@ -66,13 +66,14 @@ func newWelcome(ctx context.Context, devices server.DeviceLister, tools doctor.E
 func (w welcome) write(out io.Writer) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "\n  %s %s\n", brand.Green("●", w.fancy), brand.Bold("Running", w.fancy))
-	w.open(&b)
 	w.devices(&b)
 	w.appsSection(&b)
 	w.toolsSection(&b)
 	w.claude(&b)
 	w.section(&b, "USE WITH TESTS")
 	fmt.Fprintf(&b, "    %-10s %s\n", "baseURL", w.link(w.local+"/device/<udid>"))
+	// Last, so the address to open is what is left on screen.
+	w.open(&b)
 	fmt.Fprintf(&b, "\n  %s  %s\n  %s  %s\n\n", brand.Dim("Logs", w.fancy), tildeHome(w.logs),
 		brand.Dim("Stop", w.fancy), "Ctrl-C")
 	_, _ = io.WriteString(out, b.String())

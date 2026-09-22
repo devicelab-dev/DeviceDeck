@@ -267,3 +267,13 @@ func TestWelcomeLinksBootedDevicesToTheirApps(t *testing.T) {
 		t.Errorf("an app linked to the wrong platform:\n%s", out.String())
 	}
 }
+
+func TestWelcomeEndsWithWhereToOpen(t *testing.T) {
+	var out bytes.Buffer
+	welcome{local: "http://127.0.0.1:8787", logs: "/l"}.write(&out)
+	text := out.String()
+	open, tools, logs := strings.Index(text, "OPEN"), strings.Index(text, "USE WITH TESTS"), strings.Index(text, "Logs")
+	if open < tools || open > logs {
+		t.Errorf("OPEN should come after the other sections and before Logs:\n%s", text)
+	}
+}
