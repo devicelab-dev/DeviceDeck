@@ -7,6 +7,62 @@ Every web agent that acts by reading a page's accessibility tree therefore drive
 a device the same way it drives a website — by role and name, no plugin, no
 coordinates, no vision model.
 
+## Set up your agent
+
+Every agent needs two things: the `devicedeck` binary installed and running (`devicedeck` in a
+terminal), and a browser tool — [Playwright MCP](https://github.com/microsoft/playwright-mcp). The
+`devicedeck mcp` server adds device tools (list, boot, launch, UI tree) and briefs the agent when it
+connects; the three skills (authoring, flows, triage) teach it the rest.
+
+**Claude Code** — the plugin brings the skills and the `devicedeck` MCP server:
+
+```bash
+claude mcp add playwright npx @playwright/mcp@latest
+claude plugin marketplace add devicelab-dev/DeviceDeck
+claude plugin install devicedeck@devicedeck-marketplace
+```
+
+**Gemini CLI** — one extension brings both MCP servers and the skills:
+
+```bash
+gemini extensions install https://github.com/devicelab-dev/DeviceDeck
+```
+
+**Codex CLI**
+
+```bash
+codex mcp add playwright -- npx @playwright/mcp@latest
+codex mcp add devicedeck -- devicedeck mcp
+npx skills add devicelab-dev/DeviceDeck
+```
+
+**VS Code / GitHub Copilot**
+
+```bash
+code --add-mcp '{"name":"playwright","command":"npx","args":["@playwright/mcp@latest"]}'
+code --add-mcp '{"name":"devicedeck","command":"devicedeck","args":["mcp"]}'
+npx skills add devicelab-dev/DeviceDeck
+```
+
+**Cursor** — add both servers to `~/.cursor/mcp.json` (or `.cursor/mcp.json` in a project), then
+`npx skills add devicelab-dev/DeviceDeck`:
+
+```json
+{
+  "mcpServers": {
+    "playwright": { "type": "stdio", "command": "npx", "args": ["@playwright/mcp@latest"] },
+    "devicedeck": { "type": "stdio", "command": "devicedeck", "args": ["mcp"] }
+  }
+}
+```
+
+**Anything else** (Windsurf/Devin, Cline, JetBrains AI, …) — the same two servers in that
+client's MCP settings, in its own format; `npx skills add devicelab-dev/DeviceDeck` installs the
+skills for most agents. Clients that install [Agent Plugins](https://agent-plugins.org) can install
+this repository directly: `plugin.json`, `mcp.json` and `skills/` at its root are that bundle.
+
+## Tested with
+
 This page records that claim being tested. Each tool below is a **stock release**,
 pointed at a device URL, driving TestHive on an iOS 26.2 simulator. Nothing about
 any of them knows what a simulator is.

@@ -154,6 +154,7 @@ Add the browser tool your agent already has, then DeviceDeck's skills:
 ```bash
 claude mcp add playwright npx @playwright/mcp@latest
 claude plugin marketplace add devicelab-dev/DeviceDeck
+claude plugin install devicedeck@devicedeck-marketplace
 ```
 
 The agent drives the device the way it drives the web: it **snapshots the page**, reasons over the
@@ -165,8 +166,8 @@ tree, and acts by ref — no bespoke tool, no coordinates, no vision model. Here
 </div>
 
 That disambiguation is an [included spec](examples/playwright/tests/platform/mcp-agent.spec.ts) that
-passes end to end. Prefer device tools over MCP? `claude mcp add devicedeck -- devicedeck mcp`.
-**Guide:** [docs/agents.md](docs/agents.md).
+passes end to end. Using Codex, Cursor, Gemini CLI or VS Code? Each has a two- or three-command
+setup in [docs/agents.md](docs/agents.md#set-up-your-agent).
 
 ### By hand — the console
 

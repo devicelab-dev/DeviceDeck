@@ -50,7 +50,7 @@ func TestWelcomeListsBootedDevicesWithLinks(t *testing.T) {
 		"http://127.0.0.1:8787/device/EMU",
 		"/device/booted",
 		"USE WITH CLAUDE CODE", "1. Add the browser tool", "$ " + claudePlaywright,
-		"$ " + claudeSkills, "$ " + claudeMCP,
+		"$ " + claudeSkills, "$ " + claudePlugin, "$ " + claudeMCP,
 		"USE WITH TESTS", "baseURL    http://127.0.0.1:8787/device/<udid>",
 		"/home/.devicedeck/logs/serve-1",
 		"Ctrl-C",

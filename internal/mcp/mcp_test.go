@@ -62,6 +62,9 @@ func TestServeInitializeAndList(t *testing.T) {
 	if res["protocolVersion"] != protocolVersion {
 		t.Errorf("protocolVersion = %v", res["protocolVersion"])
 	}
+	if hint, _ := res["instructions"].(string); !strings.Contains(hint, "/device/{udid}") || !strings.Contains(hint, "data-testid") {
+		t.Errorf("instructions do not tell the agent how to drive a device: %q", hint)
+	}
 	list := decode(t, lines[1]).Result.(map[string]any)
 	tools := list["tools"].([]any)
 	if len(tools) != 1 || tools[0].(map[string]any)["name"] != "echo" {

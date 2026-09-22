@@ -20,6 +20,7 @@ import (
 const (
 	claudePlaywright = "claude mcp add playwright npx @playwright/mcp@latest"
 	claudeSkills     = "claude plugin marketplace add devicelab-dev/DeviceDeck"
+	claudePlugin     = "claude plugin install devicedeck@devicedeck-marketplace"
 	claudeMCP        = "claude mcp add devicedeck -- devicedeck mcp"
 )
 
@@ -196,7 +197,9 @@ func (w welcome) claude(b *strings.Builder) {
 	w.section(b, "USE WITH CLAUDE CODE")
 	steps := []struct{ what, do string }{
 		{"Add the browser tool", w.cmd(claudePlaywright)},
-		{"Add DeviceDeck's skills", w.cmd(claudeSkills)},
+		// Adding the marketplace only lists the plugin; installing it brings
+		// the skills and the device tools.
+		{"Add DeviceDeck's plugin (skills and device tools)", w.cmd(claudeSkills) + "\n       " + w.cmd(claudePlugin)},
 		{"Ask Claude", fmt.Sprintf("\"Open %s and log in to my app\"", w.exampleURL())},
 	}
 	for i, s := range steps {

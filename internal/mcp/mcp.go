@@ -122,13 +122,26 @@ func (s *Server) dispatch(req request) response {
 	}
 }
 
-// initializeResult advertises the protocol version, the tools capability, and
-// who this server is.
+// serverInstructions is what every MCP client hands the model when it
+// connects: the few facts an agent needs to use DeviceDeck well, whichever
+// agent it is. The skills go deeper; this is what arrives with no setup.
+const serverInstructions = `DeviceDeck drives iOS simulators and Android emulators on this Mac.
+Each device is also a real-DOM web page at http://127.0.0.1:8787/device/{udid}?app={bundleId}
+("booted" for the udid when one device is up): drive it with Playwright MCP by role, name or
+data-testid (the app's accessibility id), never by coordinates. Use these tools to list, boot
+and launch devices, read the UI tree and act on it. The devicedeck server must be running
+(run devicedeck in a terminal). A device takes one driver at a time: if it is held by another
+client, pick another device. After typing, wait for the device to show the value before
+submitting.`
+
+// initializeResult advertises the protocol version, the tools capability,
+// who this server is, and how to use it.
 func (s *Server) initializeResult() map[string]any {
 	return map[string]any{
 		"protocolVersion": protocolVersion,
 		"capabilities":    map[string]any{"tools": map[string]any{}},
 		"serverInfo":      map[string]any{"name": "devicedeck", "version": "0"},
+		"instructions":    serverInstructions,
 	}
 }
 

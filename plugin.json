@@ -1,0 +1,11 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "devicedeck",
+  "version": "0.1.0",
+  "description": "Drive iOS simulators and Android emulators as a real web page with the browser tools your agent already uses; author reviewable mobile tests, capture Maestro flows, and triage failures.",
+  "author": { "name": "DeviceLab", "url": "https://devicelab.dev" },
+  "homepage": "https://devicelab.dev",
+  "repository": "https://github.com/devicelab-dev/DeviceDeck",
+  "license": "Apache-2.0",
+  "keywords": ["ios", "android", "simulator", "emulator", "mobile", "testing", "playwright", "maestro", "mcp"]
+}

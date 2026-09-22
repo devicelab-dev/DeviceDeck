@@ -15,8 +15,10 @@ Read the guide that matches the task:
 
 ## Using these outside Claude Code
 
-In Claude Code these load as plugin skills and fire automatically by task. In any other agent
-(Cursor, etc.), point it here with one line in your project rules:
+In Claude Code these load as plugin skills and fire automatically by task. For Codex, Cursor,
+Gemini CLI, VS Code and most other agents, `npx skills add devicelab-dev/DeviceDeck` installs them;
+per-agent setup is in [docs/agents.md](../docs/agents.md#set-up-your-agent). An agent without skill
+support can still be pointed here with one line in your project rules:
 
 > For DeviceDeck mobile work, read `skills/INDEX.md` and follow the matching guide. The device
 > is a real-DOM web page at `http://127.0.0.1:8787/device/booted`; drive it with Playwright MCP,
