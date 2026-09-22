@@ -10,9 +10,12 @@ package mcp
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
+	"time"
 )
 
 // protocolVersion is the MCP revision this server implements. Sent back in
@@ -113,7 +116,7 @@ func (s *Server) dispatch(req request) response {
 	case "tools/list":
 		return okResponse(req.ID, map[string]any{"tools": s.toolList()})
 	case "tools/call":
-		return s.callTool(req)
+		return s.loggedCall(req)
 	default:
 		return errorResponse(req.ID, -32601, fmt.Sprintf("unknown method %q", req.Method))
 	}
@@ -146,6 +149,44 @@ func (s *Server) toolList() []map[string]any {
 // callTool runs a tools/call request. A missing tool is a method-level error;
 // a tool that returns an error is reported as an isError tool result so the
 // model can read and react to it rather than the call failing at transport.
+// maxLoggedArgs caps how much of a tool call's arguments reach the log, so
+// a large payload cannot flood it. Arguments are selectors, bundle ids and
+// URLs; no tool takes typed text, so nothing secret passes through here.
+const maxLoggedArgs = 500
+
+// loggedCall runs a tools/call and records the tool, its arguments, how long
+// it took and whether it failed — the trail needed to replay what an agent
+// did when a session goes wrong.
+func (s *Server) loggedCall(req request) response {
+	began := time.Now()
+	resp := s.callTool(req)
+	var p struct {
+		Name      string          `json:"name"`
+		Arguments json.RawMessage `json:"arguments"`
+	}
+	_ = json.Unmarshal(req.Params, &p) // a bad call is still logged, with blanks
+	level, failed := slog.LevelInfo, toolFailed(resp)
+	if failed {
+		level = slog.LevelWarn
+	}
+	args := string(p.Arguments)
+	if len(args) > maxLoggedArgs {
+		args = args[:maxLoggedArgs] + "…"
+	}
+	slog.Log(context.Background(), level, "mcp tool", "tool", p.Name, "args", args,
+		"took", time.Since(began), "failed", failed)
+	return resp
+}
+
+// toolFailed reports a protocol error or a tool result marked isError.
+func toolFailed(r response) bool {
+	if r.Error != nil {
+		return true
+	}
+	m, ok := r.Result.(map[string]any)
+	return ok && m["isError"] == true
+}
+
 func (s *Server) callTool(req request) response {
 	var p struct {
 		Name      string          `json:"name"`

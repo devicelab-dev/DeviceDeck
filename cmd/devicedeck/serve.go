@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -19,11 +20,13 @@ import (
 	"github.com/devicelab-dev/DeviceDeck/internal/emu"
 	"github.com/devicelab-dev/DeviceDeck/internal/home"
 	"github.com/devicelab-dev/DeviceDeck/internal/input"
+	"github.com/devicelab-dev/DeviceDeck/internal/logging"
 	"github.com/devicelab-dev/DeviceDeck/internal/platform"
 	"github.com/devicelab-dev/DeviceDeck/internal/ready"
 	"github.com/devicelab-dev/DeviceDeck/internal/runner"
 	"github.com/devicelab-dev/DeviceDeck/internal/server"
 	"github.com/devicelab-dev/DeviceDeck/internal/sim"
+	"github.com/devicelab-dev/DeviceDeck/internal/version"
 	"github.com/devicelab-dev/DeviceDeck/internal/video"
 	"github.com/devicelab-dev/DeviceDeck/internal/web"
 )
@@ -40,7 +43,8 @@ type serveFlags struct {
 func parseServeFlags(args []string) (*serveFlags, error) {
 	f := &serveFlags{}
 	flags := flag.NewFlagSet("serve", flag.ContinueOnError)
-	flags.StringVar(&f.addr, "addr", "127.0.0.1:8787", "listen address")
+	flags.StringVar(&f.addr, "addr", "0.0.0.0:8787",
+		"listen address; the default accepts other machines on your network, 127.0.0.1:8787 keeps it to this Mac")
 	flags.StringVar(&f.hidPath, "sidecar", "", "path to devicedeck-hid (default: auto-discover)")
 	flags.StringVar(&f.videoPath, "video-sidecar", "", "path to devicedeck-video (default: auto-discover)")
 	flags.IntVar(&f.fps, "fps", 30, "video capture frame rate")
@@ -60,44 +64,112 @@ func parseServeFlags(args []string) (*serveFlags, error) {
 //
 // Coverage waiver: runServe is process-lifecycle wiring (real listener,
 // signals, real backends) verified by running the server; unit tests cover
-// parseServeFlags, resolveBinary, prepareHome, bringReady, waitForExit,
-// powerOffAndroid, and everything behind the injected interfaces.
+// every step it calls: parseServeFlags, setupServe, buildStack, bringReady,
+// waitForExit and shutdown.
 func runServe(args []string) error {
 	opts, err := parseServeFlags(args)
 	if err != nil {
 		return err
 	}
-	// DEVICEDECK_LOG=debug surfaces per-event diagnostics (input
-	// translation, engine internals) that are too chatty for normal runs.
-	if os.Getenv("DEVICEDECK_LOG") == "debug" {
-		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
-	}
-	hidBin, err := resolveBinary("devicedeck-hid", opts.hidPath)
+	env, err := setupServe(opts)
 	if err != nil {
 		return err
 	}
-	videoBin, err := resolveBinary("devicedeck-video", opts.videoPath)
-	if err != nil {
-		return err
-	}
-	if err := prepareHome(); err != nil {
-		return err
-	}
-
-	st := buildStack(hidBin, videoBin, opts.fps)
+	defer env.close()
+	st := buildStack(env.hid, env.video, opts.fps)
 	httpServer := &http.Server{Addr: opts.addr, Handler: st.srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	errCh := make(chan error, 1)
 	go func() { errCh <- httpServer.ListenAndServe() }()
-	slog.Info("devicedeck serving", "addr", opts.addr, "console", "http://"+opts.addr,
-		"hid", hidBin, "video", videoBin)
-
+	local := localURL(opts.addr)
+	slog.Info("devicedeck serving", "addr", opts.addr, "console", local, "network", networkURLs(opts.addr))
 	if opts.ready {
-		bringReady(context.Background(), st.devices, st.boots, st.launches, "http://"+opts.addr, opts.readyApp, os.Stdout)
+		bringReady(context.Background(), st.devices, st.boots, st.launches, local, opts.readyApp, os.Stdout)
 	}
 	if err := waitForExit(errCh); err != nil {
+		slog.Error("server stopped", "err", err)
 		return err
 	}
+	shutdown(st, httpServer, opts.keepDevices)
+	return nil
+}
 
+// serveEnv is what serve needs before it can build the stack: the sidecar
+// binaries, and the run's log folder so everything after setup is recorded.
+type serveEnv struct {
+	hid, video string
+	logs       *logging.Run
+}
+
+// close flushes the run's logs, the runner's driver log included.
+func (e *serveEnv) close() {
+	runner.CloseLogFile()
+	_ = e.logs.Close()
+}
+
+// setupServe starts the run's logs first, so a failure in any later step
+// (preparing the home folder, finding a sidecar) is recorded in them too.
+func setupServe(opts *serveFlags) (*serveEnv, error) {
+	dir, err := home.Dir()
+	if err != nil {
+		return nil, err
+	}
+	logs, err := startRunLogs(dir, "serve", os.Stderr)
+	if err != nil {
+		return nil, err
+	}
+	env := &serveEnv{logs: logs}
+	captureConsole(logs)
+	attachRunnerLog(logs.Path("runner.log"))
+	if err := env.resolve(dir, opts); err != nil {
+		slog.Error("devicedeck could not start", "err", err)
+		env.close()
+		return nil, err
+	}
+	slog.Info("devicedeck starting", "version", version.Line(), "home", dir, "logs", logs.Dir,
+		"hid", env.hid, "video", env.video)
+	return env, nil
+}
+
+// resolve prepares the home folder and finds both sidecar binaries.
+func (e *serveEnv) resolve(dir string, opts *serveFlags) (err error) {
+	if err := prepareHome(dir); err != nil {
+		return err
+	}
+	if e.hid, err = resolveBinary("devicedeck-hid", opts.hidPath); err != nil {
+		return err
+	}
+	e.video, err = resolveBinary("devicedeck-video", opts.videoPath)
+	return err
+}
+
+// startRunLogs opens this run's log folder under the DeviceDeck home. The
+// terminal level comes from DEVICEDECK_LOG; the files record everything.
+func startRunLogs(dir, kind string, term io.Writer) (*logging.Run, error) {
+	return logging.Start(dir, kind, term, logging.Level(os.Getenv(logging.EnvLevel)))
+}
+
+// consoleCapturer is the part of a log run that copies stdout and stderr.
+type consoleCapturer interface{ CaptureConsole() error }
+
+// captureConsole copies serve's printed output into the run's files; losing
+// that is worth a warning, not a failed start.
+func captureConsole(r consoleCapturer) {
+	if err := r.CaptureConsole(); err != nil {
+		slog.Warn("console output will not be logged", "err", err)
+	}
+}
+
+// attachRunnerLog sends the maestro-runner driver's diagnostics to path.
+// Losing them is worth a warning, not a failed start.
+func attachRunnerLog(path string) {
+	if err := runner.SetLogFile(path); err != nil {
+		slog.Warn("runner log unavailable", "err", err)
+	}
+}
+
+// shutdown stops serving, then ends every sidecar session and engine, and
+// powers off the Android emulators DeviceDeck drove unless keep is set.
+func shutdown(st *stack, httpServer *http.Server, keep bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = httpServer.Shutdown(ctx)
@@ -107,10 +179,50 @@ func runServe(args []string) error {
 	// ones are DeviceDeck's to power off.
 	driven := st.engines.ActiveUDIDs()
 	st.engines.StopAll(ctx)
-	if !opts.keepDevices {
-		powerOffAndroid(ctx, driven, st.emu)
+	if !keep {
+		// A deadline of its own: a slow engine stop (a runner relaunching
+		// after its simulator vanished) must not use up the time needed to
+		// power the emulators off, or they are left running.
+		offCtx, offCancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer offCancel()
+		powerOffAndroid(offCtx, driven, st.emu)
 	}
-	return nil
+	slog.Info("devicedeck stopped")
+}
+
+// localURL is the address to open on this Mac. A wildcard bind (0.0.0.0,
+// ::, or no host) is reached through loopback.
+func localURL(addr string) string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "http://" + addr
+	}
+	if ip := net.ParseIP(host); host == "" || (ip != nil && ip.IsUnspecified()) {
+		host = "127.0.0.1"
+	}
+	return "http://" + net.JoinHostPort(host, port)
+}
+
+// interfaceAddrs lists this machine's addresses; replaced in tests.
+var interfaceAddrs = net.InterfaceAddrs
+
+// networkURLs lists the addresses other machines can use, which only exist
+// for a wildcard bind. Loopback and link-local addresses are left out.
+func networkURLs(addr string) []string {
+	host, port, err := net.SplitHostPort(addr)
+	if ip := net.ParseIP(host); err != nil || (host != "" && (ip == nil || !ip.IsUnspecified())) {
+		return nil
+	}
+	addrs, _ := interfaceAddrs()
+	var urls []string
+	for _, a := range addrs {
+		ipnet, ok := a.(*net.IPNet)
+		if !ok || ipnet.IP.To4() == nil || ipnet.IP.IsLoopback() || ipnet.IP.IsLinkLocalUnicast() {
+			continue
+		}
+		urls = append(urls, "http://"+net.JoinHostPort(ipnet.IP.String(), port))
+	}
+	return urls
 }
 
 // stack is everything serve wires together and must tear down again: the
@@ -201,11 +313,7 @@ func powerOffAndroid(ctx context.Context, driven []string, emus androidKiller) {
 // prepareHome gives the runner packages DeviceDeck's own home folder, with
 // the Android driver written into it, before anything resolves a driver or a
 // build cache. DeviceDeck never borrows another tool's install.
-func prepareHome() error {
-	dir, err := home.Dir()
-	if err != nil {
-		return err
-	}
+func prepareHome(dir string) error {
 	if err := home.Prepare(dir); err != nil {
 		return fmt.Errorf("prepare %s: %w", dir, err)
 	}

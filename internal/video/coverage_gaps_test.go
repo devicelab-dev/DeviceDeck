@@ -99,19 +99,19 @@ func TestStartSessionCmdPipeErrors(t *testing.T) {
 	t.Run("stdin already wired", func(t *testing.T) {
 		cmd := exec.Command("true")
 		cmd.Stdin = os.Stdin
-		if _, err := startSessionCmd(cmd); err == nil {
+		if _, err := startSessionCmd(cmd, "AAA"); err == nil {
 			t.Fatal("expected stdin pipe error")
 		}
 	})
 	t.Run("stdout already wired", func(t *testing.T) {
 		cmd := exec.Command("true")
 		cmd.Stdout = os.Stdout
-		if _, err := startSessionCmd(cmd); err == nil {
+		if _, err := startSessionCmd(cmd, "AAA"); err == nil {
 			t.Fatal("expected stdout pipe error")
 		}
 	})
 	t.Run("binary missing", func(t *testing.T) {
-		if _, err := startSessionCmd(exec.Command("/nonexistent/devicedeck-video")); err == nil {
+		if _, err := startSessionCmd(exec.Command("/nonexistent/devicedeck-video"), "AAA"); err == nil {
 			t.Fatal("expected start error")
 		}
 	})

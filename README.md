@@ -181,9 +181,15 @@ the ceiling is physics, not an artificial limit.
 - **A raw relaunch does not reset app state** — a native app stays logged in across terminate+launch,
   the surprise that makes web-style tests flaky against it. `POST /app/launch` wipes the app's data
   first *by default*, starting at a first-run screen; pass `?reset=no` to resume where it was left.
-- **The server is unauthenticated.** It binds to `127.0.0.1` by default; exposing it with `--addr` to
-  share devices across a team is fine on a trusted network, but there is no access control yet — do
-  not hang it on the open internet as-is.
+- **The server is unauthenticated.** It listens on all interfaces (`0.0.0.0:8787`) by default, so
+  anyone on your network can view and drive your devices. That suits a trusted office or home
+  network; on shared Wi-Fi run `devicedeck serve --addr 127.0.0.1:8787` to keep it to this Mac.
+  There is no access control yet — do not hang it on the open internet as-is.
+- **Every run is logged.** Each `serve` or `mcp` run writes a folder under `~/.devicedeck/logs`
+  (the path is printed at startup): `devicedeck.log` with every request, device event and tool
+  call, `runner.log` from the device driver, one log per sidecar and device, and `crash.log` if
+  the process panics. The terminal shows info level; `DEVICEDECK_LOG=debug` shows everything
+  there too. The last 20 runs are kept.
 
 ## Licence
 

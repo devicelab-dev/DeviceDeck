@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 )
@@ -185,5 +186,30 @@ func TestCallToolRaw(t *testing.T) {
 	br := bad.Result.(map[string]any)
 	if br["isError"] != true {
 		t.Errorf("raw failure isError = %v", br["isError"])
+	}
+}
+
+func TestToolCallsAreLogged(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	long := strings.Repeat("x", maxLoggedArgs+50)
+	s := NewServer(fakeTools())
+	for _, tc := range []struct {
+		params, want string
+	}{
+		{`{"name":"echo","arguments":{"msg":"hi"}}`, `level=INFO msg="mcp tool" tool=echo`},
+		{`{"name":"echo","arguments":{"fail":true}}`, `level=WARN msg="mcp tool" tool=echo`},
+		{`{"name":"nope","arguments":{}}`, `level=WARN msg="mcp tool" tool=nope`},
+		{`["not an object"]`, `level=WARN msg="mcp tool" tool=""`},
+		{`{"name":"echo","arguments":{"msg":"` + long + `"}}`, `…"`},
+	} {
+		buf.Reset()
+		s.dispatch(request{Method: "tools/call", ID: json.RawMessage(`1`), Params: json.RawMessage(tc.params)})
+		if line := buf.String(); !strings.Contains(line, tc.want) || !strings.Contains(line, "took=") {
+			t.Errorf("params %.40s: log = %q, want %q", tc.params, line, tc.want)
+		}
 	}
 }

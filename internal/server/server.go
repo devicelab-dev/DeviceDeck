@@ -120,7 +120,7 @@ func (s *Server) sendFrame(ctx context.Context, udid string, frame []byte) error
 // (and tests) skip it.
 func (s *Server) SetConsole(h http.Handler) { s.console = h }
 
-// Handler returns the API routing table.
+// Handler returns the API routing table, wrapped so every request is logged.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/devices", s.handleDevices)
@@ -144,7 +144,7 @@ func (s *Server) Handler() http.Handler {
 	if s.console != nil {
 		mux.Handle("GET /", s.console)
 	}
-	return mux
+	return logRequests(mux)
 }
 
 func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
@@ -598,6 +598,7 @@ func writeJSON(w http.ResponseWriter, payload any) {
 }
 
 func httpError(w http.ResponseWriter, status int, err error) {
+	slog.Warn("request failed", "status", status, "err", err)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": err.Error()})

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	dlios "github.com/devicelab-dev/maestro-runner/pkg/driver/devicelab_ios"
 
@@ -228,7 +229,10 @@ func (s *Engines) evict(ctx context.Context, udid string, failed engineAPI) {
 		return
 	}
 	delete(s.engines, udid)
-	_ = failed.Stop(context.WithoutCancel(ctx))
+	if err := failed.Stop(context.WithoutCancel(ctx)); err != nil {
+		slog.Warn("engine stop failed", "udid", udid, "err", err)
+	}
+	slog.Info("engine evicted", "udid", udid)
 }
 
 func (s *Engines) engine(ctx context.Context, udid string) (engineAPI, error) {
@@ -237,10 +241,14 @@ func (s *Engines) engine(ctx context.Context, udid string) (engineAPI, error) {
 	if e, ok := s.engines[udid]; ok {
 		return e, nil
 	}
+	slog.Info("engine starting", "udid", udid)
+	began := time.Now()
 	e, err := s.start(ctx, udid)
 	if err != nil {
+		slog.Error("engine start failed", "udid", udid, "took", time.Since(began), "err", err)
 		return nil, err
 	}
+	slog.Info("engine started", "udid", udid, "took", time.Since(began))
 	s.engines[udid] = e
 	return e, nil
 }
@@ -265,7 +273,10 @@ func (s *Engines) StopAll(ctx context.Context) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for udid, e := range s.engines {
-		_ = e.Stop(ctx)
+		if err := e.Stop(ctx); err != nil {
+			slog.Warn("engine stop failed", "udid", udid, "err", err)
+		}
+		slog.Info("engine stopped", "udid", udid)
 		delete(s.engines, udid)
 	}
 }

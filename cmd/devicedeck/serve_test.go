@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -139,9 +141,8 @@ func TestResolveBinaryNotFoundAnywhere(t *testing.T) {
 // a subcommand was typed.
 func TestPrepareHome(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv(home.EnvHome, dir)
 	t.Setenv("MAESTRO_RUNNER_HOME", "/elsewhere")
-	if err := prepareHome(); err != nil {
+	if err := prepareHome(dir); err != nil {
 		t.Fatal(err)
 	}
 	if got := os.Getenv("MAESTRO_RUNNER_HOME"); got != dir {
@@ -150,26 +151,161 @@ func TestPrepareHome(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "drivers", "android", "devicelab-android-driver.apk")); err != nil {
 		t.Errorf("driver not installed: %v", err)
 	}
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := prepareHome(file); err == nil || !strings.Contains(err.Error(), "prepare "+file) {
+		t.Fatalf("err = %v", err)
+	}
 }
 
-func TestPrepareHomeErrors(t *testing.T) {
-	t.Run("no home directory", func(t *testing.T) {
-		t.Setenv(home.EnvHome, "")
-		t.Setenv("HOME", "")
-		if err := prepareHome(); err == nil {
-			t.Fatal("expected an error")
+// serveHome points serve at a temp home with stub sidecars and restores the
+// process-wide logger afterwards.
+func serveHome(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv(home.EnvHome, dir)
+	t.Setenv("DEVICEDECK_HID", writeStub(t, t.TempDir(), "devicedeck-hid"))
+	t.Setenv("DEVICEDECK_VIDEO", writeStub(t, t.TempDir(), "devicedeck-video"))
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return dir
+}
+
+func TestSetupServe(t *testing.T) {
+	dir := serveHome(t)
+	env, err := setupServe(&serveFlags{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	slog.Debug("probe after setup")
+	env.close()
+	log, err := os.ReadFile(env.logs.Path("devicedeck.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"devicedeck starting", "probe after setup", "home=" + dir} {
+		if !strings.Contains(string(log), want) {
+			t.Errorf("run log missing %q:\n%s", want, log)
 		}
-	})
-	t.Run("home is not writable", func(t *testing.T) {
-		file := filepath.Join(t.TempDir(), "file")
-		if err := os.WriteFile(file, nil, 0o600); err != nil {
-			t.Fatal(err)
+	}
+	if env.hid == "" || env.video == "" {
+		t.Errorf("sidecars not resolved: %+v", env)
+	}
+	for _, name := range []string{"runner.log", "console.log"} {
+		if _, err := os.Stat(env.logs.Path(name)); err != nil {
+			t.Errorf("%s not created: %v", name, err)
 		}
-		t.Setenv(home.EnvHome, file)
-		if err := prepareHome(); err == nil || !strings.Contains(err.Error(), "prepare "+file) {
-			t.Fatalf("err = %v", err)
+	}
+}
+
+type failingConsole struct{}
+
+func (failingConsole) CaptureConsole() error { return errors.New("no pipes left") }
+
+func TestCaptureConsoleFailureIsNotFatal(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	captureConsole(failingConsole{})
+	if !strings.Contains(buf.String(), "console output will not be logged") {
+		t.Errorf("log = %q", buf.String())
+	}
+}
+
+func TestSetupServeErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		breakIt func(t *testing.T, dir string)
+		want    string
+	}{
+		{"no home directory", func(t *testing.T, _ string) {
+			t.Setenv(home.EnvHome, "")
+			t.Setenv("HOME", "")
+		}, "home"},
+		{"log folder cannot be made", func(t *testing.T, dir string) {
+			if err := os.WriteFile(filepath.Join(dir, "logs"), nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}, "create log folder"},
+		{"drivers cannot be written", func(t *testing.T, dir string) {
+			if err := os.WriteFile(filepath.Join(dir, "drivers"), nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}, "prepare"},
+		{"input sidecar missing", func(t *testing.T, _ string) {
+			t.Setenv("DEVICEDECK_HID", "/nonexistent/devicedeck-hid")
+		}, "DEVICEDECK_HID"},
+		{"video sidecar missing", func(t *testing.T, _ string) {
+			t.Setenv("DEVICEDECK_VIDEO", "/nonexistent/devicedeck-video")
+		}, "DEVICEDECK_VIDEO"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := serveHome(t)
+			tc.breakIt(t, dir)
+			if _, err := setupServe(&serveFlags{}); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want one mentioning %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestAttachRunnerLogFailureIsNotFatal(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	attachRunnerLog(filepath.Join(t.TempDir(), "missing", "runner.log"))
+	if !strings.Contains(buf.String(), "runner log unavailable") {
+		t.Errorf("log = %q", buf.String())
+	}
+}
+
+func TestShutdown(t *testing.T) {
+	st := buildStack("/nonexistent/devicedeck-hid", "/nonexistent/devicedeck-video", 30)
+	for _, keep := range []bool{false, true} {
+		shutdown(st, &http.Server{}, keep) // nothing driven: must return cleanly
+	}
+}
+
+func TestLocalURL(t *testing.T) {
+	for addr, want := range map[string]string{
+		"0.0.0.0:8787":   "http://127.0.0.1:8787",
+		":8787":          "http://127.0.0.1:8787",
+		"[::]:8787":      "http://127.0.0.1:8787",
+		"127.0.0.1:9000": "http://127.0.0.1:9000",
+		"10.0.4.21:8787": "http://10.0.4.21:8787",
+		"not-an-addr":    "http://not-an-addr",
+	} {
+		if got := localURL(addr); got != want {
+			t.Errorf("localURL(%q) = %q, want %q", addr, got, want)
 		}
-	})
+	}
+}
+
+func TestNetworkURLs(t *testing.T) {
+	cidr := func(s string) net.Addr {
+		ip, n, _ := net.ParseCIDR(s)
+		n.IP = ip
+		return n
+	}
+	interfaceAddrs = func() ([]net.Addr, error) {
+		return []net.Addr{
+			cidr("127.0.0.1/8"), cidr("169.254.1.2/16"), cidr("fe80::1/64"),
+			cidr("10.0.4.21/24"), &net.IPAddr{IP: net.ParseIP("192.168.1.9")},
+		}, nil
+	}
+	t.Cleanup(func() { interfaceAddrs = net.InterfaceAddrs })
+	if got := networkURLs("0.0.0.0:8787"); strings.Join(got, ",") != "http://10.0.4.21:8787" {
+		t.Errorf("wildcard bind = %v", got)
+	}
+	for _, addr := range []string{"127.0.0.1:8787", "10.0.4.21:8787", "localhost:8787", "garbage"} {
+		if got := networkURLs(addr); got != nil {
+			t.Errorf("networkURLs(%q) = %v, want none", addr, got)
+		}
+	}
 }
 
 func TestArg(t *testing.T) {
@@ -338,7 +474,7 @@ func TestParseServeFlags(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("flags = %+v, want %+v", got, want)
 	}
-	if def, err := parseServeFlags(nil); err != nil || def.addr != "127.0.0.1:8787" || def.fps != 30 {
+	if def, err := parseServeFlags(nil); err != nil || def.addr != "0.0.0.0:8787" || def.fps != 30 {
 		t.Errorf("defaults = %+v, %v", def, err)
 	}
 	if _, err := parseServeFlags([]string{"--no-such-flag"}); err == nil {

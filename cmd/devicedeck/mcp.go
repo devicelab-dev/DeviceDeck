@@ -2,8 +2,10 @@ package main
 
 import (
 	"flag"
+	"log/slog"
 	"os"
 
+	"github.com/devicelab-dev/DeviceDeck/internal/home"
 	"github.com/devicelab-dev/DeviceDeck/internal/mcp"
 )
 
@@ -21,6 +23,14 @@ func runMCP(args []string) error {
 		"base URL of the running `devicedeck serve` to drive")
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	// Tool calls are logged to the run folder; stdout is the protocol, so
+	// only stderr and the file ever see a log line.
+	if dir, err := home.Dir(); err == nil {
+		if run, err := startRunLogs(dir, "mcp", os.Stderr); err == nil {
+			defer func() { _ = run.Close() }()
+			slog.Info("devicedeck mcp", "server", *server, "logs", run.Dir)
+		}
 	}
 	client := mcp.NewClient(*server)
 	tools, order := client.Tools()

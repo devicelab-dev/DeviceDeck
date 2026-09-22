@@ -5,11 +5,13 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
+	"log/slog"
 	"os/exec"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/devicelab-dev/DeviceDeck/internal/logging"
 )
 
 // readyTimeout caps the wait for the sidecar's "ready" handshake. Attaching
@@ -33,7 +35,7 @@ type Session struct {
 
 // StartSidecar launches binPath attached to udid and blocks until the
 // sidecar reports "ready" on stdout (or the timeout expires). Sidecar
-// stderr is passed through to our stderr for diagnostics.
+// stderr goes to the terminal and to hid-<udid>.log in the run's log folder.
 //
 // The process deliberately does NOT inherit the caller's context: sessions
 // outlive the (often short-lived HTTP request) context that first touched
@@ -41,7 +43,7 @@ type Session struct {
 // completes, mid-injection. Lifetime is owned by Close/Manager.
 func StartSidecar(_ context.Context, binPath, udid string) (*Session, error) {
 	cmd := execCommand(binPath, udid)
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = logging.Component("hid-" + udid)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("sidecar stdin: %w", err)
@@ -126,8 +128,10 @@ func (m *Manager) Session(ctx context.Context, udid string) (*Session, error) {
 	}
 	s, err := StartSidecar(ctx, m.binPath, udid)
 	if err != nil {
+		slog.Error("input sidecar failed to start", "udid", udid, "err", err)
 		return nil, err
 	}
+	slog.Info("input sidecar attached", "udid", udid)
 	m.sessions[udid] = s
 	return s, nil
 }

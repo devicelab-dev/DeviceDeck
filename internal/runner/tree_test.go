@@ -101,6 +101,7 @@ func TestConvertNodesEmpty(t *testing.T) {
 }
 
 type fakeEngine struct {
+	stopErr error
 	nodes   []Node
 	err     error
 	stopped bool
@@ -110,7 +111,7 @@ func (f *fakeEngine) Snapshot(context.Context, string) ([]Node, error) { return 
 func (f *fakeEngine) SnapshotState(context.Context, string) (Snapshot, error) {
 	return Snapshot{Nodes: f.nodes}, f.err
 }
-func (f *fakeEngine) Stop(context.Context) error { f.stopped = true; return nil }
+func (f *fakeEngine) Stop(context.Context) error { f.stopped = true; return f.stopErr }
 
 func TestEnginesCachesPerUDID(t *testing.T) {
 	started := map[string]int{}
@@ -284,5 +285,17 @@ func TestEnginesActiveUDIDs(t *testing.T) {
 	}
 	if len(got) != 2 || !set["AAA"] || !set["BBB"] {
 		t.Errorf("ActiveUDIDs = %v, want AAA and BBB", got)
+	}
+}
+
+// A failing Stop is logged, never allowed to keep a dead engine cached.
+func TestStopFailuresStillClearTheCache(t *testing.T) {
+	failing := func() *fakeEngine { return &fakeEngine{stopErr: errors.New("xcodebuild already gone")} }
+	a, b := failing(), failing()
+	s := &Engines{engines: map[string]engineAPI{"AAA": a, "BBB": b}}
+	s.evict(context.Background(), "AAA", a)
+	s.StopAll(context.Background())
+	if len(s.engines) != 0 || !a.stopped || !b.stopped {
+		t.Fatalf("engines left = %d, stopped a=%v b=%v", len(s.engines), a.stopped, b.stopped)
 	}
 }

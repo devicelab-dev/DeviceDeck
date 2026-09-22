@@ -11,11 +11,14 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/devicelab-dev/DeviceDeck/internal/logging"
 )
 
 // Message type bytes, as emitted by devicedeck-video.
@@ -76,14 +79,15 @@ type Session struct {
 // inheriting that context would kill capture for every other viewer when
 // the first one disconnects. Lifetime is owned by Close/Manager.
 func StartSession(_ context.Context, binPath, udid string, fps int) (*Session, error) {
-	return startSessionCmd(exec.Command(binPath, udid, strconv.Itoa(fps)))
+	return startSessionCmd(exec.Command(binPath, udid, strconv.Itoa(fps)), udid)
 }
 
 // startSessionCmd is StartSession parametrized on the capture command, so
 // platforms with different capture processes (the iOS Swift sidecar, the
-// Android `devicedeck _video-android` subcommand) share one session.
-func startSessionCmd(cmd *exec.Cmd) (*Session, error) {
-	cmd.Stderr = os.Stderr
+// Android `devicedeck _video-android` subcommand) share one session. The
+// process's stderr goes to the terminal and to video-<udid>.log.
+func startSessionCmd(cmd *exec.Cmd, udid string) (*Session, error) {
+	cmd.Stderr = logging.Component("video-" + udid)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("video stdin: %w", err)
@@ -292,8 +296,10 @@ func (m *Manager) session(ctx context.Context, udid string) (*Session, error) {
 	}
 	s, err := m.start(ctx, udid)
 	if err != nil {
+		slog.Error("video capture failed to start", "udid", udid, "err", err)
 		return nil, err
 	}
+	slog.Info("video capture started", "udid", udid)
 	m.sessions[udid] = s
 	return s, nil
 }
@@ -304,7 +310,7 @@ func (m *Manager) start(_ context.Context, udid string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	return startSessionCmd(cmd)
+	return startSessionCmd(cmd, udid)
 }
 
 // osExecutable resolves the running binary's path. Var so tests can
