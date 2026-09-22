@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	github.com/coder/websocket v1.8.15
-	github.com/devicelab-dev/maestro-runner v1.1.28-0.20260921052948-6ad46cb9a105
+	github.com/devicelab-dev/maestro-runner v1.1.28-0.20260922081910-53958e87a8e5
 	google.golang.org/grpc v1.83.1
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
