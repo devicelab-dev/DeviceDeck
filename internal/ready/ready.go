@@ -106,6 +106,13 @@ func iosVersion(os string) (major, minor int, isIOS bool) {
 	return major, minor, true
 }
 
+// MeetsFloor reports whether an OS name such as "iOS 26.2" is an iOS
+// runtime at or above the floor, the one DeviceDeck prefers.
+func MeetsFloor(osName string) bool {
+	major, minor, isIOS := iosVersion(osName)
+	return isIOS && atLeastFloor(major, minor)
+}
+
 // atLeastFloor reports whether a major.minor is at or above the iOS floor.
 func atLeastFloor(major, minor int) bool {
 	if major != FloorMajor {

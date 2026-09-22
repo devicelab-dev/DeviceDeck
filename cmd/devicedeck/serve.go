@@ -18,6 +18,7 @@ import (
 
 	"github.com/devicelab-dev/DeviceDeck/internal/brand"
 	"github.com/devicelab-dev/DeviceDeck/internal/capture"
+	"github.com/devicelab-dev/DeviceDeck/internal/doctor"
 	"github.com/devicelab-dev/DeviceDeck/internal/emu"
 	"github.com/devicelab-dev/DeviceDeck/internal/home"
 	"github.com/devicelab-dev/DeviceDeck/internal/input"
@@ -79,10 +80,13 @@ func runServe(args []string) error {
 	defer env.close()
 	st := buildStack(env.hid, env.video, opts.fps)
 	httpServer := &http.Server{Addr: opts.addr, Handler: st.srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
-	errCh := make(chan error, 1)
-	go func() { errCh <- httpServer.ListenAndServe() }()
-	local := localURL(opts.addr)
-	slog.Info("devicedeck serving", "addr", opts.addr, "console", local, "network", networkURLs(opts.addr))
+	errCh, err := listen(httpServer)
+	if err != nil {
+		return err
+	}
+	local, network := localURL(opts.addr), networkURLs(opts.addr)
+	slog.Debug("devicedeck serving", "addr", opts.addr, "console", local, "network", network)
+	newWelcome(context.Background(), st.devices, doctor.System(), local, network, env.logs.Dir, env.hyper).write(os.Stderr)
 	go announceUpdate(context.Background(), http.DefaultClient, brand.UpdateURL, version.Version, os.Stderr)
 	if opts.ready {
 		bringReady(context.Background(), st.devices, st.boots, st.launches, local, opts.readyApp, os.Stdout)
@@ -133,7 +137,7 @@ func setupServe(opts *serveFlags) (*serveEnv, error) {
 		env.close()
 		return nil, err
 	}
-	slog.Info("devicedeck starting", "version", version.Line(), "home", dir, "logs", logs.Dir,
+	slog.Debug("devicedeck starting", "version", version.Line(), "home", dir, "logs", logs.Dir,
 		"hid", env.hid, "video", env.video)
 	return env, nil
 }
@@ -294,6 +298,20 @@ func buildStack(hidBin, videoBin string, fps int) *stack {
 		frames, st.engines, st.videos, capture.NewService(st.engines))
 	st.srv.SetConsole(web.Handler(st.srv.FirstTree))
 	return st
+}
+
+// listen binds the address before anything says the server is up, so a port
+// already in use is a clear error instead of a welcome for a server that is
+// not there.
+func listen(srv *http.Server) (<-chan error, error) {
+	ln, err := net.Listen("tcp", srv.Addr)
+	if err != nil {
+		slog.Error("devicedeck could not start", "addr", srv.Addr, "err", err)
+		return nil, fmt.Errorf("listen on %s: %w (another devicedeck may be running; use --addr for another port)", srv.Addr, err)
+	}
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ln) }()
+	return errCh, nil
 }
 
 // waitForExit blocks until the listener fails or SIGINT/SIGTERM arrives. Only

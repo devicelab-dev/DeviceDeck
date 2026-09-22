@@ -31,7 +31,7 @@ Playwright and Cypress tests. No Appium, no new tool.**
 **1. Share your simulators — for manual testing.**
 
 ```bash
-devicedeck serve --addr 0.0.0.0:8787
+devicedeck        # serves on 0.0.0.0:8787, so teammates can open it too
 ```
 
 Anyone on your team then drives any simulator or emulator **from their own browser, on any
@@ -87,7 +87,7 @@ problems. See [**Known limits**](#known-limits).
 
 ## Quick start
 
-Install DeviceDeck whichever way you prefer, then run `devicedeck serve`.
+Install DeviceDeck whichever way you prefer, then run `devicedeck`.
 
 **Install script** — fetches a release into `~/.devicedeck` and adds its `bin` folder to your `PATH`.
 No sudo, and nothing else to install: the Android driver ships inside the binary.
@@ -102,7 +102,7 @@ curl -fsSL https://open.devicelab.dev/install/devicedeck | bash -s -- --version 
 
 ```bash
 tar xzf devicedeck-<version>-darwin-arm64.tar.gz
-./devicedeck-<version>-darwin-arm64/bin/devicedeck serve
+./devicedeck-<version>-darwin-arm64/bin/devicedeck
 ```
 
 **From source** — needs the Xcode toolchain for the Swift sidecars:
@@ -115,8 +115,12 @@ make build
 Then start the server and open the console:
 
 ```bash
-devicedeck serve        # → http://127.0.0.1:8787
+devicedeck              # same as `devicedeck serve` → http://127.0.0.1:8787
 ```
+
+It prints the console link, each booted device's link, the Claude Code setup, and any missing
+tools with how to fix them. `devicedeck doctor` checks the tools on their own: Xcode, the iOS
+runtime, adb, an Android emulator, Node.js, Claude Code, and maestro-runner.
 
 Pick a device in the console and it boots and starts streaming.
 
@@ -184,7 +188,7 @@ the ceiling is physics, not an artificial limit.
   first *by default*, starting at a first-run screen; pass `?reset=no` to resume where it was left.
 - **The server is unauthenticated.** It listens on all interfaces (`0.0.0.0:8787`) by default, so
   anyone on your network can view and drive your devices. That suits a trusted office or home
-  network; on shared Wi-Fi run `devicedeck serve --addr 127.0.0.1:8787` to keep it to this Mac.
+  network; on shared Wi-Fi run `devicedeck --addr 127.0.0.1:8787` to keep it to this Mac.
   There is no access control yet — do not hang it on the open internet as-is.
 - **Every run is logged.** Each `serve` or `mcp` run writes a folder under `~/.devicedeck/logs`
   (the path is printed at startup): `devicedeck.log` with every request, device event and tool

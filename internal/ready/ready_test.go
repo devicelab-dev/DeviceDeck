@@ -121,3 +121,14 @@ func TestBuildStatus(t *testing.T) {
 		t.Errorf("no-app url = %q", na.MirrorURL)
 	}
 }
+
+func TestMeetsFloor(t *testing.T) {
+	for os, want := range map[string]bool{
+		"iOS 26.2": true, "iOS 27.0": true, "iOS 27": true,
+		"iOS 26.1": false, "iOS 18.6": false, "android": false, "watchOS 11.0": false,
+	} {
+		if got := MeetsFloor(os); got != want {
+			t.Errorf("MeetsFloor(%q) = %v, want %v", os, got, want)
+		}
+	}
+}

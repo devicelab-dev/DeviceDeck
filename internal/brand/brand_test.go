@@ -105,3 +105,12 @@ func TestFlowHeaderIsOnlyComments(t *testing.T) {
 		t.Errorf("flow header lacks the links: %q", h)
 	}
 }
+
+func TestBoldAndCyan(t *testing.T) {
+	if Bold("x", false) != "x" || Cyan("x", false) != "x" {
+		t.Error("plain mode must not style")
+	}
+	if Bold("x", true) != "\x1b[1mx\x1b[0m" || Cyan("x", true) != "\x1b[36mx\x1b[0m" {
+		t.Error("terminal mode must style")
+	}
+}

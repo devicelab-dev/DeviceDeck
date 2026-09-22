@@ -66,6 +66,14 @@ func style(code, text string, fancy bool) string {
 	return code + text + reset
 }
 
+// Bold and Cyan style text for a terminal, and return it untouched when the
+// terminal does not take colour. Shared so every DeviceDeck message that
+// highlights something highlights it the same way.
+func Bold(text string, fancy bool) string { return style(bold, text, fancy) }
+
+// Cyan: see Bold.
+func Cyan(text string, fancy bool) string { return style(cyan, text, fancy) }
+
 // maker is "DeviceLab.dev": cyan and clickable on a terminal, as in
 // maestro-runner.
 func maker(fancy bool) string {
