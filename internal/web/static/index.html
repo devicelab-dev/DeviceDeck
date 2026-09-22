@@ -42,18 +42,6 @@
         <input id="app" placeholder="app bundle id (for Record and Inspect)" spellcheck="false">
       </section>
       <section>
-        <h3>Controls</h3>
-        <div class="controls">
-          <button id="btn-home" title="Swipe to home">Home</button>
-          <button id="btn-switcher" title="App switcher">Switcher</button>
-          <button id="btn-lock" title="Lock button">Lock</button>
-          <button id="btn-shot" title="Save screenshot">Shot</button>
-          <button id="btn-inspect" title="Toggle tree inspector">Inspect</button>
-          <button id="btn-record" title="Record session as a Maestro flow">&#9679; Record</button>
-          <button id="btn-assert" title="Record an assertion: the next tap asserts the element is visible instead of tapping it" hidden>&#10003; Assert</button>
-        </div>
-      </section>
-      <section>
         <h3>Use it</h3>
         <label for="device-url">From tests</label>
         <div class="copy-row"><input id="device-url" readonly spellcheck="false"><button class="copy" data-copy="device-url" title="Copy the device page URL">Copy</button></div>
@@ -71,9 +59,23 @@
         </div>
       </div>
     </div>
-    <aside id="panel" hidden>
-      <h2 id="node-title">—</h2>
-      <pre id="node-info"></pre>
+    <aside id="panel">
+      <section id="tools">
+        <h3>Controls</h3>
+        <div class="tools">
+          <button id="btn-home" class="tool" title="Swipe to home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span>Home</span></button>
+          <button id="btn-switcher" class="tool" title="App switcher"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="12" height="14" rx="2"/><path d="M9 3h10a2 2 0 0 1 2 2v12"/></svg><span>Switcher</span></button>
+          <button id="btn-lock" class="tool" title="Lock button"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>Lock</span></button>
+          <button id="btn-shot" class="tool" title="Save screenshot"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="14" r="4"/></svg><span>Shot</span></button>
+          <button id="btn-inspect" class="tool" title="Toggle tree inspector"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-5-5"/></svg><span>Inspect</span></button>
+          <button id="btn-record" class="tool record" title="Record session as a Maestro flow"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6" class="fill"/></svg><span>Record</span></button>
+          <button id="btn-assert" class="tool" title="Record an assertion: the next tap asserts the element is visible instead of tapping it" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg><span>Assert</span></button>
+        </div>
+      </section>
+      <section id="inspector">
+        <h2 id="node-title">—</h2>
+        <pre id="node-info"></pre>
+      </section>
     </aside>
   </main>
   <script src="video-common.js"></script>

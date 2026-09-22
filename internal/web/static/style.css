@@ -74,7 +74,7 @@ select, input, button {
   flex-direction: column;
   gap: 20px;
 }
-#sidebar h3 {
+#sidebar h3, #panel h3 {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -93,8 +93,6 @@ select, input, button {
 #apps-picker { display: flex; gap: 6px; margin-bottom: 6px; }
 #apps-picker select { flex: 1; }
 #btn-launch { flex: 0 0 auto; }
-.controls { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.controls button { width: 100%; }
 @media (max-width: 860px) {
   #sidebar { width: 220px; flex-basis: 220px; }
 }
@@ -214,7 +212,11 @@ main { flex: 1; display: flex; min-height: 0; }
 }
 
 #panel {
-  width: 280px;
+  width: 340px;
+  flex: 0 0 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
   border-left: 1px solid var(--edge);
   background: var(--panel);
   padding: 14px;
@@ -450,10 +452,31 @@ main { flex: 1; display: flex; min-height: 0; }
   outline: 2px solid #1d7a3c;
 }
 
-/* With room to spare, the inspector panel stays open beside the device
-   rather than appearing only while inspecting. Last in the file, and as
-   strong as the global [hidden] rule, so it wins on wide screens only. */
-@media (min-width: 1500px) {
-  #panel[hidden] { display: block !important; }
-  #panel { width: 340px; }
+/* ---------- device controls: icon tiles at the top of the right panel ---------- */
+
+.tools { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.tool {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 4px 8px;
+  font-size: 11px;
+  color: var(--dim);
+}
+.tool:hover { color: var(--text); border-color: var(--accent); }
+.tool svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tool svg .fill { fill: currentColor; stroke: none; }
+.tool.record svg { color: #f85149; }
+.tool.active { color: #fff; }
+@media (max-width: 1100px) {
+  #panel { width: 260px; flex-basis: 260px; }
 }

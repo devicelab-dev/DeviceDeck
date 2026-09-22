@@ -73,6 +73,19 @@ function showConsole(next, name, shape) {
   loadApps();
 }
 
+// ---------- controls ----------
+
+// The Record tool's two faces; the button shows a dot to start and a
+// square to stop, as a recorder does.
+const RECORD_ICON = '<circle cx="12" cy="12" r="6" class="fill"/>';
+const STOP_ICON = '<rect x="7" y="7" width="10" height="10" rx="1.5" class="fill"/>';
+
+// setTool swaps a tool button's icon and label together.
+function setTool(button, icon, label) {
+  button.querySelector("svg").innerHTML = icon;
+  button.querySelector("span").textContent = label;
+}
+
 // ---------- sidebar ----------
 
 // showDeviceInfo fills the sidebar for the device on screen: its name, OS
@@ -480,7 +493,7 @@ async function toggleRecord() {
     recording = true;
     seenSteps = 0;
     $("btn-record").classList.add("recording");
-    $("btn-record").innerHTML = "&#9632; Stop";
+    setTool($("btn-record"), STOP_ICON, "Stop");
     $("btn-assert").hidden = false;
     capturePoll = setInterval(pollCapture, 700);
     status.textContent = "recording — drive the device";
@@ -492,7 +505,7 @@ async function toggleRecord() {
     setAsserting(false);
     $("btn-assert").hidden = true;
     $("btn-record").classList.remove("recording");
-    $("btn-record").innerHTML = "&#9679; Record";
+    setTool($("btn-record"), RECORD_ICON, "Record");
     if (!res.ok) {
       status.textContent = `stop: ${body.error}`;
       return;
@@ -609,10 +622,13 @@ async function toggleInspector() {
   // whole-screen). The id input still narrows the tree when set.
   inspecting = !inspecting;
   $("btn-inspect").classList.toggle("active", inspecting);
-  $("panel").hidden = !inspecting;
   overlay.hidden = !inspecting;
-  if (inspecting) await refreshTree();
-  else {
+  if (inspecting) {
+    if ($("node-info").classList.contains("hint")) {
+      $("node-info").textContent = "Hover an element on the device to see its id, role and text here.";
+    }
+    await refreshTree();
+  } else {
     overlay.innerHTML = "";
     panelIdle();
   }
