@@ -20,11 +20,13 @@
     "mobile",
     "maestro"
   ],
-  "hooks": "./hooks.json",
+  "hooks": "./hooks/hooks.json",
   "mcpServers": {
     "devicedeck": {
       "command": "devicedeck",
-      "args": ["mcp"]
+      "args": [
+        "mcp"
+      ]
     }
   }
 }
