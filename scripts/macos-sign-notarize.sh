@@ -39,9 +39,13 @@ for b in "${BINS[@]}"; do
 done
 
 echo "==> Notarizing (submitting to Apple; this can take a few minutes)"
-ZIP="$(mktemp -d)/devicedeck-notarize.zip"
-# Zip just the three signed binaries — that is what Apple checks.
-( cd "$DIST" && ditto -c -k --sequesterRsrc "${BINS[@]}" "$ZIP" )
+# Zip just the three signed binaries — that is what Apple checks. ditto takes
+# one source, so they go into a folder of their own first.
+WORK="$(mktemp -d)"
+ZIP="$WORK/devicedeck-notarize.zip"
+mkdir "$WORK/devicedeck"
+for b in "${BINS[@]}"; do ditto "$DIST/$b" "$WORK/devicedeck/$b"; done
+ditto -c -k --norsrc --noextattr --noacl --keepParent "$WORK/devicedeck" "$ZIP"
 
 if [ -n "${NOTARY_PROFILE:-}" ]; then
   xcrun notarytool submit "$ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
