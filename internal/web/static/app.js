@@ -694,7 +694,8 @@ function positionOverlay() {
 async function toggleInspector() {
   // No app id needed: the tree engine targets whatever is on screen
   // (the runner resolves the frontmost app; Android trees are
-  // whole-screen). The id input still narrows the tree when set.
+  // whole-screen). Inspect never sends the app id: that would bring the app
+  // back to the front on every snapshot (see followTree).
   inspecting = !inspecting;
   $("btn-inspect").classList.toggle("active", inspecting);
   overlay.hidden = !inspecting;
@@ -740,9 +741,10 @@ async function followTree() {
   let after = null;
   status.textContent = "fetching tree…";
   while (inspecting && gen === treeLoop && udid === device) {
-    const app = $("app").value.trim();
+    // No app id: naming one makes the iOS runner bring that app to the
+    // front on every snapshot, which undid Home and the app switcher while
+    // Inspect was on. Without it the tree is whatever is on screen.
     const params = new URLSearchParams();
-    if (app) params.set("app", app);
     if (after !== null) params.set("after", after);
     const res = await fetch(`/api/devices/${encodeURIComponent(device)}/tree?${params}`).catch(() => null);
     if (!inspecting || gen !== treeLoop || udid !== device) return;
@@ -804,6 +806,9 @@ function showNode(node) {
 }
 
 async function tapNode(node, app) {
+  // The click landed on the overlay, not the video, so give the video its
+  // keyboard focus back: typing after an Inspect tap must reach the device.
+  canvas.focus({ preventScroll: true });
   const x = (node.frame.x + node.frame.width / 2) / app.width;
   const y = (node.frame.y + node.frame.height / 2) / app.height;
   await fetch(`/api/devices/${udid}/tap`, {
