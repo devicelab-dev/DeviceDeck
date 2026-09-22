@@ -222,3 +222,16 @@ func TestHumanSize(t *testing.T) {
 		t.Errorf("minimal details = %q", got)
 	}
 }
+
+func TestWelcomeShowsSkippedBuilds(t *testing.T) {
+	var out bytes.Buffer
+	w := welcome{local: "http://127.0.0.1:8787", skipped: []apps.Skipped{
+		{Path: "/b/ios-device/testhive.app", Reason: "read testhive.app: built for iPhoneOS, not the simulator"},
+	}}
+	w.write(&out)
+	for _, want := range []string{"APPS", "skipped /b/ios-device/testhive.app", "built for iPhoneOS"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("welcome missing %q:\n%s", want, out.String())
+		}
+	}
+}

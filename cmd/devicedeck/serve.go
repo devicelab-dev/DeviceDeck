@@ -346,7 +346,7 @@ func greet(st *stack, env *serveEnv, opts *serveFlags, tools doctor.Env, updateU
 	ctx := context.Background()
 	local, network := localURL(opts.addr), networkURLs(opts.addr)
 	slog.Debug("devicedeck serving", "addr", opts.addr, "console", local, "network", network)
-	newWelcome(ctx, st.devices, tools, st.catalog.Apps(), local, network, env.logs.Dir, env.hyper).write(out)
+	newWelcome(ctx, st.devices, tools, st.catalog, local, network, env.logs.Dir, env.hyper).write(out)
 	go announceUpdate(ctx, http.DefaultClient, updateURL, version.Version, out)
 	if opts.ready {
 		bringReady(ctx, st.devices, st.boots, st.launches, local, opts.readyApp(), os.Stdout)
@@ -512,7 +512,11 @@ func readyLaunch(ctx context.Context, launches server.AppLauncher, udid, app str
 // isAppFile reports whether --app names a build to install rather than a
 // bundle id to launch.
 func isAppFile(app string) bool {
-	return strings.HasSuffix(app, ".app") || strings.HasSuffix(app, ".apk") || strings.Contains(app, "/")
+	if strings.HasSuffix(app, ".app") || strings.HasSuffix(app, ".apk") || strings.Contains(app, "/") {
+		return true
+	}
+	_, err := os.Stat(app) // a folder of builds named without a slash
+	return err == nil
 }
 
 // readyAppID is the bundle id label for the status: a real bundle id passes

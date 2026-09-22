@@ -33,6 +33,7 @@ type welcome struct {
 	booted  []sim.Device
 	total   int
 	apps    []apps.App
+	skipped []apps.Skipped
 	tools   []doctor.Result
 	logs    string
 	fancy   bool
@@ -41,10 +42,10 @@ type welcome struct {
 // newWelcome gathers the device picture and checks the tools, side by side
 // so the checks add no wait. A listing failure still prints the rest: the
 // links and setup are what matter most at startup.
-func newWelcome(ctx context.Context, devices server.DeviceLister, tools doctor.Env, registered []apps.App,
+func newWelcome(ctx context.Context, devices server.DeviceLister, tools doctor.Env, cat *apps.Catalog,
 	local string, network []string, logs string, fancy bool,
 ) welcome {
-	w := welcome{local: local, network: network, apps: registered, logs: logs, fancy: fancy}
+	w := welcome{local: local, network: network, apps: cat.Apps(), skipped: cat.Skipped(), logs: logs, fancy: fancy}
 	checked := make(chan []doctor.Result, 1)
 	go func() { checked <- doctor.Run(ctx, tools) }()
 	all, _ := devices.All(ctx)
@@ -117,7 +118,7 @@ func (w welcome) devices(b *strings.Builder) {
 // minimum OS, CPU slices, size and age, the path, and anything that would
 // stop it running here. Nothing when no builds were given.
 func (w welcome) appsSection(b *strings.Builder) {
-	if len(w.apps) == 0 {
+	if len(w.apps) == 0 && len(w.skipped) == 0 {
 		return
 	}
 	fmt.Fprintf(b, "\n  %s  %s\n", brand.Bold("APPS", w.fancy),
@@ -134,6 +135,9 @@ func (w welcome) appsSection(b *strings.Builder) {
 		for _, warn := range a.Warnings {
 			fmt.Fprintf(b, "%s%s %s\n", indent, brand.Bold("!", w.fancy), warn)
 		}
+	}
+	for _, s := range w.skipped {
+		fmt.Fprintf(b, "    %s %s\n      %s\n", brand.Bold("skipped", w.fancy), tildeHome(s.Path), brand.Dim(s.Reason, w.fancy))
 	}
 }
 

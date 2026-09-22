@@ -452,6 +452,16 @@ func TestBringReady(t *testing.T) {
 	}
 }
 
+func TestIsAppFileExistingFolder(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := os.Mkdir("local-apps", 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if !isAppFile("local-apps") || isAppFile("com.example.testhive") {
+		t.Error("an existing folder is a path; a bundle id is not")
+	}
+}
+
 func TestIsAppFileAndReadyAppID(t *testing.T) {
 	for _, tc := range []struct {
 		app    string

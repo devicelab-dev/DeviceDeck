@@ -79,16 +79,30 @@ type Device interface {
 
 // Catalog is the registered builds and the devices to install them on.
 type Catalog struct {
-	apps   []App
-	device Device
+	apps    []App
+	skipped []Skipped
+	device  Device
 }
 
-// NewCatalog identifies each path. Any unreadable build fails the whole
-// call, so a typo in --app stops the start rather than surfacing at the
-// first launch.
+// Skipped is a build found in an --app folder that cannot be used, and why.
+type Skipped struct {
+	Path, Reason string
+}
+
+// NewCatalog registers each --app path. A build named directly must be
+// usable, or the whole call fails, so a typo stops the start rather than
+// surfacing at the first launch. A folder registers every build inside it;
+// one it cannot use is skipped with the reason, so a device build left in
+// the folder does not block the rest.
 func NewCatalog(paths []string, device Device) (*Catalog, error) {
 	c := &Catalog{device: device}
 	for _, p := range paths {
+		if isBuildFolder(p) {
+			if err := c.addFolder(p); err != nil {
+				return nil, err
+			}
+			continue
+		}
 		app, err := Identify(p)
 		if err != nil {
 			return nil, err
@@ -98,8 +112,73 @@ func NewCatalog(paths []string, device Device) (*Catalog, error) {
 	return c, nil
 }
 
-// Apps lists the registered builds.
-func (c *Catalog) Apps() []App { return c.apps }
+// isBuildFolder is a plain folder, as opposed to a .app bundle (which is a
+// folder too) or a file.
+func isBuildFolder(p string) bool {
+	info, err := os.Stat(p)
+	return err == nil && info.IsDir() && !strings.EqualFold(filepath.Ext(p), ".app")
+}
+
+// maxFolderDepth bounds the search, so pointing --app at a large tree (a
+// home folder, a source checkout) stays quick.
+const maxFolderDepth = 4
+
+// addFolder registers the builds found in dir.
+func (c *Catalog) addFolder(dir string) error {
+	found := findBuilds(dir)
+	if len(found) == 0 {
+		return fmt.Errorf("--app %s: no .app or .apk builds in this folder", dir)
+	}
+	for _, p := range found {
+		app, err := Identify(p)
+		if err != nil {
+			c.skipped = append(c.skipped, Skipped{Path: p, Reason: err.Error()})
+			continue
+		}
+		c.apps = append(c.apps, app)
+	}
+	return nil
+}
+
+// findBuilds walks dir for .app bundles, .apk files, and .ipa files (so a
+// device build is reported rather than silently missed).
+func findBuilds(dir string) []string {
+	var found []string
+	root := strings.Count(filepath.Clean(dir), string(filepath.Separator))
+	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return filepath.SkipDir // an unreadable folder: search the rest
+		}
+		switch ext := strings.ToLower(filepath.Ext(p)); {
+		case d.IsDir() && ext == ".app":
+			found = append(found, p)
+			return filepath.SkipDir
+		case d.IsDir() && strings.Count(p, string(filepath.Separator))-root >= maxFolderDepth:
+			return filepath.SkipDir
+		case !d.IsDir() && (ext == ".apk" || ext == ".ipa"):
+			found = append(found, p)
+		}
+		return nil
+	})
+	return found
+}
+
+// Skipped lists the builds found in --app folders that could not be used.
+// A nil catalog has none.
+func (c *Catalog) Skipped() []Skipped {
+	if c == nil {
+		return nil
+	}
+	return c.skipped
+}
+
+// Apps lists the registered builds. A nil catalog has none.
+func (c *Catalog) Apps() []App {
+	if c == nil {
+		return nil
+	}
+	return c.apps
+}
 
 // Ensure installs appID on udid if it is a registered build for that
 // device's platform and the device does not have it yet. An app registered

@@ -218,3 +218,59 @@ func TestRealCommand(t *testing.T) {
 		t.Errorf("command = %q, %v", out, err)
 	}
 }
+
+// buildFolder lays out a folder like a team's builds directory: a simulator
+// .app, an APK, a device .ipa, and a build nested too deep to be searched.
+func buildFolder(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	for _, p := range []string{"ios/TestHive.app", "a/b/c/d/Deep.app"} {
+		if err := os.MkdirAll(filepath.Join(dir, p), 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	apk, err := os.ReadFile(writeAPK(t, testManifest(true)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for p, data := range map[string][]byte{"android/app-release.apk": apk, "Store.ipa": []byte("x"), "notes.txt": nil} {
+		_ = os.MkdirAll(filepath.Dir(filepath.Join(dir, p)), 0o750)
+		if err := os.WriteFile(filepath.Join(dir, p), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+func TestCatalogFromFolder(t *testing.T) {
+	fakeTools(t, simPlist, hostArch[0])
+	c, err := NewCatalog([]string{buildFolder(t)}, &fakeDevice{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, a := range c.Apps() {
+		ids = append(ids, a.ID)
+	}
+	if strings.Join(ids, ",") != "com.example.app,dev.devicelab.testhive" {
+		t.Errorf("registered = %v (the too-deep build must be left out)", ids)
+	}
+	if s := c.Skipped(); len(s) != 1 || !strings.HasSuffix(s[0].Path, "Store.ipa") || !strings.Contains(s[0].Reason, "device build") {
+		t.Errorf("skipped = %+v", s)
+	}
+	locked := buildFolder(t)
+	if err := os.Chmod(filepath.Join(locked, "android"), 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(filepath.Join(locked, "android"), 0o750) })
+	if c, err := NewCatalog([]string{locked}, &fakeDevice{}); err != nil || len(c.Apps()) != 1 {
+		t.Errorf("an unreadable subfolder must not stop the search: %v, %v", c.Apps(), err)
+	}
+	if _, err := NewCatalog([]string{t.TempDir()}, &fakeDevice{}); err == nil || !strings.Contains(err.Error(), "no .app or .apk builds") {
+		t.Errorf("empty folder: %v", err)
+	}
+	var none *Catalog
+	if none.Apps() != nil || none.Skipped() != nil {
+		t.Error("a nil catalog lists nothing")
+	}
+}
