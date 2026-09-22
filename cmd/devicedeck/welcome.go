@@ -181,15 +181,12 @@ func humanSize(n int64) string {
 	return fmt.Sprintf("%d B", n)
 }
 
+// toolsSection lists every tool check in full, the same lines `devicedeck
+// doctor` prints, so what was found (and its version) is visible at a
+// glance; a missing tool carries its fix on the line beneath.
 func (w welcome) toolsSection(b *strings.Builder) {
 	w.section(b, "TOOLS")
-	problems := doctor.Problems(w.tools)
-	if len(problems) == 0 {
-		fmt.Fprintf(b, "    %s All %d found  %s\n", brand.Green("✓", w.fancy), len(w.tools),
-			brand.Dim("devicedeck doctor for details", w.fancy))
-		return
-	}
-	for _, r := range problems {
+	for _, r := range w.tools {
 		b.WriteString(doctor.Line(r, w.fancy))
 	}
 }

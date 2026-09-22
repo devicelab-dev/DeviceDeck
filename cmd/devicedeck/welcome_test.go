@@ -155,12 +155,17 @@ func TestExitOn(t *testing.T) {
 	}
 }
 
-func TestWelcomeAllToolsFound(t *testing.T) {
+func TestWelcomeListsEveryToolInFull(t *testing.T) {
 	var out bytes.Buffer
-	w := welcome{local: "http://127.0.0.1:8787", tools: []doctor.Result{{Name: "Xcode"}, {Name: "adb"}}}
+	w := welcome{local: "http://127.0.0.1:8787", tools: []doctor.Result{
+		{Name: "Xcode", Found: "Xcode 27.0", For: "iOS simulators"},
+		{Name: "adb", Found: "version 1.0.41", For: "Android emulators"},
+	}}
 	w.write(&out)
-	if !strings.Contains(out.String(), "✓ All 2 found") {
-		t.Errorf("welcome = %s", out.String())
+	for _, want := range []string{"TOOLS", "✓ Xcode", "Xcode 27.0", "iOS simulators", "✓ adb", "version 1.0.41"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("welcome missing %q:\n%s", want, out.String())
+		}
 	}
 }
 
