@@ -39,3 +39,13 @@ scripts/README.md
 .playwright-mcp/
 /android-login.yaml
 /android-login.guard.json
+
+# Signing material — lives only in GitHub Secrets, never in the repo
+*.p12
+*.p8
+*.pem
+*.cer
+*.mobileprovision
+AuthKey_*
+.env
+.env.*
