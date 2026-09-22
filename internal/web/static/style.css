@@ -430,6 +430,24 @@ main { flex: 1; display: flex; min-height: 0; }
   .frame-screen { animation: none; background: #0e1118; }
 }
 
+/* While a device boots and its engine starts, the frame carries the
+   DeviceLab mark with the current stage beneath it, and at the bottom a
+   pointer to running the same flows on real devices. */
+.frame-brand {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+.frame-brand img { animation: brand-breathe 2.4s ease-in-out infinite; }
+@keyframes brand-breathe {
+  0%, 100% { opacity: 0.85; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.04); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .frame-brand img { animation: none; }
+}
 #loading-text {
   position: relative;
   color: var(--dim);
@@ -437,6 +455,23 @@ main { flex: 1; display: flex; min-height: 0; }
   text-align: center;
   padding: 0 24px;
 }
+.frame-promo {
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  bottom: 36px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--dim);
+  text-decoration: none;
+}
+.frame-promo strong { color: var(--accent); font-size: 13px; }
+.frame-promo:hover strong { text-decoration: underline; }
 #video.connecting { visibility: hidden; }
 
 /* An armed assertion is a mode: the next tap does not reach the device,

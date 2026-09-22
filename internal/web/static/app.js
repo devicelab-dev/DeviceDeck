@@ -503,10 +503,32 @@ canvas.addEventListener("keydown", (e) => {
 // ---------- toolbar ----------
 
 $("btn-back").addEventListener("click", showLibrary);
-$("btn-home").addEventListener("click", () => send(gestureFrame(GESTURE.home)));
-$("btn-switcher").addEventListener("click", () => send(gestureFrame(GESTURE.appSwitcher)));
-$("btn-lock").addEventListener("click", () =>
-  fetch(`/api/devices/${udid}/button`, { method: "POST", body: JSON.stringify({ button: "lock" }) }));
+$("btn-home").addEventListener("click", () => leaveApp(() => send(gestureFrame(GESTURE.home))));
+$("btn-switcher").addEventListener("click", () => leaveApp(() => send(gestureFrame(GESTURE.appSwitcher))));
+$("btn-lock").addEventListener("click", () => leaveApp(() =>
+  fetch(`/api/devices/${udid}/button`, { method: "POST", body: JSON.stringify({ button: "lock" }) })));
+
+// LEAVE_SETTLE_MS is how long a snapshot already running on the device is
+// given to finish before a Home, Switcher or Lock is sent.
+const LEAVE_SETTLE_MS = 400;
+
+// leaveApp sends an action that takes the app off screen. While Inspect
+// follows the screen a snapshot is nearly always running, and on iOS one
+// caught mid-way by the app leaving the screen stalls the runner for over
+// a minute. So the follow loop is stopped first, the running snapshot is
+// given a moment to finish, the action is sent, and following resumes.
+async function leaveApp(action) {
+  if (!inspecting) {
+    action();
+    return;
+  }
+  treeLoop++;
+  if (treeAbort) treeAbort.abort();
+  await sleep(LEAVE_SETTLE_MS);
+  await action();
+  await sleep(700);
+  if (inspecting) followTree();
+}
 $("btn-shot").addEventListener("click", () => window.open(`/api/devices/${udid}/screenshot`));
 $("btn-inspect").addEventListener("click", toggleInspector);
 
@@ -725,6 +747,8 @@ panelIdle();
 
 // treeLoop numbers the running follow loop; bumping it stops the loop.
 let treeLoop = 0;
+// treeAbort cancels the follow loop's waiting request.
+let treeAbort = null;
 
 // IDLE_PAUSE_MS is the breather after a round in which the screen did not
 // change, so a still screen is not sampled back to back.
@@ -746,7 +770,9 @@ async function followTree() {
     // Inspect was on. Without it the tree is whatever is on screen.
     const params = new URLSearchParams();
     if (after !== null) params.set("after", after);
-    const res = await fetch(`/api/devices/${encodeURIComponent(device)}/tree?${params}`).catch(() => null);
+    treeAbort = new AbortController();
+    const res = await fetch(`/api/devices/${encodeURIComponent(device)}/tree?${params}`, { signal: treeAbort.signal })
+      .catch(() => null);
     if (!inspecting || gen !== treeLoop || udid !== device) return;
     const body = res ? await res.json().catch(() => ({})) : {};
     if (!res || !res.ok) {
