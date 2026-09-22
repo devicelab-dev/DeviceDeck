@@ -330,6 +330,7 @@ func buildStack(hidBin, videoBin string, fps int, appArgs []string) (*stack, err
 		server.ScreenshotRouter{IOS: simClient, Android: st.emu},
 		frames, st.engines, st.videos, capture.NewService(st.engines))
 	st.srv.SetConsole(web.Handler(st.srv.FirstTree))
+	st.srv.SetSessionEnder(sessionEnder{engines: st.engines, videos: st.videos, inputs: st.inputs, ios: simClient, android: st.emu})
 	st.srv.SetEngineWarmer(bootThenWarm{android: st.emu, engines: st.engines},
 		engineDetail(runnerCacheDir(), st.devices, st.emu))
 	cat, err := apps.NewCatalog(appFiles(appArgs), appDevice{server.InstalledRouter{IOS: simClient, Android: st.emu}, st.launches})
@@ -382,6 +383,32 @@ func waitForExit(errCh <-chan error) error {
 		slog.Info("shutting down", "signal", sig.String())
 		return nil
 	}
+}
+
+// sessionEnder is End session: it stops what DeviceDeck runs for a device,
+// then powers the device off. The engine goes first: on iOS stopping it can
+// shut the simulator down already, which the shutdown then accepts.
+type sessionEnder struct {
+	engines interface {
+		Stop(ctx context.Context, udid string)
+	}
+	videos interface{ Close(udid string) }
+	inputs interface{ Drop(udid string) }
+	ios    interface {
+		Shutdown(ctx context.Context, udid string) error
+	}
+	android androidKiller
+}
+
+// End stops udid's engine and sidecars and powers the device off.
+func (e sessionEnder) End(ctx context.Context, udid string) error {
+	e.engines.Stop(ctx, udid)
+	e.videos.Close(udid)
+	e.inputs.Drop(udid)
+	if platform.IsAndroidSerial(udid) {
+		return e.android.Kill(ctx, udid)
+	}
+	return e.ios.Shutdown(ctx, udid)
 }
 
 // androidKiller powers off an emulator DeviceDeck started.

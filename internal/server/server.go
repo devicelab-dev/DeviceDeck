@@ -66,6 +66,7 @@ type CaptureService interface {
 	Start(ctx context.Context, udid, appID string) error
 	Stop(udid string) (yaml, guard string, steps []capture.Step, err error)
 	Assert(udid string, x, y float64) error
+	WaitVisible(udid string, x, y float64) error
 	Status(udid string) (recording bool, steps []capture.Step)
 	OnFrame(udid string, frame []byte)
 }
@@ -85,6 +86,11 @@ type Server struct {
 	warm        *warmups
 	// inputs enforces one driver per device.
 	inputs *inputOwners
+	// ender ends a device's session and powers it off; nil disables it.
+	ender SessionEnder
+	// launched remembers the apps launched on each device, so opening a
+	// device launches its build once, not on every reload.
+	launched launchedApps
 	// sleep paces multi-frame gestures; injected so tests run instantly.
 	sleep func(time.Duration)
 	// Timings for the settle barrier and the launch wait. Zero means the
@@ -131,6 +137,8 @@ func (s *Server) SetConsole(h http.Handler) { s.console = h }
 type AppProvider interface {
 	Ensure(ctx context.Context, udid, appID string) error
 	For(ctx context.Context, udid string) []apps.Listed
+	Apps() []apps.App
+	Skipped() []apps.Skipped
 }
 
 // SetApps gives launches the builds passed with --app, so launching one by
@@ -142,11 +150,13 @@ func (s *Server) SetApps(p AppProvider) { s.apps = p }
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/devices", s.handleDevices)
+	mux.HandleFunc("GET /api/apps", s.handleApps)
 	mux.HandleFunc("POST /api/devices/{udid}/boot", s.handleBoot)
 	mux.HandleFunc("POST /api/devices/{udid}/app/launch", s.handleLaunchApp)
 	mux.HandleFunc("POST /api/devices/{udid}/app/install", s.handleInstallApp)
 	mux.HandleFunc("GET /api/devices/{udid}/apps", s.handleDeviceApps)
 	mux.HandleFunc("POST /api/devices/{udid}/engine", s.handleEngineWarm)
+	mux.HandleFunc("POST /api/devices/{udid}/shutdown", s.handleEndSession)
 	mux.HandleFunc("GET /api/devices/{udid}/engine", s.handleEngineStatus)
 	mux.HandleFunc("POST /api/devices/{udid}/openurl", s.handleOpenURL)
 	mux.HandleFunc("GET /api/devices/{udid}/screenshot", s.handleScreenshot)
@@ -214,12 +224,28 @@ type installRequest struct {
 	AppFile string `json:"appFile"`
 }
 
+// handleApps lists every build passed with --app, for any device, and the
+// ones a folder held that could not be used, with why — the console's
+// Apps section, the same list the startup guide prints.
+func (s *Server) handleApps(w http.ResponseWriter, _ *http.Request) {
+	list, skipped := []apps.App{}, []apps.Skipped{}
+	if s.apps != nil {
+		list = append(list, s.apps.Apps()...)
+		skipped = append(skipped, s.apps.Skipped()...)
+	}
+	writeJSON(w, map[string]any{"apps": list, "skipped": skipped})
+}
+
 // handleDeviceApps lists the registered builds that suit a device, each
 // marked installed or not; an empty list when none were registered.
 func (s *Server) handleDeviceApps(w http.ResponseWriter, r *http.Request) {
+	udid := r.PathValue("udid")
 	list := []apps.Listed{}
 	if s.apps != nil {
-		list = s.apps.For(r.Context(), r.PathValue("udid"))
+		list = s.apps.For(r.Context(), udid)
+	}
+	for i := range list {
+		list[i].Launched = s.launched.has(udid, list[i].ID)
 	}
 	writeJSON(w, map[string]any{"apps": list})
 }
@@ -283,6 +309,7 @@ func (s *Server) handleLaunchApp(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadGateway, err)
 		return
 	}
+	s.launched.mark(udid, req.App)
 	writeJSON(w, okResponse("launch"))
 }
 
@@ -346,8 +373,10 @@ func (s *Server) handleTree(w http.ResponseWriter, r *http.Request) {
 		// as an empty mirror, and every consumer then reports a missing
 		// element instead of a broken engine. Without this the server
 		// side of that failure leaves no trace at all, which is how a
-		// driver that would not start cost an evening to identify.
-		slog.Warn("tree snapshot failed", "udid", udid, "err", err)
+		// driver that would not start cost an evening to identify. At
+		// debug: the engine logs its own failure where it happens, and
+		// a page polling a broken device would repeat this every round.
+		slog.Debug("tree snapshot failed", "udid", udid, "err", err)
 		httpError(w, http.StatusBadGateway, err)
 		return
 	}
@@ -584,11 +613,19 @@ func (s *Server) handleCaptureStop(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true, "yaml": yaml, "guard": guard, "steps": steps})
 }
 
-// handleCaptureAssert records an assertion instead of an interaction:
-// the point is resolved to an element and asserted visible, and the
-// device is never touched.
+// checkRequest is a recorded check on the element at a point: "visible"
+// (the default) asserts it is there, "wait" waits for it to appear.
+type checkRequest struct {
+	X     float64 `json:"x"`
+	Y     float64 `json:"y"`
+	Check string  `json:"check"`
+}
+
+// handleCaptureAssert records a check instead of an interaction: the point
+// is resolved to an element, which is asserted visible or waited for, and
+// the device is never touched.
 func (s *Server) handleCaptureAssert(w http.ResponseWriter, r *http.Request) {
-	var req tapRequest
+	var req checkRequest
 	if !decodeBody(w, r, &req) {
 		return
 	}
@@ -596,7 +633,16 @@ func (s *Server) handleCaptureAssert(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, fmt.Errorf("x and y must be normalized 0-1"))
 		return
 	}
-	if err := s.capture.Assert(r.PathValue("udid"), req.X, req.Y); err != nil {
+	record := s.capture.Assert
+	switch req.Check {
+	case "", "visible":
+	case "wait":
+		record = s.capture.WaitVisible
+	default:
+		httpError(w, http.StatusBadRequest, fmt.Errorf("check must be \"visible\" or \"wait\", not %q", req.Check))
+		return
+	}
+	if err := record(r.PathValue("udid"), req.X, req.Y); err != nil {
 		httpError(w, http.StatusConflict, err)
 		return
 	}
@@ -655,14 +701,11 @@ func writeJSON(w http.ResponseWriter, payload any) {
 }
 
 func httpError(w http.ResponseWriter, status int, err error) {
-	// A server-side failure is worth a warning; a bad request (a stale tab
-	// on a placeholder address, a mistyped id) is the caller's and goes to
-	// the log file only.
-	level := slog.LevelDebug
-	if status >= http.StatusInternalServerError {
-		level = slog.LevelWarn
-	}
-	slog.Log(context.Background(), level, "request failed", "status", status, "err", err)
+	// The log file only: the caller gets the error in the response, and the
+	// part that failed (engine, sidecar, driver) logs the cause itself, so
+	// a terminal copy is the same failure a second time — once per poll
+	// from a page that keeps asking.
+	slog.Debug("request failed", "status", status, "err", err)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": err.Error()})

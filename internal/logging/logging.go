@@ -11,9 +11,10 @@
 //	                 catches libraries that print instead of logging
 //	crash.log        the Go runtime's report if the process panics
 //
-// The terminal keeps a readable level (info by default) while the file keeps
-// everything, so turning on debug output is never needed to diagnose a run
-// that already happened.
+// The terminal shows only what needs attention (warnings and errors by
+// default), one short line each with repeats suppressed, while the file keeps
+// everything in full, so turning on debug output is never needed to diagnose
+// a run that already happened.
 package logging
 
 import (
@@ -81,7 +82,7 @@ func Start(home, kind string, term io.Writer, termLevel slog.Level) (*Run, error
 	r := &Run{Dir: dir, main: f, files: map[string]*os.File{}}
 	handlers := []slog.Handler{slog.NewTextHandler(f, &slog.HandlerOptions{Level: slog.LevelDebug})}
 	if term != nil {
-		handlers = append(handlers, slog.NewTextHandler(term, &slog.HandlerOptions{Level: termLevel}))
+		handlers = append(handlers, newTerminalHandler(term, termLevel))
 	}
 	slog.SetDefault(slog.New(slog.NewMultiHandler(handlers...)))
 	r.captureCrashes()
@@ -174,9 +175,11 @@ func (r *Run) Close() error {
 	return r.main.Close()
 }
 
-// Component returns where a child process should write its stderr: the
-// terminal plus <name>.log in the active run folder, or just the terminal
-// when no run is active (tests, or a log folder that could not be made).
+// Component returns where a child process should write its stderr:
+// <name>.log in the active run folder, or the terminal when no run is
+// active (tests, or a log folder that could not be made). Not both: a
+// sidecar's chatter ("capturing udid=… fps=30") is not something the person
+// at the terminal needs, and when a sidecar fails DeviceDeck logs that itself.
 // The file is opened once per name and shared, so a process restarted for
 // the same device appends to the same log.
 func Component(name string) io.Writer {
@@ -189,7 +192,7 @@ func Component(name string) io.Writer {
 		slog.Warn("component log unavailable", "component", name, "err", err)
 		return r.stderr()
 	}
-	return io.MultiWriter(r.stderr(), f)
+	return f
 }
 
 func (r *Run) file(name string) (*os.File, error) {

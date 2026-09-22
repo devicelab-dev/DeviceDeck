@@ -97,8 +97,11 @@ func TestServiceAssert(t *testing.T) {
 	if err := svc.Assert("UDID-1", 0.9, 0.9); err == nil {
 		t.Fatal("assert on empty space must fail rather than record a coordinate")
 	}
+	if err := svc.WaitVisible("UDID-1", 0.25, 0.075); err != nil {
+		t.Fatalf("WaitVisible: %v", err)
+	}
 	_, _, steps, err := svc.Stop("UDID-1")
-	if err != nil || len(steps) != 1 || steps[0].Kind != "assertVisible" {
+	if err != nil || len(steps) != 2 || steps[0].Kind != "assertVisible" || steps[1].Kind != "waitVisible" {
 		t.Fatalf("steps = %+v (err %v)", steps, err)
 	}
 }

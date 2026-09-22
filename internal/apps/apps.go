@@ -39,11 +39,13 @@ type App struct {
 	Warnings []string  `json:"warnings,omitempty"` // what may stop it running here, found up front
 }
 
-// Listed is a registered build as offered for one device: the build, and
-// whether that device already has it.
+// Listed is a registered build as offered for one device: the build,
+// whether that device already has it, and whether this server has launched
+// it there yet (the console launches a build once when a device opens).
 type Listed struct {
 	App
 	Installed bool `json:"installed"`
+	Launched  bool `json:"launched"`
 }
 
 // PlatformOf is the platform of a device id: Android for an adb serial,
@@ -102,7 +104,8 @@ type Catalog struct {
 
 // Skipped is a build found in an --app folder that cannot be used, and why.
 type Skipped struct {
-	Path, Reason string
+	Path   string `json:"path"`
+	Reason string `json:"reason"`
 }
 
 // NewCatalog registers each --app path. A build named directly must be

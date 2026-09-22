@@ -622,3 +622,42 @@ func TestSecretsCommentDedupAndSort(t *testing.T) {
 		t.Fatalf("multi-secret flow invalid: %v\n%s", err, out)
 	}
 }
+
+// A recorded wait exports as extendedWaitUntil on the same durable
+// selector a tap would use, parses under the runner, and uses nothing a
+// real-device driver would ignore.
+func TestWaitForExportsExtendedWait(t *testing.T) {
+	tree := []runner.Node{
+		{Index: 0, Type: "Application", Frame: runner.Rect{Width: 100, Height: 200}},
+		{Index: 1, Type: "Button", Identifier: "products-screen", Depth: 1, Frame: runner.Rect{X: 10, Y: 20, Width: 50, Height: 30}},
+	}
+	r := &Recorder{now: time.Now, tree: tree, treeAt: time.Now(), appID: "com.example"}
+	if !r.WaitFor(0.35, 0.175) {
+		t.Fatal("WaitFor should resolve the button")
+	}
+	if r.WaitFor(0.95, 0.95) {
+		t.Fatal("WaitFor on empty space must be refused")
+	}
+	steps := append(r.Steps(),
+		Step{Kind: "waitVisible", Text: "Done", ChildOfID: "toolbar"},
+		Step{Kind: "waitVisible", Text: "Row", Index: 2})
+	yaml := ExportMaestro("com.example", steps)
+	for _, want := range []string{
+		"- extendedWaitUntil:\n    visible:\n      id: \"products-screen\"\n    timeout: 10000\n    label: \"wait for products-screen\"",
+		"      text: \"Done\"\n      childOf:\n        id: \"toolbar\"",
+		"      text: \"Row\"\n      index: 2",
+		"# devicedeck: extendedWaitUntil visible selector=id confidence=high",
+	} {
+		if !strings.Contains(yaml, want) {
+			t.Errorf("yaml missing %q:\n%s", want, yaml)
+		}
+	}
+	if n, err := runner.ValidateFlow([]byte(yaml)); err != nil || n != len(steps)+1 {
+		t.Fatalf("runner parsed %d steps (want %d), err %v:\n%s", n, len(steps)+1, err, yaml)
+	}
+	for _, platform := range []string{"ios", "android"} {
+		if bad, err := runner.UnsupportedFields([]byte(yaml), platform); err != nil || len(bad) != 0 {
+			t.Errorf("%s: unsupported fields %v (err %v)", platform, bad, err)
+		}
+	}
+}

@@ -11,6 +11,11 @@ import (
 	"github.com/devicelab-dev/DeviceDeck/internal/input"
 )
 
+// TakenOverPrefix starts the close reason a driver gets when another
+// client takes its device over, so a page can say what happened to it
+// rather than report a refusal it did nothing to cause.
+const TakenOverPrefix = "taken over by "
+
 // wsCloseReasonMax is the WebSocket close-reason limit: the control
 // frame carries at most 125 bytes, of which 2 are the status code.
 const wsCloseReasonMax = 123
@@ -129,7 +134,8 @@ func (s *Server) handleInputWS(w http.ResponseWriter, r *http.Request) {
 
 	// One driver per device — see inputOwners. The refusal carries who
 	// holds it, because the failure it prevents is otherwise silent.
-	release, err := s.inputs.claim(udid, r.RemoteAddr)
+	// ?takeover=1 disconnects the holder instead (the console's Take over).
+	release, err := s.inputs.acquire(udid, r.RemoteAddr, kicker(conn), r.URL.Query().Get("takeover") == "1")
 	if err != nil {
 		_ = conn.Close(websocket.StatusPolicyViolation, truncateReason(err.Error()))
 		return
@@ -159,6 +165,15 @@ func (s *Server) handleInputWS(w http.ResponseWriter, r *http.Request) {
 			_ = conn.Close(websocket.StatusInternalError, "sidecar unavailable")
 			return
 		}
+	}
+}
+
+// kicker disconnects conn, telling it why: another client took its device
+// over, or its session ended. Closing waits for the peer's
+// acknowledgement, which whoever kicked it must not wait for too.
+func kicker(conn *websocket.Conn) func(why string) {
+	return func(why string) {
+		go func() { _ = conn.Close(websocket.StatusPolicyViolation, truncateReason(why)) }()
 	}
 }
 

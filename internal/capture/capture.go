@@ -39,7 +39,7 @@ const (
 
 // Step is one recorded flow step, exportable to Maestro YAML.
 type Step struct {
-	Kind string `json:"kind"` // tapOn | longPressOn | inputText | swipe | pressKey | tapOnPoint
+	Kind string `json:"kind"` // tapOn | longPressOn | inputText | swipe | pressKey | tapOnPoint | assertVisible | waitVisible
 	// Selector for tapOn/longPressOn: exactly one of ID/Text set.
 	ID   string `json:"id,omitempty"`
 	Text string `json:"text,omitempty"`
@@ -199,11 +199,26 @@ func (r *Recorder) appendStep(s Step) {
 // coordinate assertion would be a lie, since it asserts only that the
 // screen has pixels there.
 func (r *Recorder) Assert(x, y float64) bool {
+	return r.check("assertVisible", x, y)
+}
+
+// WaitFor records a wait for the element at a normalized point to become
+// visible (Maestro's extendedWaitUntil), without touching the device. It is
+// how a capture says "a spinner or a network call sits here": the person
+// recording waited, and replay must too rather than fail on a screen that
+// has not arrived. Resolved like Assert, and false in the same cases.
+func (r *Recorder) WaitFor(x, y float64) bool {
+	return r.check("waitVisible", x, y)
+}
+
+// check records kind, a step about an element rather than an interaction,
+// at the element under a normalized point.
+func (r *Recorder) check(kind string, x, y float64) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.flushTextLocked()
-	step := r.resolveTap("assertVisible", x, y)
-	if step.Kind != "assertVisible" {
+	step := r.resolveTap(kind, x, y)
+	if step.Kind != kind {
 		return false
 	}
 	r.appendStep(step)

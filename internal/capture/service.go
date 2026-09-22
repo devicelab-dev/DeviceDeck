@@ -108,14 +108,24 @@ func validateExport(yaml string) error {
 // recording. Fails when the device is not recording, or when the point
 // resolves to nothing durable enough to assert on.
 func (s *Service) Assert(udid string, x, y float64) error {
+	return s.check(udid, x, y, (*Recorder).Assert)
+}
+
+// WaitVisible records a wait for the element at a normalized point to
+// appear, failing in the same cases as Assert.
+func (s *Service) WaitVisible(udid string, x, y float64) error {
+	return s.check(udid, x, y, (*Recorder).WaitFor)
+}
+
+func (s *Service) check(udid string, x, y float64, record func(*Recorder, float64, float64) bool) error {
 	s.mu.Lock()
 	rec, ok := s.recorders[udid]
 	s.mu.Unlock()
 	if !ok {
 		return fmt.Errorf("not recording %s", udid)
 	}
-	if !rec.Assert(x, y) {
-		return fmt.Errorf("nothing to assert on at %.3f,%.3f: no element with an identifier or text", x, y)
+	if !record(rec, x, y) {
+		return fmt.Errorf("nothing to check at %.3f,%.3f: no element with an identifier or text", x, y)
 	}
 	return nil
 }

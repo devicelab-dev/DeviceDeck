@@ -260,10 +260,45 @@ func TestUnsupportedFieldsParseError(t *testing.T) {
 // the runner that replays it on real devices still parses it unchanged.
 func TestExportCarriesBrandHeaderAndStillParses(t *testing.T) {
 	yaml := ExportMaestro("com.example", []Step{{Kind: "tapOn", ID: "sign-in"}})
-	if !strings.HasPrefix(yaml, brand.FlowHeader()+"appId: com.example\n") {
+	header, _, found := strings.Cut(yaml, "appId: com.example\n")
+	if !found || !strings.Contains(header, brand.Repo) || !strings.Contains(header, brand.Site) {
 		t.Fatalf("flow does not open with the brand header:\n%s", yaml)
 	}
 	if steps, err := runner.ValidateFlow([]byte(yaml)); err != nil || steps == 0 {
 		t.Fatalf("runner rejects the branded flow: %d steps, %v", steps, err)
+	}
+}
+
+// Comments wrap so a reviewer never scrolls sideways: every line of a
+// flow with a long desert finding and several secrets fits commentWidth,
+// words are never split, and continuation lines stay comments.
+func TestExportWrapsLongComments(t *testing.T) {
+	steps := []Step{
+		{Kind: "inputText", Secure: true, SecureVar: "PASSWORD_INPUT"},
+		{Kind: "inputText", Secure: true, SecureVar: "CARD_NUMBER_INPUT"},
+		{Kind: "inputText", Secure: true, SecureVar: "SECURITY_CODE_INPUT"},
+	}
+	finding := DesertFinding{Message: "Screen has actionable elements with no durable id: add a test identifier " +
+		"(iOS accessibilityIdentifier, Android resource-id / Compose testTag, Flutter Semantics.identifier, " +
+		"React Native testID). (4 of 12 actionable elements have no identifier)"}
+	yaml := ExportMaestroWithLint("com.example", steps, []DesertFinding{finding})
+	for _, line := range strings.Split(yaml, "\n") {
+		if len(line) > commentWidth && strings.HasPrefix(line, "#") && strings.Count(line, " ") > 1 {
+			t.Errorf("comment line is %d columns, want at most %d: %q", len(line), commentWidth, line)
+		}
+	}
+	for _, want := range []string{"#   (4 of 12 actionable", "#   -e PASSWORD_INPUT=… -e SECURITY_CODE_INPUT=…", "# desert: Screen has", "accessibilityIdentifier,"} {
+		if !strings.Contains(yaml, want) {
+			t.Errorf("wrapped flow lacks %q:\n%s", want, yaml)
+		}
+	}
+	if _, err := runner.ValidateFlow([]byte(yaml)); err != nil {
+		t.Fatalf("wrapped flow does not parse: %v\n%s", err, yaml)
+	}
+	// A word longer than a line is kept whole on its own line.
+	var b strings.Builder
+	writeComment(&b, "see "+strings.Repeat("x", 90))
+	if got := b.String(); got != "# see\n#   "+strings.Repeat("x", 90)+"\n" {
+		t.Errorf("long word = %q", got)
 	}
 }

@@ -288,6 +288,18 @@ func (m *Manager) CloseAll() {
 	}
 }
 
+// Close ends udid's capture, if one is running. Viewers see their stream
+// end; the next viewer starts a new capture.
+func (m *Manager) Close(udid string) {
+	m.mu.Lock()
+	s, ok := m.sessions[udid]
+	delete(m.sessions, udid)
+	m.mu.Unlock()
+	if ok {
+		s.Close()
+	}
+}
+
 func (m *Manager) session(ctx context.Context, udid string) (*Session, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

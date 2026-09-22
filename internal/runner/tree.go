@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -245,7 +246,11 @@ func (s *Engines) engine(ctx context.Context, udid string) (engineAPI, error) {
 	began := time.Now()
 	e, err := s.start(ctx, udid)
 	if err != nil {
-		slog.Error("engine start failed", "udid", udid, "took", time.Since(began), "err", err)
+		level := slog.LevelError
+		if notBooted(err) {
+			level = slog.LevelDebug
+		}
+		slog.Log(ctx, level, "engine start failed", "udid", udid, "took", time.Since(began), "err", err)
 		return nil, err
 	}
 	slog.Info("engine started", "udid", udid, "took", time.Since(began))
@@ -280,13 +285,30 @@ func (s *Engines) AndroidInjector(ctx context.Context, udid string) (*AndroidEng
 func (s *Engines) StopAll(ctx context.Context) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for udid, e := range s.engines {
-		if err := e.Stop(ctx); err != nil {
-			slog.Warn("engine stop failed", "udid", udid, "err", err)
-		}
-		slog.Info("engine stopped", "udid", udid)
-		delete(s.engines, udid)
+	for udid := range s.engines {
+		s.stopLocked(ctx, udid)
 	}
+}
+
+// Stop shuts down udid's engine, if one is running, so the next use starts
+// a new one. Ending a device's session calls it before powering the device
+// off.
+func (s *Engines) Stop(ctx context.Context, udid string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.stopLocked(ctx, udid)
+}
+
+func (s *Engines) stopLocked(ctx context.Context, udid string) {
+	e, ok := s.engines[udid]
+	if !ok {
+		return
+	}
+	if err := e.Stop(ctx); err != nil {
+		slog.Warn("engine stop failed", "udid", udid, "err", err)
+	}
+	slog.Info("engine stopped", "udid", udid)
+	delete(s.engines, udid)
 }
 
 // ActiveUDIDs lists the devices DeviceDeck has an engine on — the ones it
@@ -300,4 +322,21 @@ func (s *Engines) ActiveUDIDs() []string {
 		udids = append(udids, udid)
 	}
 	return udids
+}
+
+// notBootedStates are the CoreSimulator states simctl names when it refuses
+// to act on a simulator that is not running.
+var notBootedStates = []string{"current state: Shutdown", "current state: Shutting Down"}
+
+// notBooted reports whether an engine start failed only because the
+// simulator is not running. A console tab left open asks for its device's
+// engine the moment the server starts, before anyone has booted it; that
+// is expected, so it is logged at debug rather than as an error.
+func notBooted(err error) bool {
+	for _, state := range notBootedStates {
+		if strings.Contains(err.Error(), state) {
+			return true
+		}
+	}
+	return false
 }

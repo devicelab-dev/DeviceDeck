@@ -5,6 +5,7 @@ package sim
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -64,6 +65,18 @@ func (c *Client) Boot(ctx context.Context, udid string) error {
 		slog.Debug("simulator app not opened; continuing headless", "udid", udid, "err", err)
 	}
 	return nil
+}
+
+// Shutdown powers a simulator off. One that is already off — stopping its
+// engine can shut it down first, since killing xcodebuild tears the test
+// session down with it — counts as done.
+func (c *Client) Shutdown(ctx context.Context, udid string) error {
+	_, err := c.run(ctx, "xcrun", "simctl", "shutdown", udid)
+	var exit *exec.ExitError
+	if err == nil || errors.As(err, &exit) && strings.Contains(string(exit.Stderr), "current state: Shutdown") {
+		return nil
+	}
+	return fmt.Errorf("shut down %s: %w", udid, err)
 }
 
 // OpenURL opens a URL on the simulator — an https link in Safari, or a

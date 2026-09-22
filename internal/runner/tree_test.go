@@ -319,3 +319,46 @@ func TestWarmStartsOnceAndReportsFailure(t *testing.T) {
 		t.Error("a failed start must be reported")
 	}
 }
+
+func TestNotBooted(t *testing.T) {
+	for msg, want := range map[string]bool{
+		"simctl install: exit status 149 (…):\nUnable to lookup in current state: Shutdown":      true,
+		"simctl install: exit status 149 (…):\nUnable to lookup in current state: Shutting Down": true,
+		"xcodebuild: test runner exited early":                                                   false,
+	} {
+		if got := notBooted(errors.New(msg)); got != want {
+			t.Errorf("notBooted(%q) = %v, want %v", msg, got, want)
+		}
+	}
+}
+
+// A simulator that is not running is expected (a tab asking before boot):
+// the start still fails, and is not cached.
+func TestEnginesStartOnShutdownDevice(t *testing.T) {
+	s := &Engines{
+		start: func(context.Context, string) (engineAPI, error) {
+			return nil, errors.New("Unable to lookup in current state: Shutdown")
+		},
+		engines: make(map[string]engineAPI),
+	}
+	if _, err := s.Snapshot(context.Background(), "AAA", ""); err == nil || !notBooted(err) {
+		t.Fatalf("want the not-booted error back, got %v", err)
+	}
+	if len(s.engines) != 0 {
+		t.Error("failed start must not be cached")
+	}
+}
+
+// Stop ends one device's engine and leaves the others running.
+func TestEnginesStop(t *testing.T) {
+	a, b := &fakeEngine{stopErr: errors.New("xcodebuild already gone")}, &fakeEngine{}
+	s := &Engines{engines: map[string]engineAPI{"AAA": a, "BBB": b}}
+	s.Stop(context.Background(), "AAA")
+	s.Stop(context.Background(), "CCC") // nothing running there: a no-op
+	if !a.stopped || b.stopped {
+		t.Errorf("stopped AAA=%v BBB=%v, want only AAA", a.stopped, b.stopped)
+	}
+	if _, ok := s.engines["AAA"]; ok || len(s.engines) != 1 {
+		t.Errorf("engines = %v, want only BBB left", s.engines)
+	}
+}

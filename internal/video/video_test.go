@@ -318,3 +318,22 @@ func TestManagerStartFailure(t *testing.T) {
 		t.Fatal("expected start error")
 	}
 }
+
+// Close ends one device's capture; the next viewer starts a new one.
+func TestManagerClose(t *testing.T) {
+	m := NewManager(stubVideo(t), 30)
+	defer m.CloseAll()
+	_, cancel, err := m.Subscribe(context.Background(), "UDID-1")
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	defer cancel()
+	m.Close("UDID-1")
+	m.Close("UDID-2") // never captured: a no-op
+	m.mu.Lock()
+	n := len(m.sessions)
+	m.mu.Unlock()
+	if n != 0 {
+		t.Errorf("%d sessions left after Close", n)
+	}
+}

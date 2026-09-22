@@ -23,7 +23,12 @@
       <h1>Devices</h1>
       <span id="library-summary"></span>
     </div>
-    <div id="library-groups"></div>
+    <div id="library-groups" class="cards"></div>
+    <div class="library-head apps-head">
+      <h2>Apps</h2>
+      <span id="apps-summary"></span>
+    </div>
+    <div id="library-apps"></div>
   </section>
   <main id="console-view" hidden>
     <aside id="sidebar">
@@ -32,6 +37,7 @@
         <div id="device-label"></div>
         <div id="device-meta"></div>
         <div class="copy-row"><input id="device-id" readonly spellcheck="false"><button class="copy" data-copy="device-id" title="Copy the device id">Copy</button></div>
+        <button id="btn-end" class="end-session" title="Stop DeviceDeck on this device and shut it down">End session</button>
       </section>
       <section>
         <h3>App</h3>
@@ -59,12 +65,17 @@
             <img src="devicelab-logo-128.png" alt="DeviceLab" width="72" height="72">
             <div id="loading-text">Connecting…</div>
           </div>
-          <a class="frame-promo dl-card" id="dl-card" href="https://devicelab.dev" target="_blank" rel="noopener">
-            <span class="promo-head"><img src="devicelab-logo.png" alt="" width="20" height="20">DeviceLab</span>
-            <span class="promo-title">Your devices. Your test cloud.</span>
-            <span class="promo-line" id="promo-line">The flows you capture here run unchanged on real iPhones and Android phones you own.</span>
-            <strong>devicelab.dev &#8599;</strong>
-          </a>
+        </div>
+      </div>
+      <div id="check-menu" role="menu" hidden>
+        <button role="menuitem" data-check="visible">Assert visible</button>
+        <button role="menuitem" data-check="wait">Wait until visible</button>
+      </div>
+      <div id="stage-fault" role="alert" hidden>
+        <div class="fault-card">
+          <strong id="fault-title"></strong>
+          <p id="fault-detail"></p>
+          <button id="fault-action" hidden></button>
         </div>
       </div>
     </div>
@@ -78,17 +89,21 @@
           <button id="btn-shot" class="tool" title="Save screenshot"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="14" r="4"/></svg><span>Shot</span></button>
           <button id="btn-inspect" class="tool" title="Toggle tree inspector"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-5-5"/></svg><span>Inspect</span></button>
           <button id="btn-record" class="tool record" title="Record session as a Maestro flow"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6" class="fill"/></svg><span>Record</span></button>
-          <button id="btn-assert" class="tool" title="Record an assertion: the next tap asserts the element is visible instead of tapping it" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg><span>Assert</span></button>
         </div>
       </section>
       <section id="inspector">
         <h2 id="node-title">—</h2>
+        <div id="flow-actions" hidden>
+          <button id="flow-copy" title="Copy the flow YAML">Copy</button>
+          <a id="flow-download" class="button" download="flow.yaml" title="Choose where to save the flow and what to call it">Download</a>
+        </div>
         <pre id="node-info"></pre>
       </section>
     </aside>
   </main>
   <script src="video-common.js"></script>
   <script src="input-common.js"></script>
+  <script src="flow-yaml.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

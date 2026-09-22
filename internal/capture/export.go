@@ -34,7 +34,9 @@ func ExportMaestroWithLint(appID string, steps []Step, findings []DesertFinding)
 
 func exportMaestro(appID string, steps []Step, findings []DesertFinding) string {
 	var b strings.Builder
-	b.WriteString(brand.FlowHeader())
+	for _, line := range strings.Split(strings.TrimSuffix(brand.FlowHeader(), "\n"), "\n") {
+		writeComment(&b, strings.TrimPrefix(line, "# "))
+	}
 	fmt.Fprintf(&b, "appId: %s\n", appID)
 	fmt.Fprintf(&b, "name: %s\n", flowName(appID))
 	fmt.Fprintf(&b, "tags:\n  - devicedeck\n  - capture\n")
@@ -42,9 +44,9 @@ func exportMaestro(appID string, steps []Step, findings []DesertFinding) string 
 	writeSecrets(&b, steps)
 	for _, d := range findings {
 		if d.Framework != "" {
-			fmt.Fprintf(&b, "# desert (%s): %s\n", d.Framework, d.Message)
+			writeComment(&b, fmt.Sprintf("desert (%s): %s", d.Framework, d.Message))
 		} else {
-			fmt.Fprintf(&b, "# desert: %s\n", d.Message)
+			writeComment(&b, "desert: "+d.Message)
 		}
 	}
 	// A capture is recorded against a freshly launched app, so replay must
@@ -81,11 +83,38 @@ func writeSecrets(b *strings.Builder, steps []Step) {
 		return
 	}
 	sort.Strings(vars)
-	var flags strings.Builder
+	words := strings.Fields("devicedeck secrets: supply at replay with")
 	for _, v := range vars {
-		fmt.Fprintf(&flags, " -e %s=…", v)
+		// One word, so a wrap never parts a flag from its value.
+		words = append(words, "-e "+v+"=…")
 	}
-	fmt.Fprintf(b, "# devicedeck secrets: supply at replay with%s\n", flags.String())
+	writeWords(b, words)
+}
+
+// commentWidth is the column a flow's comments wrap at, so a reviewer
+// reads the file without scrolling sideways — in the console's panel or
+// in a code review.
+const commentWidth = 72
+
+// writeComment writes text as a comment wrapped at commentWidth on word
+// boundaries, continuation lines indented under the first. A word longer
+// than a line, such as a URL, is kept whole rather than split.
+func writeComment(b *strings.Builder, text string) {
+	writeWords(b, strings.Fields(text))
+}
+
+// writeWords is writeComment for text already split into the units a wrap
+// may not break.
+func writeWords(b *strings.Builder, words []string) {
+	line := "#"
+	for _, word := range words {
+		if len(line)+1+len(word) > commentWidth && line != "#" && line != "#  " {
+			b.WriteString(line + "\n")
+			line = "#  "
+		}
+		line += " " + word
+	}
+	b.WriteString(line + "\n")
 }
 
 // flowName derives a short human name from the bundle id — the last
@@ -110,6 +139,8 @@ func provenance(s Step) string {
 	switch s.Kind {
 	case "tapOn", "longPressOn", "assertVisible":
 		return fmt.Sprintf("%s selector=%s confidence=%s", s.Kind, selectorKind(s), confidence(s))
+	case "waitVisible":
+		return fmt.Sprintf("extendedWaitUntil visible selector=%s confidence=%s", selectorKind(s), confidence(s))
 	case "tapOnPoint":
 		return "tapOn selector=point confidence=low FALLBACK(coordinate)"
 	case "inputText":
@@ -162,6 +193,8 @@ func writeStep(b *strings.Builder, s Step) {
 		writeSelector(b, "assertVisible", s)
 	case "tapOn", "longPressOn":
 		writeSelector(b, s.Kind, s)
+	case "waitVisible":
+		writeWait(b, s)
 	case "tapOnPoint":
 		fmt.Fprintf(b, "- tapOn:\n    point: \"%s,%s\"\n    label: %s\n",
 			percent(s.StartX), percent(s.StartY), quote("tap at "+percent(s.StartX)+","+percent(s.StartY)))
@@ -195,6 +228,24 @@ func writeSelector(b *strings.Builder, cmd string, s Step) {
 	fmt.Fprintf(b, "    label: %s\n", quote(selectorLabel(s)))
 }
 
+// waitTimeoutMs is how long a recorded wait gives its element to appear.
+// Long enough for a slow network step on a loaded CI machine; a wait that
+// needs longer is a hang worth failing on.
+const waitTimeoutMs = 10000
+
+// writeWait emits extendedWaitUntil for an element: the same selector a tap
+// would use, nested under visible:, with the timeout replay allows.
+func writeWait(b *strings.Builder, s Step) {
+	fmt.Fprintf(b, "- extendedWaitUntil:\n    visible:\n")
+	if s.ID != "" {
+		fmt.Fprintf(b, "      id: %s\n", quote(reEscape(s.ID)))
+	} else {
+		fmt.Fprintf(b, "      text: %s\n", quote(reEscape(s.Text)))
+	}
+	writeQualifiersAt(b, s, "      ")
+	fmt.Fprintf(b, "    timeout: %d\n    label: %s\n", waitTimeoutMs, quote("wait for "+selectorLabel(s)))
+}
+
 // selectorLabel is the human intent Maestro shows for a step: the element
 // as a person would name it, not the escaped regex the runner matches on.
 func selectorLabel(s Step) string {
@@ -208,11 +259,16 @@ func selectorLabel(s Step) string {
 // than one element. Only one is ever emitted: qualify prefers an
 // ancestor and falls back to position.
 func writeQualifiers(b *strings.Builder, s Step) {
+	writeQualifiersAt(b, s, "    ")
+}
+
+// writeQualifiersAt is writeQualifiers for a selector nested at indent.
+func writeQualifiersAt(b *strings.Builder, s Step, indent string) {
 	switch {
 	case s.ChildOfID != "":
-		fmt.Fprintf(b, "    childOf:\n      id: %s\n", quote(reEscape(s.ChildOfID)))
+		fmt.Fprintf(b, "%schildOf:\n%s  id: %s\n", indent, indent, quote(reEscape(s.ChildOfID)))
 	case s.Index > 0:
-		fmt.Fprintf(b, "    index: %d\n", s.Index)
+		fmt.Fprintf(b, "%sindex: %d\n", indent, s.Index)
 	}
 }
 

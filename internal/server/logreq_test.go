@@ -37,7 +37,7 @@ func TestLogRequestsLevelsAndFields(t *testing.T) {
 		{"POST", "/api/devices/AAA/tap", "level=DEBUG"},
 		{"POST", "/api/devices/AAA/boot", "level=INFO"},
 		{"POST", "/api/devices/AAA/capture/stop", "level=INFO"},
-		{"GET", "/api/devices/AAA/tree?fail=1", "level=WARN"},
+		{"GET", "/api/devices/AAA/tree?fail=1", "level=INFO"},
 		{"GET", "/api/devices/AAA/missing", "level=DEBUG"},
 	} {
 		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
@@ -105,7 +105,7 @@ func TestHTTPErrorIsLogged(t *testing.T) {
 	httpError(httptest.NewRecorder(), http.StatusBadGateway, errors.New("engine down"))
 	log := buf.String()
 	if !strings.Contains(log, "level=DEBUG msg=\"request failed\" status=404") ||
-		!strings.Contains(log, "level=WARN msg=\"request failed\" status=502") {
-		t.Errorf("a 4xx must be debug and a 5xx a warning:\n%s", log)
+		!strings.Contains(log, "level=DEBUG msg=\"request failed\" status=502") {
+		t.Errorf("every request failure must reach the file at debug, not the terminal:\n%s", log)
 	}
 }

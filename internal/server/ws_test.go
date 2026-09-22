@@ -530,3 +530,46 @@ func TestVideoWSEndsWhenRequestContextIsCancelled(t *testing.T) {
 		t.Error("stream outlived its cancelled context")
 	}
 }
+
+// Take over is how a person reclaims a device from a tab they cannot find:
+// the holder is disconnected and told by whom, and the new driver's frames
+// reach the device.
+func TestInputWSTakeOverKicksHolder(t *testing.T) {
+	backend := &fakeBackend{}
+	srv := wsServer(t, backend, &fakeVideo{frames: make(chan []byte)})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	first, _, err := websocket.Dial(ctx, wsAddr(srv, "/api/devices/AAA/input"), nil)
+	if err != nil {
+		t.Fatalf("first dial: %v", err)
+	}
+	defer first.CloseNow()
+	tap := input.Touch(input.TouchDown, 0.5, 0.5, input.EdgeNone)
+	if err := first.Write(ctx, websocket.MessageBinary, tap); err != nil {
+		t.Fatal(err)
+	}
+	for len(backend.sentFrames()) < 1 {
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	second, _, err := websocket.Dial(ctx, wsAddr(srv, "/api/devices/AAA/input?takeover=1"), nil)
+	if err != nil {
+		t.Fatalf("take-over dial: %v", err)
+	}
+	defer second.CloseNow()
+	_, _, readErr := first.Read(ctx)
+	if status := websocket.CloseStatus(readErr); status != websocket.StatusPolicyViolation {
+		t.Fatalf("holder close status = %v, want policy violation: %v", status, readErr)
+	}
+	if !strings.Contains(readErr.Error(), TakenOverPrefix) {
+		t.Errorf("holder is not told it was taken over: %v", readErr)
+	}
+	sent := len(backend.sentFrames())
+	if err := second.Write(ctx, websocket.MessageBinary, tap); err != nil {
+		t.Fatal(err)
+	}
+	for len(backend.sentFrames()) <= sent {
+		time.Sleep(5 * time.Millisecond)
+	}
+}

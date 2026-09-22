@@ -107,7 +107,8 @@ func Footer(w io.Writer, fancy bool) {
 // ignores comments, so the flow still runs byte-for-byte unchanged.
 func FlowHeader() string {
 	return strings.Join([]string{
-		"# Captured with DeviceDeck by " + Maker + " - " + Repo,
+		"# Captured with DeviceDeck by " + Maker,
+		"# " + Repo,
 		"# " + RealRuns + ": " + Site,
 	}, "\n") + "\n"
 }

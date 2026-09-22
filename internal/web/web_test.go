@@ -29,7 +29,7 @@ func TestConsoleServedAtRoot(t *testing.T) {
 }
 
 func TestStaticAssets(t *testing.T) {
-	for _, path := range []string{"/app.js", "/style.css", "/device.js", "/video-common.js", "/input-common.js"} {
+	for _, path := range []string{"/app.js", "/style.css", "/device.js", "/video-common.js", "/input-common.js", "/flow-yaml.js"} {
 		if rec := get(t, path); rec.Code != 200 {
 			t.Errorf("%s: %d", path, rec.Code)
 		}
@@ -58,7 +58,7 @@ func TestDevicePage(t *testing.T) {
 // looks like a device fault rather than a page fault.
 func TestConsoleWiresSharedModules(t *testing.T) {
 	body := get(t, "/").Body.String()
-	for _, want := range []string{"video-common.js", "input-common.js", "app.js"} {
+	for _, want := range []string{"video-common.js", "input-common.js", "flow-yaml.js", "app.js"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("console missing %q", want)
 		}
@@ -91,7 +91,8 @@ func TestConsoleKeepsControlIDs(t *testing.T) {
 	body := get(t, "/").Body.String()
 	for _, id := range []string{
 		"app", "app-pick", "btn-launch", "btn-home", "btn-switcher", "btn-lock",
-		"btn-shot", "btn-inspect", "btn-record", "btn-assert", "device-label", "status",
+		"btn-shot", "btn-inspect", "btn-record", "device-label", "status",
+		"stage-fault", "fault-title", "fault-detail", "fault-action", "btn-end", "check-menu", "flow-actions", "flow-copy", "flow-download",
 	} {
 		if !strings.Contains(body, `id="`+id+`"`) {
 			t.Errorf("console lost #%s", id)

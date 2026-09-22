@@ -111,6 +111,9 @@ func TestComponent(t *testing.T) {
 		if got != "first\nsecond\n" {
 			t.Errorf("component log = %q", got)
 		}
+		if w := Component("video-avd:Pixel/9"); w == io.Writer(os.Stderr) {
+			t.Error("sidecar output must go to its file only, not the terminal")
+		}
 	})
 	t.Run("unopenable file falls back to stderr", func(t *testing.T) {
 		r, _ := startRun(t, nil, slog.LevelInfo)
@@ -191,6 +194,14 @@ func TestCaptureConsole(t *testing.T) {
 	fmt.Fprintln(os.Stdout, "printed to stdout")
 	fmt.Fprintln(os.Stderr, "printed to stderr")
 	_, _ = io.WriteString(Component("hid-AAA"), "sidecar line\n")
+	// A component whose file cannot be opened falls back to the real
+	// terminal, not the captured stderr, so its lines are not doubled.
+	if err := os.Mkdir(r.Path("hid-CCC.log"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if w := Component("hid-CCC"); w != origErr {
+		t.Errorf("fallback while captured = %v, want the real stderr", w)
+	}
 	if err := r.Close(); err != nil {
 		t.Fatal(err)
 	}

@@ -20,7 +20,8 @@ var lifecycleSuffixes = []string{
 }
 
 // logRequests records every request's method, path, status, size and
-// duration. Failures (4xx/5xx) are warnings wherever they happen.
+// duration. Failures are recorded, not raised: the part that failed logs
+// its own cause, which is what the terminal shows.
 func logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
@@ -36,7 +37,7 @@ func logRequests(next http.Handler) http.Handler {
 func requestLevel(r *http.Request, status int) slog.Level {
 	switch {
 	case status >= http.StatusInternalServerError:
-		return slog.LevelWarn // ours to look at
+		return slog.LevelInfo // the failing part logs the cause; this is the request's record
 	case status >= http.StatusBadRequest:
 		return slog.LevelDebug // the caller's mistake: the log file has it
 	}

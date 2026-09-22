@@ -120,3 +120,28 @@ func TestTruncateReasonKeepsRunesIntact(t *testing.T) {
 		t.Errorf("aligned truncation wrong: %d bytes, valid=%v", len(aligned), utf8.ValidString(aligned))
 	}
 }
+
+func TestInputOwnersTakeOver(t *testing.T) {
+	o := newInputOwners()
+	var kickedBy string
+	first, err := o.acquire("AAA", "tab-1", func(by string) { kickedBy = by }, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := o.acquire("AAA", "tab-2", nil, true)
+	if err != nil {
+		t.Fatalf("take over refused: %v", err)
+	}
+	if kickedBy != TakenOverPrefix+"tab-2" || o.heldBy("AAA") != "tab-2" {
+		t.Errorf("kickedBy=%q holder=%q, want tab-2 for both", kickedBy, o.heldBy("AAA"))
+	}
+	first() // the kicked holder's release must not free its successor's device
+	if o.heldBy("AAA") != "tab-2" {
+		t.Error("the kicked holder's release evicted the one that took over")
+	}
+	// A holder that cannot be kicked is still replaced.
+	if _, err := o.acquire("AAA", "tab-3", nil, true); err != nil || o.heldBy("AAA") != "tab-3" {
+		t.Errorf("take over from an unkickable holder: err=%v holder=%q", err, o.heldBy("AAA"))
+	}
+	second()
+}

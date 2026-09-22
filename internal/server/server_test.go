@@ -141,6 +141,7 @@ type fakeCapture struct {
 	steps     []capture.Step
 	assertErr error
 	asserted  [][2]float64
+	waited    [][2]float64
 }
 
 func (f *fakeCapture) Start(_ context.Context, udid, appID string) error {
@@ -171,6 +172,13 @@ func (f *fakeCapture) Assert(udid string, x, y float64) error {
 		return f.assertErr
 	}
 	f.asserted = append(f.asserted, [2]float64{x, y})
+	return nil
+}
+
+func (f *fakeCapture) WaitVisible(udid string, x, y float64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.waited = append(f.waited, [2]float64{x, y})
 	return nil
 }
 
@@ -899,10 +907,15 @@ func TestOpenURL(t *testing.T) {
 // fakeApps records which launches asked for a registered build, and offers
 // a fixed list.
 type fakeApps struct {
-	asked []string
-	err   error
-	offer []apps.Listed
+	asked   []string
+	err     error
+	offer   []apps.Listed
+	all     []apps.App
+	skipped []apps.Skipped
 }
+
+func (a *fakeApps) Apps() []apps.App        { return a.all }
+func (a *fakeApps) Skipped() []apps.Skipped { return a.skipped }
 
 func (a *fakeApps) For(_ context.Context, udid string) []apps.Listed { return a.offer }
 
@@ -956,5 +969,43 @@ func TestPlaceholderDeviceIDIsRejected(t *testing.T) {
 	}
 	if rec := do(t, newTestServer(f), "GET", "/api/devices", ""); rec.Code != http.StatusOK {
 		t.Errorf("the device list itself must still answer: %d", rec.Code)
+	}
+}
+
+// A wait check is recorded as a wait, never as an assertion, and an
+// unknown check is refused rather than silently recorded as the default.
+func TestCaptureWaitCheck(t *testing.T) {
+	fc := &fakeCapture{}
+	s := newTestServerWithCapture(&fakeBackend{}, fc)
+	for body, want := range map[string]int{
+		`{"x":0.5,"y":0.25,"check":"wait"}`:    http.StatusOK,
+		`{"x":0.5,"y":0.25,"check":"visible"}`: http.StatusOK,
+		`{"x":0.5,"y":0.25,"check":"gone"}`:    http.StatusBadRequest,
+	} {
+		if rec := do(t, s, "POST", "/api/devices/AAA/capture/assert", body); rec.Code != want {
+			t.Errorf("%s: status %d, want %d", body, rec.Code, want)
+		}
+	}
+	if len(fc.waited) != 1 || len(fc.asserted) != 1 {
+		t.Errorf("waited=%v asserted=%v, want one of each", fc.waited, fc.asserted)
+	}
+}
+
+// The console's Apps section lists every registered build and the ones
+// skipped, and is an empty list, never null, without --app.
+func TestAppsListing(t *testing.T) {
+	srv := newTestServer(&fakeBackend{})
+	if body := do(t, srv, "GET", "/api/apps", "").Body.String(); !strings.Contains(body, `"apps":[]`) || !strings.Contains(body, `"skipped":[]`) {
+		t.Errorf("without --app: %s", body)
+	}
+	srv.SetApps(&fakeApps{
+		all:     []apps.App{{ID: "dev.devicelab.testhive", Name: "Test Hive", Platform: apps.IOS}},
+		skipped: []apps.Skipped{{Path: "/x/device/testhive.app", Reason: "built for iPhoneOS"}},
+	})
+	body := do(t, srv, "GET", "/api/apps", "").Body.String()
+	for _, want := range []string{`"id":"dev.devicelab.testhive"`, `"path":"/x/device/testhive.app"`, `"reason":"built for iPhoneOS"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("listing lacks %s: %s", want, body)
+		}
 	}
 }

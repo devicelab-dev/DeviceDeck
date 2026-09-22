@@ -87,54 +87,61 @@ const RECONNECT_MS = 1500;
 const WS_POLICY_VIOLATION = 1008;
 
 // createInputSocket keeps one reconnecting input socket for a device.
-// now is injectable so tests can drive the staleness cutoff.
-function createInputSocket(url, { now = Date.now, onRefused } = {}) {
+// now is injectable so tests can drive the staleness cutoff. onOpen runs
+// on every (re)connect, and onRefused once when the server refuses it.
+// takeOver makes the first connection take the device from whoever holds
+// it; reconnects never do, so a dropped network cannot seize it back from
+// a client that legitimately took it in between.
+// flushPending sends the frames queued while the socket connected. Anything
+// older than the reconnect backoff is discarded rather than injected into
+// whatever screen the device moved on to.
+function flushPending(ws, pending, at) {
+  const cutoff = at - PENDING_STALE_MS;
+  for (const item of pending.splice(0, pending.length)) {
+    if (item.at >= cutoff) ws.send(item.buffer);
+  }
+}
+
+// queuePending holds a frame until the socket is open, dropping the oldest
+// past PENDING_MAX.
+function queuePending(pending, buffer, at) {
+  if (pending.length >= PENDING_MAX) pending.shift();
+  pending.push({ buffer, at });
+}
+
+/**
+ * @param {string} url
+ * @param {{ now?: () => number, onOpen?: () => void, onRefused?: (reason: string) => void, takeOver?: boolean }} [options]
+ */
+function createInputSocket(url, { now = Date.now, onOpen, onRefused, takeOver = false } = {}) {
   let ws = null;
   let closed = false;
   const pending = [];
+  const stop = () => { closed = true; pending.length = 0; };
 
-  function flush() {
-    const cutoff = now() - PENDING_STALE_MS;
-    for (const item of pending.splice(0, pending.length)) {
-      // Anything older than the reconnect backoff is discarded rather
-      // than injected into whatever screen the device moved on to.
-      if (item.at >= cutoff) ws.send(item.buffer);
-    }
-  }
-
+  let first = takeOver;
   function connect() {
-    ws = new WebSocket(url);
+    ws = new WebSocket(first ? `${url}?takeover=1` : url);
+    first = false;
     ws.binaryType = "arraybuffer";
-    ws.onopen = flush;
+    ws.onopen = () => { flushPending(ws, pending, now()); onOpen?.(); };
     ws.onclose = (event) => {
       // A refusal is final: the server is telling us another client is
       // driving this device. Reconnecting would spin silently and turn
       // an explained refusal back into a mystery.
       if (event.code === WS_POLICY_VIOLATION) {
-        closed = true;
-        pending.length = 0;
+        stop();
         onRefused?.(event.reason);
-        return;
+      } else if (!closed) {
+        setTimeout(connect, RECONNECT_MS);
       }
-      if (!closed) setTimeout(connect, RECONNECT_MS);
     };
   }
 
   connect();
 
   return {
-    send(buffer) {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(buffer);
-        return;
-      }
-      if (pending.length >= PENDING_MAX) pending.shift();
-      pending.push({ buffer, at: now() });
-    },
-    close() {
-      closed = true;
-      pending.length = 0;
-      if (ws) ws.close();
-    },
+    send: (buffer) => (ws?.readyState === WebSocket.OPEN ? ws.send(buffer) : queuePending(pending, buffer, now())),
+    close: () => { stop(); ws?.close(); },
   };
 }

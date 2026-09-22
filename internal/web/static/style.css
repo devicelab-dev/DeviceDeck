@@ -9,12 +9,25 @@
   --text: #d7dce4;
   --dim: #8a93a3;
   --accent: #4f8cff;
+  --fault: #e5484d;
+  /* One type scale for every page. Nothing a person reads is set below
+     12px, and body text is 15: this is a tool read for hours, often on a
+     screen beside the device it drives. */
+  --font-ui: -apple-system, "SF Pro Text", system-ui, Helvetica, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  --fs-label: 12px;   /* uppercase section labels */
+  --fs-small: 13.5px; /* meta, captions, status */
+  --fs-mono: 13px;    /* ids, code, the flow */
+  --fs-body: 15px;
+  --fs-title: 16.5px; /* card titles, the device name */
+  --fs-head: 26px;    /* section headings */
 }
 
 body {
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.4 -apple-system, "SF Pro Text", Helvetica, sans-serif;
+  font: var(--fs-body)/1.5 var(--font-ui);
+  -webkit-font-smoothing: antialiased;
   height: 100vh;
   display: flex;
   flex-direction: column;
@@ -25,7 +38,7 @@ header {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 10px 18px;
   background: var(--panel);
   border-bottom: 1px solid var(--edge);
   /* Wrap rather than overflow. A header wider than the window is not
@@ -36,27 +49,26 @@ header {
   flex-wrap: wrap;
 }
 
-.brand { font-weight: 700; letter-spacing: 0.02em; }
+.brand { font-size: 16px; font-weight: 700; letter-spacing: 0.01em; }
 .maker {
   display: inline-flex; align-items: center; gap: 4px;
-  color: var(--dim); font-size: 12px; margin-right: 8px; text-decoration: none;
+  color: var(--dim); font-size: var(--fs-small); margin-right: 8px; text-decoration: none;
 }
 .maker img { display: block; }
 .maker:hover { color: var(--accent); }
 .star {
-  color: var(--text); font-size: 12px; text-decoration: none; white-space: nowrap;
-  border: 1px solid var(--edge); border-radius: 4px; padding: 2px 8px; margin-left: 8px;
+  color: var(--text); font-size: var(--fs-small); text-decoration: none; white-space: nowrap;
+  border: 1px solid var(--edge); border-radius: 6px; padding: 3px 10px; margin-left: 8px;
 }
 .star:hover { border-color: var(--accent); color: var(--accent); }
-#panel .dl-card { margin-top: 14px; }
 .spacer { flex: 1; }
 
 select, input, button {
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--edge);
-  border-radius: 6px;
-  padding: 5px 10px;
+  border-radius: 7px;
+  padding: 7px 12px;
   font: inherit;
 }
 
@@ -64,37 +76,42 @@ select, input, button {
 /* ---------- console sidebar ---------- */
 
 #sidebar {
-  width: 280px;
-  flex: 0 0 280px;
+  width: 300px;
+  flex: 0 0 300px;
   background: var(--panel);
   border-right: 1px solid var(--edge);
-  padding: 16px 14px;
+  padding: 20px 18px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 26px;
 }
 #sidebar h3, #panel h3 {
-  font-size: 11px;
+  font-size: var(--fs-label);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--dim);
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 #sidebar input, #sidebar select { width: 100%; min-width: 0; }
-#sidebar label { display: block; font-size: 12px; color: var(--dim); margin: 10px 0 4px; }
+#sidebar label { display: block; font-size: var(--fs-small); color: var(--dim); margin: 14px 0 6px; }
 #sidebar label:first-of-type { margin-top: 0; }
-#device-label { font-weight: 600; font-size: 15px; word-break: break-word; }
-#device-meta { color: var(--dim); font-size: 12px; margin: 2px 0 10px; }
+#device-label { font-weight: 650; font-size: 18px; line-height: 1.3; word-break: break-word; }
+#device-meta { color: var(--dim); font-size: var(--fs-small); margin: 4px 0 12px; }
+/* Ending a session powers the device off, so it reads as the one
+   consequential button in the sidebar. */
+.end-session { width: 100%; margin-top: 12px; color: var(--fault); border-color: var(--fault); }
+.end-session:hover { background: var(--fault); border-color: var(--fault); color: #fff; }
+.end-session:disabled { opacity: 0.6; cursor: progress; }
 .copy-row { display: flex; gap: 6px; }
-.copy-row input { flex: 1; font: 12px ui-monospace, Menlo, monospace; color: var(--dim); }
+.copy-row input { flex: 1; font: var(--fs-mono) var(--font-mono); color: #b3bac6; }
 .copy-row .copy { flex: 0 0 auto; }
 #apps-picker { display: flex; gap: 6px; margin-bottom: 6px; }
 #apps-picker select { flex: 1; }
 #btn-launch { flex: 0 0 auto; }
 @media (max-width: 860px) {
-  #sidebar { width: 220px; flex-basis: 220px; }
+  #sidebar { width: 240px; flex-basis: 240px; }
 }
 
 button { cursor: pointer; }
@@ -102,13 +119,21 @@ button:hover { border-color: var(--accent); }
 button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 button.recording { background: #e5484d; border-color: #e5484d; color: #fff; }
 
-#panel a.download {
-  display: inline-block;
-  margin-top: 10px;
-  color: var(--accent);
+/* Copy and Download sit above a captured flow, where they are found
+   without scrolling past it. */
+#flow-actions { display: flex; gap: 8px; margin: 2px 0 12px; }
+#flow-actions button, #flow-actions a.button {
+  font-size: var(--fs-small);
+  padding: 6px 14px;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  text-decoration: none;
 }
+#flow-actions a.button:hover { border-color: var(--accent); }
 
-#status { color: var(--dim); font-size: 12px; margin-left: 8px; }
+#status { color: var(--dim); font-size: var(--fs-small); margin-left: 8px; }
 
 main { flex: 1; display: flex; min-height: 0; }
 
@@ -169,7 +194,7 @@ main { flex: 1; display: flex; min-height: 0; }
   left: 0;
   background: #37c877;
   color: #0b2416;
-  font-size: 11px;
+  font-size: var(--fs-label);
   font-weight: 600;
   padding: 2px 6px;
   border-radius: 4px;
@@ -212,148 +237,172 @@ main { flex: 1; display: flex; min-height: 0; }
 }
 
 #panel {
-  width: 340px;
-  flex: 0 0 340px;
+  width: 380px;
+  flex: 0 0 380px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 24px;
   border-left: 1px solid var(--edge);
   background: var(--panel);
-  padding: 14px;
+  padding: 20px 18px;
   overflow: auto;
 }
 
-#panel h2 { font-size: 13px; margin-bottom: 8px; word-break: break-all; }
-#panel pre { font-size: 12px; color: var(--dim); white-space: pre-wrap; word-break: break-all; }
-#panel pre.hint { font-family: inherit; font-size: 13px; line-height: 1.5; word-break: normal; }
+#panel h2 { font-size: var(--fs-title); font-weight: 650; margin-bottom: 10px; overflow-wrap: anywhere; }
+#panel pre { font: var(--fs-mono)/1.6 var(--font-mono); color: #b3bac6; white-space: pre-wrap; overflow-wrap: anywhere; }
+#panel pre.hint { font: var(--fs-body)/1.6 var(--font-ui); color: var(--dim); }
 
 /* ---------- device library ---------- */
 
+/* One card language for devices and builds: a small lit glyph or tile,
+   the name, one quiet line of facts, one action on the right. */
 #library {
   flex: 1;
   overflow-y: auto;
-  padding: 28px 32px 48px;
+  padding: 36px 40px 64px;
 }
+#library > * { max-width: 1280px; }
 
 .library-head {
   display: flex;
   align-items: baseline;
-  gap: 16px;
-  margin-bottom: 28px;
+  gap: 12px;
+  margin-bottom: 18px;
 }
+.library-head h1, .library-head h2 { font-size: var(--fs-head); font-weight: 680; letter-spacing: -0.02em; }
+.apps-head { margin-top: 44px; }
+#library-summary, #apps-summary { color: var(--dim); font-size: var(--fs-body); }
 
-.library-head h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.01em; }
-#library-summary { color: var(--dim); font-size: 14px; }
-
-.device-group { margin-bottom: 28px; }
-
-.group-label {
-  color: var(--dim);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  margin-bottom: 12px;
-}
-
-.device-grid {
+.cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
 }
 
-.device-card {
+.card {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 16px;
+  min-height: 96px;
+  padding: 18px 20px;
   background: var(--panel);
   border: 1px solid var(--edge);
   border-radius: 12px;
-  padding: 18px 20px;
+  text-align: left;
+  color: var(--text);
+  font: inherit;
+  width: 100%;
 }
+button.card { cursor: pointer; transition: border-color 0.15s ease, background 0.15s ease; }
+button.card:hover { border-color: #3a4252; background: #1d222b; }
+button.card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.card.on { border-color: #34518a; background: linear-gradient(180deg, #1b2336 0%, var(--panel) 70%); }
+.card.on:hover { border-color: #4a6cb0; }
 
-.device-card.running { border-color: #31435f; }
+.card-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.card-title { font-size: var(--fs-title); font-weight: 650; line-height: 1.3; display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 8px; min-width: 0; }
+.card-sub { font-size: var(--fs-small); color: #b3bac6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-sub.mono { font: var(--fs-mono) var(--font-mono); color: #9aa3b2; }
+.card-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 4px; font-size: var(--fs-small); color: var(--dim); }
+.card-warning { color: #e6b800; font-size: var(--fs-small); }
 
-/* Device silhouette: proportioned per class, screen lit when running. */
-.glyph {
-  flex: none;
-  width: 34px;
-  height: 62px;
-  border: 1.5px solid var(--dim);
-  border-radius: 6px;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.chip {
+  font: var(--fs-label) var(--font-mono);
+  padding: 2px 7px;
+  border: 1px solid var(--edge);
+  border-radius: 5px;
+  color: #b3bac6;
 }
-.glyph.tablet { width: 50px; height: 64px; border-radius: 6px; }
-.glyph.android { border-radius: 3px; }
-.glyph .screen {
-  width: 78%;
-  height: 82%;
-  border-radius: 2px;
-  background: transparent;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-/* Platform mark on the glyph's screen, boot-splash style. */
-.glyph .platform-badge { margin: 0; }
-.glyph .platform-badge svg { width: 18px; height: 11px; }
-.glyph .platform-badge.apple { font-size: 16px; color: var(--dim); }
-.glyph.on .platform-badge.apple { color: rgba(255, 255, 255, 0.9); }
-.glyph.on .platform-badge svg path { fill: #b9f6d4; }
-.glyph.on { border-color: var(--accent); }
-.glyph.on .screen { background: linear-gradient(160deg, #3a6fd8, #274a90); }
-.glyph.booting .screen { animation: screen-pulse 1.2s ease-in-out infinite; }
-/* iOS notch line vs Android camera dot */
-.glyph::after {
+.state::before {
   content: "";
-  position: absolute;
-  top: 4px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 11px;
-  height: 2.5px;
-  border-radius: 1px;
-  background: var(--dim);
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: #4a5262;
+  vertical-align: 1px;
 }
-.glyph.android::after { width: 4px; height: 4px; border-radius: 50%; }
-.glyph.on::after { background: #9db8e8; }
+.card.on .state { color: #8fb4ff; }
+.card.on .state::before { background: #4f8cff; box-shadow: 0 0 6px #4f8cff; }
+.version { font: var(--fs-label) var(--font-mono); color: var(--dim); }
 
-@keyframes screen-pulse {
-  0%, 100% { background: #223a66; }
-  50% { background: #3a6fd8; }
+/* The action reads as a button inside the card; the card itself is the
+   click target for a device, the button is for a build. */
+.card-action {
+  flex: none;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+}
+.card-action.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.card:hover .card-action:not(.primary) { border-color: var(--dim); }
+.card-hint { font-size: var(--fs-small); color: var(--dim); }
+
+/* A device glyph at phone proportions: dark when off, its screen lit when
+   running. */
+.mini-phone {
+  flex: none;
+  width: 30px;
+  height: 58px;
+  border: 1.5px solid #3a4252;
+  border-radius: 8px;
+  padding: 2px;
+  display: flex;
+}
+.mini-phone.android { border-radius: 5px; }
+.mini-phone .platform-badge {
+  flex: 1;
+  margin: 0;
+  border-radius: 5px;
+  background: #13161d;
+  justify-content: center;
+}
+.mini-phone.android .platform-badge { border-radius: 3px; }
+.mini-phone .platform-badge.apple { font-size: 13px; color: #4a5262; }
+.mini-phone .platform-badge svg { width: 15px; height: 10px; }
+.mini-phone .platform-badge.android svg path { fill: #2f6e4d; }
+.card.on .mini-phone { border-color: #4f8cff; }
+.card.on .mini-phone .platform-badge { background: linear-gradient(165deg, #4f8cff, #2350b0); }
+.card.on .mini-phone .platform-badge.apple { color: #fff; }
+.card.on .mini-phone .platform-badge.android svg path { fill: #c9f7dd; }
+
+/* A build's platform tile. */
+.app-tile {
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(160deg, #2b3140, #1b1f28);
+  border: 1px solid #333a48;
+}
+.app-tile.android { background: linear-gradient(160deg, #1d3a2c, #15231c); border-color: #274836; }
+.app-tile .platform-badge { margin: 0; }
+.app-tile .platform-badge.apple { font-size: 20px; color: #e8ebf0; }
+.app-tile .platform-badge svg { width: 22px; height: 14px; }
+
+.skipped-note {
+  margin-top: 16px;
+  font-size: var(--fs-small);
+  color: var(--dim);
+  line-height: 1.5;
+}
+.skipped-note strong { color: #e6b800; font-weight: 600; }
+
+@media (max-width: 760px) {
+  #library { padding: 24px 16px 48px; }
+  .cards { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .glyph.booting .screen { animation: none; background: #3a6fd8; }
+  button.card { transition: none; }
 }
-
-.device-meta { flex: 1; min-width: 0; }
-.device-name {
-  font-weight: 600;
-  font-size: 16px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.device-os {
-  color: var(--dim);
-  font: 13px ui-monospace, "SF Mono", Menlo, monospace;
-  margin-top: 4px;
-}
-.device-id {
-  color: var(--dim);
-  font: 11px ui-monospace, "SF Mono", Menlo, monospace;
-  opacity: 0.65;
-  margin-top: 6px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.device-card button { flex: none; min-width: 68px; padding: 8px 14px; }
-.device-card button.use { background: var(--accent); border-color: var(--accent); color: #fff; }
 
 .library-empty {
   color: var(--dim);
@@ -371,7 +420,38 @@ main { flex: 1; display: flex; min-height: 0; }
 }
 .platform-badge svg { width: 14px; height: 9px; }
 .platform-badge.apple { color: var(--dim); font-size: 12px; font-family: -apple-system, "SF Pro Text", sans-serif; }
-.device-card.running .platform-badge.apple { color: var(--text); }
+
+/* ---------- console fault state ---------- */
+
+/* Something the device page depends on is down: the server, the input
+   socket, the engine or the video. The stage turns red and says which,
+   in words, because each of these otherwise fails silently: a refused
+   input socket looked exactly like taps that did nothing. */
+#stage-fault {
+  position: absolute;
+  inset: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--fault);
+  border-radius: 24px;
+  background: rgba(229, 72, 77, 0.22);
+  z-index: 5;
+}
+.fault-card {
+  max-width: 340px;
+  margin: 0 16px;
+  padding: 18px 20px;
+  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--fault);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.fault-card strong { color: var(--fault); font-size: 17px; }
+.fault-card p { color: var(--text); white-space: pre-line; overflow-wrap: anywhere; }
+.fault-card button { align-self: flex-start; }
 
 /* ---------- console connecting state ---------- */
 
@@ -431,8 +511,7 @@ main { flex: 1; display: flex; min-height: 0; }
 }
 
 /* While a device boots and its engine starts, the frame carries the
-   DeviceLab mark with the current stage beneath it, and at the bottom a
-   pointer to running the same flows on real devices. */
+   DeviceLab mark with the current stage beneath it. */
 .frame-brand {
   position: relative;
   display: flex;
@@ -455,59 +534,29 @@ main { flex: 1; display: flex; min-height: 0; }
   text-align: center;
   padding: 0 24px;
 }
-/* The DeviceLab card: at the bottom of the loading frame, and under a
-   captured flow in the panel (a clone of the same element). */
-.frame-promo {
-  position: absolute;
-  left: 16px;
-  right: 16px;
-  bottom: 28px;
-}
-.dl-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 16px 14px 14px;
-  border: 1px solid var(--edge);
-  border-radius: 14px;
-  background: rgba(26, 30, 38, 0.75);
-  text-align: center;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--dim);
-  text-decoration: none;
-}
-.dl-card:hover { border-color: var(--accent); }
-.promo-head {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--dim);
-}
-.promo-title { color: var(--text); font-size: 15px; font-weight: 600; }
-.promo-line { min-height: 3em; transition: opacity 0.35s ease; }
-.promo-line.fading { opacity: 0; }
-.dl-card strong { color: var(--accent); font-size: 13px; }
-.dl-card:hover strong { text-decoration: underline; }
 #video.connecting { visibility: hidden; }
 
-/* An armed assertion is a mode: the next tap does not reach the device,
-   so it has to look different from ordinary driving. */
-#btn-assert.armed {
-  background: #1d7a3c;
-  color: #fff;
-  border-color: #1d7a3c;
+/* The check menu a right-click opens on the device while recording. */
+#check-menu {
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
-
-#video.asserting {
-  cursor: crosshair;
-  outline: 2px solid #1d7a3c;
+#check-menu button {
+  border: 0;
+  background: none;
+  text-align: left;
+  padding: 9px 12px;
+  border-radius: 6px;
 }
+#check-menu button:hover, #check-menu button:focus-visible { background: var(--accent); color: #fff; outline: none; }
 
 /* ---------- device controls: icon tiles at the top of the right panel ---------- */
 
@@ -516,15 +565,16 @@ main { flex: 1; display: flex; min-height: 0; }
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 10px 4px 8px;
-  font-size: 11px;
-  color: var(--dim);
+  gap: 7px;
+  padding: 12px 4px 10px;
+  font-size: var(--fs-label);
+  font-weight: 500;
+  color: #9aa3b2;
 }
 .tool:hover { color: var(--text); border-color: var(--accent); }
 .tool svg {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
@@ -537,5 +587,46 @@ main { flex: 1; display: flex; min-height: 0; }
 .tool:disabled { opacity: 0.4; cursor: default; }
 .tool:disabled:hover { color: var(--dim); border-color: var(--edge); }
 @media (max-width: 1100px) {
-  #panel { width: 260px; flex-basis: 260px; }
+  #panel { width: 300px; flex-basis: 300px; }
 }
+/* A captured flow is YAML, read line by line: the panel widens for it, and
+   lines keep their shape and scroll sideways rather than breaking inside a
+   word, where a wrapped key or selector reads as a different one. After the
+   narrow-screen rule, so it wins there too. */
+/* 660px holds a 72-column flow line (the exporter's comment width) in the
+   code well without wrapping. */
+#panel.flow { width: min(660px, 48vw); flex-basis: min(660px, 48vw); }
+/* A captured flow reads as code: SF Mono on a darker well, generous
+   leading, a little air before each step. Comments are wrapped in the file
+   itself; a rare long value wraps here at a space rather than scroll the
+   panel sideways. */
+#panel.flow pre {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+  font: var(--fs-mono)/1.7 var(--font-mono);
+  color: #c9d1dc;
+  background: #0f1217;
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  padding: 14px 16px;
+  tab-size: 2;
+}
+#node-info .y-line { display: block; }
+#node-info .y-step { margin-top: 8px; }
+#node-info .y-line:first-child { margin-top: 0; }
+
+/* Flow YAML colours (flow-yaml.js). Commands carry the accent: they are
+   what a replay does. Confidence uses the recorder's own grades, and a
+   secret is marked, because a replay has to be given it. */
+#node-info .y-command { color: var(--accent); font-weight: 600; }
+#node-info .y-key { color: #9db8e8; }
+#node-info .y-string { color: #e6c07b; }
+#node-info .y-const { color: #c792ea; }
+#node-info .y-dash, #node-info .y-punct, #node-info .y-rule { color: #5b6475; }
+#node-info .y-comment { color: #6f7889; }
+#node-info .y-desert { color: #e6b800; }
+#node-info .y-secret { color: #ff9e8a; background: rgba(229, 72, 77, 0.14); border-radius: 3px; padding: 0 2px; }
+#node-info .y-grade-high { color: #37c877; font-weight: 600; }
+#node-info .y-grade-medium { color: #e6b800; font-weight: 600; }
+#node-info .y-grade-low { color: #e5484d; font-weight: 600; }

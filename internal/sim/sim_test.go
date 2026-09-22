@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -355,5 +356,30 @@ func TestInstalled(t *testing.T) {
 	c = &Client{run: fixedRun(nil, errors.New("No such app"))}
 	if c.Installed(context.Background(), "AAA", "dev.devicelab.testhive") {
 		t.Error("a lookup error means not installed")
+	}
+}
+
+func TestShutdown(t *testing.T) {
+	alreadyOff := &exec.ExitError{Stderr: []byte("Unable to shutdown device in current state: Shutdown")}
+	for _, tc := range []struct {
+		name    string
+		err     error
+		wantErr bool
+	}{
+		{"running simulator", nil, false},
+		{"already off", fmt.Errorf("xcrun simctl shutdown X: %w", alreadyOff), false},
+		{"other failure", errors.New("simctl: no such device"), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var args []string
+			c := &Client{run: func(_ context.Context, _ string, a ...string) ([]byte, error) { args = a; return nil, tc.err }}
+			err := c.Shutdown(context.Background(), "X")
+			if (err != nil) != tc.wantErr {
+				t.Errorf("err = %v, want error %v", err, tc.wantErr)
+			}
+			if strings.Join(args, " ") != "simctl shutdown X" {
+				t.Errorf("ran %q", args)
+			}
+		})
 	}
 }

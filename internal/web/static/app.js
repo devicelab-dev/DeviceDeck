@@ -29,6 +29,7 @@ function showLibrary() {
   if (input) { input.close(); input = null; }
   renderer.close();
   udid = null;
+  clearFaults();
   $("library").hidden = false;
   $("console-view").hidden = true;
   $("console-controls").hidden = true;
@@ -45,9 +46,12 @@ function showLibrary() {
 
 let awaitingFirstFrame = false;
 // The loading screen stays until the device is fully usable: video is
-// flowing and its engine (the tree reader behind Inspect, Record and
-// launches) has started, or failed, in which case video and touch still work.
+// flowing, the input socket is open, and its engine (the tree reader behind
+// Inspect, Record and launches) has started. A device showing its screen
+// before then looked ready while taps went nowhere; if any of the three
+// fails, the fault says so over the loading screen instead.
 let videoReady = false;
+let inputReady = false;
 let engineSettled = false;
 let engineTimer = null;
 let loadingShownAt = 0;
@@ -67,6 +71,7 @@ function showConsole(next, name, shape) {
 // that is still booting can show that here rather than on the library card.
 function openDeviceView(next, name, shape) {
   udid = next;
+  clearFaults();
   $("library").hidden = true;
   $("console-view").hidden = false;
   $("console-controls").hidden = false;
@@ -79,12 +84,12 @@ function openDeviceView(next, name, shape) {
     (shape && shape.tablet ? " tablet" : "") + (shape && shape.android ? " android" : "");
   $("loading-text").textContent = `Connecting to ${name || next}…`;
   $("stage-loading").hidden = false;
-  rotatePromo();
   canvas.classList.add("connecting");
   if (new URLSearchParams(location.search).get("device") !== next) {
     history.pushState({}, "", `${location.pathname}?device=${encodeURIComponent(next)}`);
   }
   videoReady = false;
+  inputReady = false;
   engineSettled = false;
   setEngineTools(false);
   if (inspecting) toggleInspector(); // a new device starts with Inspect off
@@ -99,6 +104,62 @@ function connectDevice() {
   warmEngine(udid);
 }
 
+// ---------- faults ----------
+
+// A fault is something the device page depends on that is down. Each one
+// failed silently before — a refused input socket looked exactly like taps
+// that did nothing — so the stage turns red and says which, in words. When
+// several are down, the one listed first explains the rest.
+const FAULT_ORDER = ["server", "input", "engine", "video", "session"];
+const faults = new Map();
+
+// setFault raises a fault ({title, detail, action?: {label, run}}), or
+// clears it when fault is omitted.
+function setFault(kind, fault) {
+  if (fault) faults.set(kind, fault);
+  else faults.delete(kind);
+  const top = FAULT_ORDER.find((k) => faults.has(k));
+  $("stage-fault").hidden = !top;
+  if (!top) return;
+  const f = faults.get(top);
+  $("fault-title").textContent = f.title;
+  $("fault-detail").textContent = f.detail;
+  const button = $("fault-action");
+  button.hidden = !f.action;
+  if (f.action) {
+    button.textContent = f.action.label;
+    button.onclick = f.action.run;
+  }
+}
+
+function clearFaults() {
+  for (const kind of FAULT_ORDER) setFault(kind);
+}
+
+const SERVER_RETRY_MS = 2000;
+let serverWatch = null;
+
+// serverDown raises the server fault and polls until DeviceDeck answers
+// again, then reconnects the device on screen from scratch: its sockets
+// and engine belonged to the server process that went away.
+function serverDown() {
+  if (serverWatch) return;
+  setFault("server", {
+    title: "DeviceDeck is not reachable",
+    detail: "The devicedeck server stopped or the network dropped. Start it again " +
+      "(run devicedeck in a terminal); this page reconnects on its own.",
+  });
+  serverWatch = setInterval(async () => {
+    const res = await fetch("/api/devices").catch(() => null);
+    if (!res || !res.ok) return;
+    clearInterval(serverWatch);
+    serverWatch = null;
+    setFault("server");
+    reconnecting = true;
+    if (udid) showConsole(udid);
+  }, SERVER_RETRY_MS);
+}
+
 // ---------- engine warm-up ----------
 
 // warmEngine starts the device's engine as the view opens and reports each
@@ -109,50 +170,32 @@ async function warmEngine(device) {
   const poll = async (method) => {
     if (udid !== device) return;
     const res = await fetch(`/api/devices/${encodeURIComponent(device)}/engine`, { method }).catch(() => null);
-    const st = res && res.ok ? await res.json() : { state: "failed", error: "server unreachable" };
     if (udid !== device) return;
+    if (!res) { serverDown(); return; }
+    const st = res.ok ? await res.json() : { state: "failed", error: `HTTP ${res.status}` };
     if (st.state === "starting" || st.state === "") {
       const secs = st.startedAt ? Math.round((Date.now() - Date.parse(st.startedAt)) / 1000) : 0;
       showStage(`${st.detail || "Starting the device engine"}… ${secs}s`);
       engineTimer = setTimeout(() => poll("GET"), 700);
       return;
     }
+    if (st.state === "failed") { engineFailed(device, st.error); return; }
     engineSettled = true;
-    setEngineTools(st.state === "ready");
-    if (st.state === "failed") status.textContent = `engine failed: ${st.error}. Video and touch still work; Inspect and Record need the engine.`;
+    setEngineTools(true);
     revealWhenReady();
   };
   poll("POST");
 }
 
-// PROMO_LINES are devicelab.dev's own points, shown one at a time on the
-// loading frame while a device boots and its engine starts.
-const PROMO_LINES = [
-  "The flows you capture here run unchanged on real iPhones and Android phones you own.",
-  "Run the tests you already have on devices you own.",
-  "Peer to peer: your app and your data never leave your network.",
-  "$99 per device. That's the whole pricing page.",
-  "Already paying a cloud lab? Stop renting. Start owning.",
-];
-const PROMO_EVERY_MS = 4500;
-let promoTimer = null;
-
-// rotatePromo cycles the loading frame's DeviceLab line while the frame is
-// up, and stops on its own once the device is ready.
-function rotatePromo() {
-  clearInterval(promoTimer);
-  let i = 0;
-  const line = $("promo-line");
-  line.textContent = PROMO_LINES[0];
-  promoTimer = setInterval(() => {
-    if ($("stage-loading").hidden) { clearInterval(promoTimer); return; }
-    line.classList.add("fading");
-    setTimeout(() => {
-      i = (i + 1) % PROMO_LINES.length;
-      line.textContent = PROMO_LINES[i];
-      line.classList.remove("fading");
-    }, 350);
-  }, PROMO_EVERY_MS);
+// engineFailed keeps the loading screen up and says why: a device whose
+// engine is down is not ready to use, so it is not shown as if it were.
+function engineFailed(device, error) {
+  setEngineTools(false);
+  setFault("engine", {
+    title: "The device engine did not start",
+    detail: `${error}\n\nDeviceDeck reads the screen and runs Inspect, Record and launches through it.`,
+    action: { label: "Retry", run: () => { setFault("engine"); warmEngine(device); } },
+  });
 }
 
 // showStage puts a line on the loading screen while it is up.
@@ -168,11 +211,12 @@ function setEngineTools(ready) {
   }
 }
 
-// revealWhenReady drops the loading screen once video and engine are both
-// settled, and otherwise says which one it is still waiting on.
+// revealWhenReady drops the loading screen once video, input and engine
+// are all up, and otherwise says which one it is still waiting on.
 function revealWhenReady() {
-  if (!videoReady) { if (engineSettled) showStage("Connecting video…"); return; }
   if (!engineSettled) return;
+  if (!videoReady) { showStage("Connecting video…"); return; }
+  if (!inputReady) { showStage("Connecting touch and keyboard…"); return; }
   $("stage-loading").hidden = true;
   canvas.classList.remove("connecting");
   // Still-based streams (Android static screens) never configure a
@@ -245,6 +289,8 @@ async function copyField(button) {
 async function loadApps() {
   const forDevice = udid;
   $("apps-picker").hidden = true;
+  const rejoining = reconnecting;
+  reconnecting = false;
   const res = await fetch(`/api/devices/${encodeURIComponent(forDevice)}/apps`).catch(() => null);
   if (!res || !res.ok || udid !== forDevice) return;
   const { apps } = await res.json();
@@ -256,11 +302,30 @@ async function loadApps() {
     opt.textContent = `${a.name}${a.version ? ` ${a.version}` : ""}${a.installed ? "" : " · installs on launch"}`;
     return opt;
   }));
-  const current = $("app").value.trim();
+  const current = pendingLaunch || $("app").value.trim();
   if (apps.some((a) => a.id === current)) pick.value = current;
   else $("app").value = pick.value;
   $("apps-picker").hidden = false;
   updateUseLinks();
+  const launch = pendingLaunch || (rejoining ? null : autoLaunch(apps, pick.value));
+  pendingLaunch = null;
+  if (launch && pick.value === launch) launchApp();
+}
+
+// pendingLaunch is a build the Apps section asked to launch; the device
+// page launches it once it has listed the device's apps.
+let pendingLaunch = null;
+// reconnecting is set while the page rejoins a restarted server: the app
+// on the device is whatever the person left there, and must stay so.
+let reconnecting = false;
+
+// autoLaunch picks the build to launch as a device opens: the one the App
+// menu shows, when this server has launched none of them there yet. Only
+// the tab in use does it (a reconnect never asks), because a launch starts
+// the app fresh and would wipe whatever the person was doing.
+function autoLaunch(apps, picked) {
+  if (document.hidden || !document.hasFocus()) return null;
+  return apps.some((a) => a.launched) ? null : picked;
 }
 
 // launchApp starts the picked app at its first screen; the server installs
@@ -287,78 +352,141 @@ async function launchApp() {
 async function refreshLibrary() {
   const { devices } = await (await fetch("/api/devices")).json();
   knownDevices = devices;
-  const groups = $("library-groups");
-  groups.innerHTML = "";
   const running = devices.filter((d) => d.booted);
-  const stopped = devices.filter((d) => !d.booted);
-  $("library-summary").textContent =
-    devices.length ? `${running.length} running · ${stopped.length} available` : "";
-
-  if (!devices.length) {
-    const empty = document.createElement("p");
-    empty.className = "library-empty";
-    empty.textContent =
-      "No simulators or emulators found. Add simulators in Xcode " +
-      "(Settings → Platforms) or create a virtual device in Android Studio, " +
-      "then reload.";
-    groups.appendChild(empty);
-    return devices;
-  }
-  for (const g of [
-    { label: `Running · ${running.length}`, items: running },
-    { label: `Available · ${stopped.length}`, items: stopped },
-  ]) {
-    if (!g.items.length) continue;
-    const section = document.createElement("div");
-    section.className = "device-group";
-    const label = document.createElement("div");
-    label.className = "group-label";
-    label.textContent = g.label;
-    section.appendChild(label);
-    const grid = document.createElement("div");
-    grid.className = "device-grid";
-    for (const d of g.items) grid.appendChild(deviceCard(d));
-    section.appendChild(grid);
-    groups.appendChild(section);
-  }
+  $("library-summary").textContent = devices.length
+    ? `${running.length} running · ${devices.length} on this Mac`
+    : "";
+  // Running first: those are the ones you came to use.
+  const ordered = [...running, ...devices.filter((d) => !d.booted)];
+  $("library-groups").replaceChildren(...(devices.length ? ordered.map(deviceCard) : [emptyNote(
+    "No simulators or emulators found. Add simulators in Xcode (Settings → Platforms) " +
+    "or create a virtual device in Android Studio, then reload.")]));
+  renderApps(running);
   return devices;
 }
 
-// deviceCard renders one device: a state-lit silhouette, the details,
-// and its single action (Use when running, Boot when stopped).
+function emptyNote(text) {
+  return Object.assign(document.createElement("p"), { className: "library-empty", textContent: text });
+}
+
+// el builds an element with a class and, optionally, text.
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+// IOS_MODEL matches the model a simulator's name starts with ("iPhone 17
+// Pro", "iPad Air 11-inch (M3)"); whatever follows is the name it was given.
+const IOS_MODEL = /^(iPhone|iPad)(\s+(\d+(\.\d+)?(-inch)?|Pro|Max|Plus|mini|Air|SE|e|\([^)]*\)))*/;
+
+// splitName separates a device's model from the label it was given, so a
+// long name reads as two lines instead of breaking mid-word.
+function splitName(name) {
+  const model = (IOS_MODEL.exec(name) || [""])[0];
+  const label = name.slice(model.length).trim();
+  return model && label ? [model, label] : [name, ""];
+}
+
+// deviceCard is one device: a small silhouette lit when it runs, its model
+// and label, its runtime and state, and its one action. The whole card is
+// the action, so it can be picked from anywhere on it.
 function deviceCard(d) {
-  const card = document.createElement("div");
-  card.className = "device-card" + (d.booted ? " running" : "");
-
-  const glyph = document.createElement("div");
-  const isTablet = /iPad|Tablet/i.test(d.name);
-  const isAndroid = d.os.startsWith("android");
-  glyph.className = "glyph" + (isTablet ? " tablet" : "") +
-    (isAndroid ? " android" : "") + (d.booted ? " on" : "");
-  const screen = Object.assign(document.createElement("div"), { className: "screen" });
-  screen.appendChild(platformBadge(isAndroid)); // boot-splash style
-  glyph.appendChild(screen);
-  card.appendChild(glyph);
-
-  const meta = document.createElement("div");
-  meta.className = "device-meta";
-  const name = Object.assign(document.createElement("div"), { className: "device-name", textContent: d.name, title: d.name });
-  const os = Object.assign(document.createElement("div"), { className: "device-os", textContent: d.os });
-  const id = Object.assign(document.createElement("div"), { className: "device-id", textContent: d.udid, title: d.udid });
-  meta.append(name, os, id);
-  card.appendChild(meta);
-
-  const action = document.createElement("button");
-  if (d.booted) {
-    action.className = "use";
-    action.textContent = "Use";
-    action.addEventListener("click", () => showConsole(d.udid, d.name, deviceShape(d)));
-  } else {
-    action.textContent = "Boot";
-    action.addEventListener("click", () => bootDevice(d));
-  }
-  card.appendChild(action);
+  const android = d.os.startsWith("android");
+  const verb = d.booted ? "Use" : "Boot";
+  const card = el("button", "card device" + (d.booted ? " on" : ""));
+  card.title = `${verb} ${d.name}\n${d.udid}`;
+  card.setAttribute("aria-label", `${verb} ${d.name}${d.booted ? ", running" : ""}`);
+  const glyph = el("span", "mini-phone" + (android ? " android" : ""));
+  glyph.appendChild(platformBadge(android));
+  const [model, label] = splitName(d.name);
+  const text = el("span", "card-text");
+  text.append(el("span", "card-title", model));
+  if (label) text.append(el("span", "card-sub", label));
+  const meta = el("span", "card-meta");
+  meta.append(el("span", "chip", android ? "Android" : d.os), el("span", "state", d.booted ? "Running" : "Off"));
+  text.append(meta);
+  card.append(glyph, text, el("span", "card-action" + (d.booted ? " primary" : ""), verb));
+  card.addEventListener("click", () => (d.booted ? showConsole(d.udid, d.name, deviceShape(d)) : bootDevice(d)));
   return card;
+}
+
+// ---------- apps ----------
+
+// renderApps lists the builds passed with --app: what each is and what it
+// needs, with a Launch on a running device of its platform. Builds a
+// folder held that cannot run here get one quiet line each, with why.
+async function renderApps(running) {
+  const res = await fetch("/api/apps").catch(() => null);
+  if (!res || !res.ok) return;
+  const { apps, skipped } = await res.json();
+  $("apps-summary").textContent = apps.length ? `${apps.length} ${apps.length === 1 ? "build" : "builds"}` : "";
+  const grid = el("div", "cards");
+  grid.append(...apps.map((a) => appCard(a, running)));
+  const parts = apps.length ? [grid] : [emptyNote(
+    "Start devicedeck with --app <file or folder> to list your builds here. " +
+    "Each one is installed on a device the first time it is launched there.")];
+  parts.push(...skipped.map(skippedNote));
+  $("library-apps").replaceChildren(...parts);
+}
+
+// appCard is one build: its platform tile, name and version, bundle id,
+// what it needs, and Launch. The rest of what the build is — its
+// architectures, date and file — is on hover, where it does not crowd.
+function appCard(a, running) {
+  const android = a.platform === "Android";
+  const card = el("div", "card app");
+  card.title = [a.path, (a.arch || []).join(" "), a.modified && `built ${formatDate(a.modified)}`].filter(Boolean).join("\n");
+  const tile = el("span", "app-tile" + (android ? " android" : ""));
+  tile.appendChild(platformBadge(android));
+  const text = el("span", "card-text");
+  const head = el("span", "card-title");
+  head.append(document.createTextNode(a.name));
+  if (a.version) head.append(el("span", "version", a.version));
+  text.append(head, el("span", "card-sub mono", a.id),
+    el("span", "card-meta", [a.minOS && `${a.minOS}+`, formatSize(a.size)].filter(Boolean).join(" · ")));
+  for (const w of a.warnings || []) text.append(el("span", "card-warning", w));
+  const launch = launchButton(a, running);
+  // Without a device to launch on, the card says so in its text and keeps
+  // its full width for the name.
+  if (launch.classList.contains("card-hint")) text.append(launch);
+  else card.append(tile, text, launch);
+  if (!card.childNodes.length) card.append(tile, text);
+  return card;
+}
+
+// skippedNote is a build a folder held that cannot run here, and why.
+function skippedNote(s) {
+  const note = el("p", "skipped-note");
+  note.title = s.path;
+  note.append(el("strong", "", `Skipped ${s.path.split("/").slice(-2).join("/")}`),
+    document.createTextNode(` — ${s.reason.replace(/^read [^:]+: /, "")}`));
+  return note;
+}
+
+// launchButton launches a build on a running device of its platform, from
+// its device page; with none running, it says what to boot instead.
+function launchButton(a, running) {
+  const android = a.platform === "Android";
+  const target = running.find((d) => d.os.startsWith("android") === android);
+  if (!target) return el("span", "card-hint", `Boot ${android ? "an emulator" : "a simulator"} to launch`);
+  const button = el("button", "card-action primary", "Launch");
+  button.title = `Launch on ${target.name}`;
+  button.addEventListener("click", () => {
+    pendingLaunch = a.id;
+    showConsole(target.udid, target.name, deviceShape(target));
+  });
+  return button;
+}
+
+function formatSize(bytes) {
+  if (!bytes) return "";
+  return bytes >= 1e6 ? `${(bytes / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1e3))} KB`;
+}
+
+function formatDate(iso) {
+  return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }
 
 // bootDevice starts a stopped device and polls until it comes up, then
@@ -465,19 +593,143 @@ function connectVideo() {
     }
     renderer.handleMessage(bytes);
   };
-  videoWS.onclose = () => { status.textContent = "video disconnected"; };
+  const socket = videoWS;
+  videoWS.onclose = () => { if (videoWS === socket) videoLost(); };
+}
+
+// videoLost tells a stopped server from a stopped stream: the first is
+// the server fault, the second leaves the server up and the screen dark.
+async function videoLost() {
+  const res = await fetch("/api/devices").catch(() => null);
+  if (!res) { serverDown(); return; }
+  setFault("video", {
+    title: "The screen stream stopped",
+    detail: "Video from this device ended. It may have shut down; the run's log folder says why.",
+    action: { label: "Reconnect", run: () => { setFault("video"); connectVideo(); } },
+  });
 }
 
 // ---------- live input ----------
 
-function connectInput() {
+// A device takes one driver at a time, and a second console tab on the
+// same device was refused with nothing on screen to say so: its taps
+// simply did nothing. Console tabs in one browser therefore hand the
+// device over: the tab that opens it last tells the others, which let go.
+const tabs = "BroadcastChannel" in window ? new BroadcastChannel("devicedeck-input") : null;
+// HANDOFF_MS is how long a tab that just took a device over keeps
+// retrying a refusal: the tab it took it from may not have let go yet.
+const HANDOFF_MS = 3000;
+const HANDOFF_RETRY_MS = 400;
+let takenAt = 0;
+
+// connectInput opens this page's input socket; takeOver disconnects
+// whoever holds the device first (the fault card's Take over).
+function connectInput(takeOver = false) {
   if (input) input.close();
-  input = createInputSocket(wsURL(`/api/devices/${udid}/input`), {
-    onRefused: (reason) => {
-      status.textContent = reason || "another client is driving this device";
-    },
+  input = null;
+  // A background tab never drives: see the visibilitychange handler.
+  if (document.hidden) return;
+  setFault("input");
+  takenAt = Date.now();
+  // Only the tab the person is using asks the others to let go. A tab that
+  // reconnects on its own — after a server restart, in another window —
+  // has no focus, so it never takes the device from the one in use.
+  if (document.hasFocus()) tabs?.postMessage({ take: udid, focused: true });
+  openInput(udid, takeOver === true);
+}
+
+function openInput(device, takeOver = false) {
+  input = createInputSocket(wsURL(`/api/devices/${device}/input`), {
+    takeOver,
+    onOpen: () => { if (udid === device) { inputReady = true; revealWhenReady(); } },
+    onRefused: (reason) => inputRefused(device, reason),
   });
 }
+
+const TAKEN_OVER = "taken over by ";
+const SESSION_ENDED = "session ended";
+const takeOverAction = { label: "Take over", run: () => connectInput(true) };
+
+// inputRefused says out loud that taps from this page are not reaching the
+// device, and who holds it, after a short grace for a tab handoff.
+function inputRefused(device, reason = "") {
+  if (udid !== device || endingSession === device) return;
+  input = null;
+  const kicked = kickedFault(reason);
+  if (kicked) {
+    setFault("input", kicked);
+    return;
+  }
+  if (Date.now() - takenAt < HANDOFF_MS) {
+    setTimeout(() => { if (udid === device) openInput(device); }, HANDOFF_RETRY_MS);
+    return;
+  }
+  setFault("input", heldFault(reason));
+}
+
+// kickedFault is the fault for a page the server disconnected on purpose —
+// its session ended, or another page took the device — or null. Coming
+// back to such a page must not seize the device back: its button decides.
+function kickedFault(reason) {
+  if (reason.startsWith(SESSION_ENDED)) {
+    return {
+      kicked: true,
+      title: "This device's session was ended",
+      detail: "It was shut down from another page. Boot it again from the device list.",
+      action: { label: "Device list", run: showLibrary },
+    };
+  }
+  if (!reason.startsWith(TAKEN_OVER)) return null;
+  return {
+    kicked: true,
+    title: "Another page took this device over",
+    detail: `It is now driven from ${reason.slice(TAKEN_OVER.length)}; taps from this page no longer reach it.`,
+    action: takeOverAction,
+  };
+}
+
+// heldFault is the fault for a device someone else holds. The server's
+// reason ends in advice for test suites; the holder is what a person here
+// needs.
+function heldFault(reason) {
+  const holder = reason.split(";")[0].replace(/^device \S+ is already being driven by /, "");
+  return {
+    title: "Another client is driving this device",
+    detail: `Taps and typing from this page are not reaching it. It is held by ${holder || "another client"}, ` +
+      "most likely another tab left open.\n\nTake over disconnects it and gives the device to this page.",
+    action: takeOverAction,
+  };
+}
+
+// The tab the person is using drives its device. Console tabs left open
+// reconnect the moment a restarted server comes back, before anyone has
+// booted the device, and one of them held it while the tab in use was
+// refused. So a tab going to the background lets go, and a tab coming to the
+// front or getting focus takes the device (unless it was taken over from
+// outside this browser, where the fault card's own button decides).
+function reclaimInput() {
+  if (udid && !input && !document.hidden && !faults.get("input")?.kicked) connectInput();
+}
+document.addEventListener("visibilitychange", () => {
+  if (!udid) return;
+  if (!document.hidden) { reclaimInput(); return; }
+  if (input) input.close();
+  input = null;
+});
+window.addEventListener("focus", reclaimInput);
+
+// A take from a tab without focus is ignored: tabs from before this rule
+// announce a take on every reconnect, from the background too.
+tabs?.addEventListener("message", ({ data }) => {
+  if (!data?.focused || data.take !== udid || !input) return;
+  input.close();
+  input = null;
+  setFault("input", {
+    title: "This device is open in another tab",
+    detail: "Only one page drives a device at a time, and the newest tab took it over.",
+    action: { label: "Use it here", run: connectInput },
+  });
+});
 
 // Pointer and toolbar handlers stay bound while the library view is
 // showing, where there is no device and no socket — drop those frames
@@ -496,11 +748,10 @@ function normalized(event) {
 }
 
 canvas.addEventListener("pointerdown", (e) => {
+  // The right button opens the check menu; only the primary one drives.
+  if (e.button !== 0) return;
   canvas.focus();
   canvas.setPointerCapture(e.pointerId);
-  // While an assertion is armed the tap must not reach the device: the
-  // recording would then alter the very screen it is asserting on.
-  if (asserting) return;
   pointerDown = true;
   const { x, y } = normalized(e);
   send(touchFrame(PHASE.down, x, y));
@@ -513,10 +764,7 @@ canvas.addEventListener("pointermove", (e) => {
 });
 
 canvas.addEventListener("pointerup", (e) => {
-  if (asserting) {
-    recordAssertion(normalized(e));
-    return;
-  }
+  if (e.button !== 0) return;
   if (!pointerDown) return;
   pointerDown = false;
   const { x, y } = normalized(e);
@@ -560,6 +808,58 @@ async function leaveApp(action) {
   await sleep(700);
   if (inspecting) followTree();
 }
+$("btn-end").addEventListener("click", endSession);
+
+// endingSession is the device this page is shutting down itself. Ending a
+// session tells the device's driver it ended, and closes its video; here
+// the driver is this page, so neither is news to report.
+let endingSession = null;
+
+// letGo drops this page's own hold on a device it is about to shut down —
+// input, video, Inspect and the engine poll — and puts the loading frame up
+// saying so, in place of a live screen about to go dark.
+function letGo(device) {
+  endingSession = device;
+  if (input) input.close();
+  input = null;
+  const socket = videoWS;
+  videoWS = null; // before close, so its onclose is not taken for a lost stream
+  socket?.close();
+  if (inspecting) toggleInspector();
+  clearTimeout(engineTimer);
+  clearFaults();
+  setEngineTools(false);
+  $("stage-loading").hidden = false;
+  canvas.classList.add("connecting");
+  $("loading-text").textContent = `Shutting down ${$("device-label").textContent || device}…`;
+}
+
+// endSession stops everything DeviceDeck runs for the device, powers the
+// device off and returns to the device list. A recording in progress would
+// be discarded, so that is confirmed first.
+async function endSession() {
+  const device = udid;
+  if (!device) return;
+  if (recording && !confirm("A recording is in progress and will be discarded. End the session?")) return;
+  const button = $("btn-end");
+  button.disabled = true;
+  button.textContent = "Shutting down…";
+  letGo(device);
+  const res = await fetch(`/api/devices/${encodeURIComponent(device)}/shutdown`, { method: "POST" }).catch(() => null);
+  endingSession = null;
+  button.disabled = false;
+  button.textContent = "End session";
+  if (udid !== device) return;
+  if (!res) { serverDown(); return; }
+  if (res.ok) { showLibrary(); return; }
+  const body = await res.json().catch(() => ({}));
+  setFault("session", {
+    title: "The session did not end",
+    detail: body.error || `HTTP ${res.status}`,
+    action: { label: "Try again", run: () => { setFault("session"); endSession(); } },
+  });
+}
+
 $("btn-shot").addEventListener("click", () => window.open(`/api/devices/${udid}/screenshot`));
 $("btn-inspect").addEventListener("click", toggleInspector);
 
@@ -567,79 +867,117 @@ $("btn-inspect").addEventListener("click", toggleInspector);
 
 let recording = false;
 let capturePoll = null;
-// asserting arms the next tap to record an assertion rather than drive
-// the device. One assertion per arming, so a mis-armed click cannot
-// silently swallow a whole session's taps.
-let asserting = false;
 
 $("btn-record").addEventListener("click", toggleRecord);
 $("btn-launch").addEventListener("click", launchApp);
 $("app-pick").addEventListener("change", () => { $("app").value = $("app-pick").value; updateUseLinks(); });
 $("app").addEventListener("input", updateUseLinks);
 for (const b of document.querySelectorAll("button.copy")) b.addEventListener("click", () => copyField(b));
-$("btn-assert").addEventListener("click", () => setAsserting(!asserting));
 
-function setAsserting(on) {
-  asserting = on;
-  $("btn-assert").classList.toggle("armed", on);
-  canvas.classList.toggle("asserting", on);
-  if (on) status.textContent = "tap the element to assert is visible";
-}
+// CHECK_RECORDED is what the status line says once a check is recorded.
+const CHECK_RECORDED = { visible: "assertion recorded", wait: "wait recorded" };
 
-// recordAssertion resolves the tapped point server-side, where the tree
-// already lives, and appends an assertVisible step to the recording.
-async function recordAssertion({ x, y }) {
-  setAsserting(false);
+// recordCheck resolves a point to an element server-side, where the tree
+// already lives, and appends a check on it to the recording: "visible"
+// asserts it is there (assertVisible), "wait" waits for it to appear
+// (extendedWaitUntil). The device is never touched.
+async function recordCheck(check, { x, y }) {
   const res = await fetch(`/api/devices/${udid}/capture/assert`, {
     method: "POST",
-    body: JSON.stringify({ x, y }),
-  });
-  const body = await res.json();
-  status.textContent = res.ok
-    ? "assertion recorded"
-    : `assert: ${body.error}`;
+    body: JSON.stringify({ x, y, check }),
+  }).catch(() => null);
+  if (!res) { serverDown(); return; }
+  const body = await res.json().catch(() => ({}));
+  status.textContent = res.ok ? CHECK_RECORDED[check] : `${check}: ${body.error || res.status}`;
 }
 
-async function toggleRecord() {
-  if (!recording) {
-    const app = $("app").value.trim();
-    if (!app) {
-      status.textContent = "enter an app bundle id to record";
-      $("app").focus();
-      return;
-    }
-    status.textContent = "starting capture (tree warm-up)…";
-    const res = await fetch(`/api/devices/${udid}/capture/start`, {
-      method: "POST",
-      body: JSON.stringify({ app }),
-    });
-    const body = await res.json();
-    if (!res.ok) {
-      status.textContent = `record: ${body.error}`;
-      return;
-    }
-    recording = true;
-    seenSteps = 0;
-    $("btn-record").classList.add("recording");
-    setTool($("btn-record"), STOP_ICON, "Stop");
-    $("btn-assert").hidden = false;
-    capturePoll = setInterval(pollCapture, 700);
-    status.textContent = "recording — drive the device";
-  } else {
-    clearInterval(capturePoll);
-    const res = await fetch(`/api/devices/${udid}/capture/stop`, { method: "POST", body: "{}" });
-    const body = await res.json();
-    recording = false;
-    setAsserting(false);
-    $("btn-assert").hidden = true;
-    $("btn-record").classList.remove("recording");
-    setTool($("btn-record"), RECORD_ICON, "Record");
-    if (!res.ok) {
-      status.textContent = `stop: ${body.error}`;
-      return;
-    }
-    showFlow(body.yaml, body.steps);
+// ---------- check menu ----------
+
+// While recording, a right-click on the device opens a menu of the checks
+// that can be recorded on the element under the pointer. It is the direct
+// way to say "assert this" or "wait for this": no arming a mode first, and
+// nothing reaches the device.
+const checkMenu = $("check-menu");
+let checkPoint = null;
+
+$("stage").addEventListener("contextmenu", (e) => {
+  if (!recording || !overCanvas(e)) return; // the browser's own menu otherwise
+  e.preventDefault();
+  checkPoint = normalized(e);
+  const stage = $("stage").getBoundingClientRect();
+  checkMenu.hidden = false;
+  const left = Math.min(e.clientX - stage.left, stage.width - checkMenu.offsetWidth - 8);
+  const top = Math.min(e.clientY - stage.top, stage.height - checkMenu.offsetHeight - 8);
+  checkMenu.style.left = `${Math.max(8, left)}px`;
+  checkMenu.style.top = `${Math.max(8, top)}px`;
+  checkMenu.querySelector("button").focus();
+});
+
+checkMenu.addEventListener("click", (e) => {
+  const check = e.target.closest("button")?.dataset.check;
+  if (!check) return;
+  closeCheckMenu();
+  recordCheck(check, checkPoint);
+});
+
+function closeCheckMenu() {
+  checkMenu.hidden = true;
+}
+
+document.addEventListener("pointerdown", (e) => { if (!checkMenu.contains(e.target)) closeCheckMenu(); }, true);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeCheckMenu(); });
+window.addEventListener("blur", closeCheckMenu);
+
+// overCanvas reports whether a pointer event is on the device screen.
+function overCanvas(e) {
+  const r = canvas.getBoundingClientRect();
+  return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+}
+
+function toggleRecord() {
+  return recording ? stopRecording() : startRecording();
+}
+
+// startRecording begins Flow Capture for the app named in the sidebar.
+async function startRecording() {
+  const app = $("app").value.trim();
+  if (!app) {
+    status.textContent = "enter an app bundle id to record";
+    $("app").focus();
+    return;
   }
+  status.textContent = "starting capture (tree warm-up)…";
+  const res = await fetch(`/api/devices/${udid}/capture/start`, {
+    method: "POST",
+    body: JSON.stringify({ app }),
+  });
+  const body = await res.json();
+  if (!res.ok) {
+    status.textContent = `record: ${body.error}`;
+    return;
+  }
+  recording = true;
+  seenSteps = 0;
+  $("btn-record").classList.add("recording");
+  setTool($("btn-record"), STOP_ICON, "Stop");
+  capturePoll = setInterval(pollCapture, 700);
+  status.textContent = "recording — right-click an element to assert or wait for it";
+}
+
+// stopRecording ends Flow Capture and shows the captured flow.
+async function stopRecording() {
+  clearInterval(capturePoll);
+  const res = await fetch(`/api/devices/${udid}/capture/stop`, { method: "POST", body: "{}" });
+  const body = await res.json();
+  recording = false;
+  closeCheckMenu();
+  $("btn-record").classList.remove("recording");
+  setTool($("btn-record"), RECORD_ICON, "Record");
+  if (!res.ok) {
+    status.textContent = `stop: ${body.error}`;
+    return;
+  }
+  showFlow(body.yaml, body.steps);
 }
 
 let seenSteps = 0;
@@ -706,32 +1044,66 @@ function flashResolved(step) {
   }, 1600);
 }
 
+// setFlowPanel widens the panel for a captured flow and narrows it back for
+// the inspector. The device shrinks or grows with it, and the Inspect
+// overlay follows only window resizes, so it is realigned here.
+function setFlowPanel(on) {
+  if (!on) $("flow-actions").hidden = true;
+  if ($("panel").classList.contains("flow") === on) return;
+  $("panel").classList.toggle("flow", on);
+  requestAnimationFrame(positionOverlay);
+}
+
+// capturedFlow is the YAML on show, for Copy.
+let capturedFlow = "";
+
+$("flow-copy").addEventListener("click", async () => {
+  const button = $("flow-copy");
+  const done = await navigator.clipboard.writeText(capturedFlow).then(() => true, () => false);
+  button.textContent = done ? "Copied" : "Copy failed";
+  setTimeout(() => { button.textContent = "Copy"; }, 1200);
+});
+
+// flowFileName suggests a name for a saved flow: the app it drives and
+// when it was captured, so saved flows sort and never overwrite each other.
+function flowFileName() {
+  const app = ($("app").value.trim().split(".").pop() || "flow").replace(/[^\w-]/g, "");
+  const at = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${app}-${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}-${pad(at.getHours())}${pad(at.getMinutes())}.yaml`;
+}
+
+// Download asks where to save and under what name, where the browser can
+// (Chrome and Edge: the system Save dialog). Elsewhere the link downloads
+// with the suggested name, as any download does.
+$("flow-download").addEventListener("click", async (e) => {
+  if (!window.showSaveFilePicker) return;
+  e.preventDefault();
+  try {
+    const file = await window.showSaveFilePicker({
+      suggestedName: $("flow-download").download,
+      types: [{ description: "Maestro flow", accept: { "text/yaml": [".yaml", ".yml"] } }],
+    });
+    const out = await file.createWritable();
+    await out.write(capturedFlow);
+    await out.close();
+    status.textContent = `saved ${file.name}`;
+  } catch (err) {
+    if (err.name !== "AbortError") status.textContent = `save: ${err.message}`;
+  }
+});
+
 function showFlow(yaml, steps) {
   $("panel").hidden = false;
+  setFlowPanel(true);
   $("node-title").textContent = `Captured flow — ${steps.length} steps`;
   $("node-info").classList.remove("hint");
-  $("node-info").textContent = yaml;
-  let link = $("panel").querySelector("a.download");
-  if (!link) {
-    link = document.createElement("a");
-    link.className = "download";
-    link.textContent = "Download flow.yaml";
-    $("panel").appendChild(link);
-  }
-  link.href = URL.createObjectURL(new Blob([yaml], { type: "text/yaml" }));
-  link.download = "flow.yaml";
-  // The flow runs unchanged on real devices: say where, with the same
-  // DeviceLab card the loading frame shows, cloned so the two cannot drift.
-  if (!$("panel").querySelector(".dl-card")) {
-    const card = $("dl-card").cloneNode(true);
-    card.removeAttribute("id");
-    card.classList.remove("frame-promo");
-    card.querySelector(".promo-title").textContent = "Run this flow on real devices";
-    const line = card.querySelector(".promo-line");
-    line.removeAttribute("id");
-    line.textContent = "Same file, same selectors: it runs unchanged on real iPhones and Android phones you own.";
-    $("panel").appendChild(card);
-  }
+  $("node-info").replaceChildren(highlightFlow(yaml));
+  capturedFlow = yaml;
+  URL.revokeObjectURL($("flow-download").href);
+  $("flow-download").href = URL.createObjectURL(new Blob([yaml], { type: "text/yaml" }));
+  $("flow-download").download = flowFileName();
+  $("flow-actions").hidden = false;
   status.textContent = `captured ${steps.length} steps`;
 }
 
@@ -769,6 +1141,7 @@ async function toggleInspector() {
 // panelIdle is what the right panel says when nothing is being inspected.
 // On a wide screen the panel stays open, so it explains how to fill it.
 function panelIdle() {
+  setFlowPanel(false);
   $("node-title").textContent = "Inspector";
   $("node-info").classList.add("hint");
   $("node-info").textContent =
@@ -807,12 +1180,14 @@ async function followTree() {
     const res = await fetch(`/api/devices/${encodeURIComponent(device)}/tree?${params}`, { signal: treeAbort.signal })
       .catch(() => null);
     if (!inspecting || gen !== treeLoop || udid !== device) return;
+    if (!res) serverDown();
     const body = res ? await res.json().catch(() => ({})) : {};
     if (!res || !res.ok) {
-      status.textContent = `tree: ${body.error || (res ? res.status : "server unreachable")}`;
+      if (res) treeFailed(body.error || `HTTP ${res.status}`);
       await sleep(1500);
       continue;
     }
+    setFault("engine");
     const changed = body.interaction !== after;
     if (changed) {
       renderOverlay(body.nodes);
@@ -821,6 +1196,16 @@ async function followTree() {
     after = body.interaction;
     if (!changed) await sleep(IDLE_PAUSE_MS);
   }
+}
+
+// treeFailed raises the engine fault while Inspect cannot read the screen;
+// the follow loop keeps retrying and clears it on the next good answer.
+function treeFailed(error) {
+  setFault("engine", {
+    title: "The device engine is not answering",
+    detail: `Inspect cannot read the screen: ${error}`,
+    action: { label: "Restart it", run: () => { setFault("engine"); warmEngine(udid); } },
+  });
 }
 
 function sleep(ms) {
@@ -859,17 +1244,25 @@ function renderOverlay(nodes) {
 }
 
 function showNode(node) {
+  setFlowPanel(false);
   $("node-title").textContent = node.identifier || node.label || node.type;
   $("node-info").classList.remove("hint");
   $("node-info").textContent = JSON.stringify(node, null, 2);
+}
+
+// nodeCenter is an element's centre as a normalized point on the screen.
+function nodeCenter(node, app) {
+  return {
+    x: (node.frame.x + node.frame.width / 2) / app.width,
+    y: (node.frame.y + node.frame.height / 2) / app.height,
+  };
 }
 
 async function tapNode(node, app) {
   // The click landed on the overlay, not the video, so give the video its
   // keyboard focus back: typing after an Inspect tap must reach the device.
   canvas.focus({ preventScroll: true });
-  const x = (node.frame.x + node.frame.width / 2) / app.width;
-  const y = (node.frame.y + node.frame.height / 2) / app.height;
+  const { x, y } = nodeCenter(node, app);
   await fetch(`/api/devices/${udid}/tap`, {
     method: "POST",
     body: JSON.stringify({ x, y }),

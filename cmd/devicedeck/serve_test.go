@@ -628,3 +628,39 @@ func TestGreet(t *testing.T) {
 		}
 	}
 }
+
+// fakeSession records what End session stopped, in order.
+type fakeSession struct{ log []string }
+
+func (f *fakeSession) Stop(_ context.Context, udid string) { f.log = append(f.log, "engine "+udid) }
+func (f *fakeSession) Close(udid string)                   { f.log = append(f.log, "video "+udid) }
+func (f *fakeSession) Drop(udid string)                    { f.log = append(f.log, "input "+udid) }
+func (f *fakeSession) Shutdown(_ context.Context, udid string) error {
+	f.log = append(f.log, "shutdown "+udid)
+	return nil
+}
+
+func TestSessionEnder(t *testing.T) {
+	for _, tc := range []struct {
+		udid, last string
+	}{
+		{"IOS-UDID", "shutdown IOS-UDID"},
+		{"emulator-5554", ""}, // the emulator is killed instead
+	} {
+		f, k := &fakeSession{}, &fakeKiller{}
+		e := sessionEnder{engines: f, videos: f, inputs: f, ios: f, android: k}
+		if err := e.End(context.Background(), tc.udid); err != nil {
+			t.Fatal(err)
+		}
+		want := []string{"engine " + tc.udid, "video " + tc.udid, "input " + tc.udid}
+		if tc.last != "" {
+			want = append(want, tc.last)
+		}
+		if !reflect.DeepEqual(f.log, want) {
+			t.Errorf("%s: stopped %q, want %q", tc.udid, f.log, want)
+		}
+		if killed := len(k.killed) == 1; killed != (tc.last == "") {
+			t.Errorf("%s: killed %q", tc.udid, k.killed)
+		}
+	}
+}
