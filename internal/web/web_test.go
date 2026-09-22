@@ -76,8 +76,25 @@ func TestConsoleHeaderWraps(t *testing.T) {
 	if !strings.Contains(header, "flex-wrap: wrap") {
 		t.Errorf("header must wrap rather than overflow:\n%s", header)
 	}
-	if !strings.Contains(css, "input#app") || !strings.Contains(css, "min-width: 110px") {
-		t.Error("the app-id input must be allowed to shrink")
+	// The app field and the copyable links live in the sidebar, whose
+	// inputs must shrink to its width rather than push it wider.
+	sidebar := css[strings.Index(css, "#sidebar input, #sidebar select {"):]
+	if !strings.Contains(sidebar[:strings.Index(sidebar, "}")], "min-width: 0") {
+		t.Error("sidebar inputs must be allowed to shrink")
+	}
+}
+
+// The sidebar controls keep the element ids the console's tests and
+// scripts select them by, wherever the layout puts them.
+func TestConsoleKeepsControlIDs(t *testing.T) {
+	body := get(t, "/").Body.String()
+	for _, id := range []string{
+		"app", "app-pick", "btn-launch", "btn-home", "btn-switcher", "btn-lock",
+		"btn-shot", "btn-inspect", "btn-record", "btn-assert", "device-label", "status",
+	} {
+		if !strings.Contains(body, `id="`+id+`"`) {
+			t.Errorf("console lost #%s", id)
+		}
 	}
 }
 
