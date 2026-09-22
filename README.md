@@ -4,10 +4,8 @@
 
 ### Automate your iOS and Android app like a web app.
 
-**Your AI agent drives it with the browser tools it already uses for the web — and so do your
-Playwright and Cypress tests. No Appium, no new tool.**
-
-iOS + Android · native UI mirrored as **real DOM** · your web tools and agents, zero adapter · drive it by hand too, from any machine
+Your Playwright tests and AI agents drive it with the browser tools they already use.
+No Appium, no new tool.
 
 <img src="docs/demo-login.gif" width="820" alt="A stock Playwright test on the left runs line by line — page.goto() to a Simulator on a Mac at 10.0.4.21, getByRole().fill() for username and password, click Sign In, expect the logged-in screen — while a browser tab on the right shows the iOS Simulator reacting live and the runner goes green.">
 
