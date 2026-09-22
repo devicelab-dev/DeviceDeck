@@ -27,16 +27,32 @@ const (
 
 // App is one registered build and what was read from it.
 type App struct {
-	ID       string // bundle id or package name
-	Name     string // display name for people
-	Path     string
-	Platform string
-	Version  string   // "1.4.0 (42)": marketing version and build
-	MinOS    string   // "iOS 15.0" or "Android API 24"
-	Arch     []string // simulator slices, or the APK's native ABIs (none: pure Java/Kotlin)
-	Size     int64
-	Modified time.Time // the file's date: when it was built, unless it was copied since
-	Warnings []string  // what may stop it running here, found up front
+	ID       string    `json:"id"` // bundle id or package name
+	Name     string    `json:"name"`
+	Path     string    `json:"path"`
+	Platform string    `json:"platform"`
+	Version  string    `json:"version,omitempty"`  // "1.4.0 (42)": marketing version and build
+	MinOS    string    `json:"minOS,omitempty"`    // "iOS 15.0" or "Android API 24"
+	Arch     []string  `json:"arch,omitempty"`     // simulator slices, or the APK's native ABIs
+	Size     int64     `json:"size"`               // bytes
+	Modified time.Time `json:"modified"`           // the file's date: when it was built, unless copied since
+	Warnings []string  `json:"warnings,omitempty"` // what may stop it running here, found up front
+}
+
+// Listed is a registered build as offered for one device: the build, and
+// whether that device already has it.
+type Listed struct {
+	App
+	Installed bool `json:"installed"`
+}
+
+// PlatformOf is the platform of a device id: Android for an adb serial,
+// iOS for a simulator UDID.
+func PlatformOf(udid string) string {
+	if platform.IsAndroidSerial(udid) {
+		return Android
+	}
+	return IOS
 }
 
 // hostArch is this Mac's CPU as simulator slices and Android ABIs name it.
@@ -186,10 +202,7 @@ func (c *Catalog) Apps() []App {
 // instead of a launch failing with the platform tool's own message. Any
 // other app is left alone: an unregistered app is the caller's to install.
 func (c *Catalog) Ensure(ctx context.Context, udid, appID string) error {
-	want := IOS
-	if platform.IsAndroidSerial(udid) {
-		want = Android
-	}
+	want := PlatformOf(udid)
 	match, other := c.find(appID, want)
 	switch {
 	case match == nil && other == nil:
@@ -205,6 +218,23 @@ func (c *Catalog) Ensure(ctx context.Context, udid, appID string) error {
 		return fmt.Errorf("install %s from %s: %w", appID, match.Path, err)
 	}
 	return nil
+}
+
+// For lists the builds that suit udid's platform, each marked with whether
+// the device already has it: what a person picking an app to launch needs.
+// A nil catalog offers nothing.
+func (c *Catalog) For(ctx context.Context, udid string) []Listed {
+	out := []Listed{}
+	if c == nil {
+		return out
+	}
+	want := PlatformOf(udid)
+	for _, a := range c.apps {
+		if a.Platform == want {
+			out = append(out, Listed{App: a, Installed: c.device.Installed(ctx, udid, a.ID)})
+		}
+	}
+	return out
 }
 
 // find returns the registered build of appID for platform, and failing that

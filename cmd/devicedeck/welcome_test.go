@@ -235,3 +235,30 @@ func TestWelcomeShowsSkippedBuilds(t *testing.T) {
 		}
 	}
 }
+
+func TestWelcomeLinksBootedDevicesToTheirApps(t *testing.T) {
+	var out bytes.Buffer
+	w := welcome{
+		local: "http://127.0.0.1:8787",
+		booted: []sim.Device{
+			{UDID: "SIM", Name: "iPhone 17 Pro", OS: "iOS 26.2", Booted: true},
+			{UDID: "emulator-5554", Name: "Pixel 9", OS: "android", Booted: true},
+		},
+		apps: []apps.App{
+			{ID: "dev.devicelab.testhive", Name: "Test Hive", Platform: apps.IOS},
+			{ID: "com.testhiveapp", Name: "app-release", Platform: apps.Android},
+		},
+	}
+	w.write(&out)
+	for _, want := range []string{
+		"http://127.0.0.1:8787/device/SIM?app=dev.devicelab.testhive&reset=yes",
+		"http://127.0.0.1:8787/device/emulator-5554?app=com.testhiveapp&reset=yes",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("welcome missing %q:\n%s", want, out.String())
+		}
+	}
+	if strings.Contains(out.String(), "SIM?app=com.testhiveapp") || strings.Contains(out.String(), "emulator-5554?app=dev.devicelab") {
+		t.Errorf("an app linked to the wrong platform:\n%s", out.String())
+	}
+}

@@ -15,6 +15,10 @@
       <button id="btn-back" title="Back to device library">&#8249; Devices</button>
       <span id="device-label"></span>
       <input id="app" placeholder="app bundle id (for tree)" spellcheck="false">
+      <span id="apps-picker" hidden>
+        <select id="app-pick" title="App builds passed to devicedeck with --app"></select>
+        <button id="btn-launch" title="Install it if this device lacks it, then launch it at its first screen">&#9654; Launch</button>
+      </span>
     </span>
     <span class="spacer"></span>
     <span class="console-only" hidden id="console-actions">

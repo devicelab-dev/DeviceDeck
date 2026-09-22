@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/devicelab-dev/DeviceDeck/internal/apps"
 	"github.com/devicelab-dev/DeviceDeck/internal/capture"
 	"github.com/devicelab-dev/DeviceDeck/internal/input"
 	"github.com/devicelab-dev/DeviceDeck/internal/runner"
@@ -121,10 +122,12 @@ func (s *Server) sendFrame(ctx context.Context, udid string, frame []byte) error
 // (and tests) skip it.
 func (s *Server) SetConsole(h http.Handler) { s.console = h }
 
-// AppProvider installs a registered app build on a device that is about to
-// launch it and does not have it yet (see internal/apps).
+// AppProvider is the builds registered with --app (see internal/apps): it
+// installs one on a device that is about to launch it and lacks it, and
+// lists the ones that suit a device, for the console's Apps menu.
 type AppProvider interface {
 	Ensure(ctx context.Context, udid, appID string) error
+	For(ctx context.Context, udid string) []apps.Listed
 }
 
 // SetApps gives launches the builds passed with --app, so launching one by
@@ -139,6 +142,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/devices/{udid}/boot", s.handleBoot)
 	mux.HandleFunc("POST /api/devices/{udid}/app/launch", s.handleLaunchApp)
 	mux.HandleFunc("POST /api/devices/{udid}/app/install", s.handleInstallApp)
+	mux.HandleFunc("GET /api/devices/{udid}/apps", s.handleDeviceApps)
 	mux.HandleFunc("POST /api/devices/{udid}/openurl", s.handleOpenURL)
 	mux.HandleFunc("GET /api/devices/{udid}/screenshot", s.handleScreenshot)
 	mux.HandleFunc("GET /api/devices/{udid}/tree", s.handleTree)
@@ -186,6 +190,16 @@ type launchRequest struct {
 
 type installRequest struct {
 	AppFile string `json:"appFile"`
+}
+
+// handleDeviceApps lists the registered builds that suit a device, each
+// marked installed or not; an empty list when none were registered.
+func (s *Server) handleDeviceApps(w http.ResponseWriter, r *http.Request) {
+	list := []apps.Listed{}
+	if s.apps != nil {
+		list = s.apps.For(r.Context(), r.PathValue("udid"))
+	}
+	writeJSON(w, map[string]any{"apps": list})
 }
 
 // prepareApp makes sure the app is on the device before launch. A request's

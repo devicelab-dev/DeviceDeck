@@ -30,6 +30,7 @@ function showLibrary() {
   $("console-view").hidden = true;
   $("console-controls").hidden = true;
   $("console-actions").hidden = true;
+  $("apps-picker").hidden = true;
   $("stage-loading").hidden = true;
   canvas.classList.remove("connecting");
   status.textContent = "";
@@ -68,6 +69,53 @@ function showConsole(next, name, shape) {
   }
   connectVideo();
   connectInput();
+  loadApps();
+}
+
+// ---------- registered apps (--app) ----------
+
+// loadApps fills the Apps menu with the builds that suit this device, each
+// marked when it will install on first launch. The menu stays hidden when
+// devicedeck was started without --app. Picking one also fills the app
+// field, so Record and Inspect work on it straight away.
+async function loadApps() {
+  const forDevice = udid;
+  $("apps-picker").hidden = true;
+  const res = await fetch(`/api/devices/${encodeURIComponent(forDevice)}/apps`).catch(() => null);
+  if (!res || !res.ok || udid !== forDevice) return;
+  const { apps } = await res.json();
+  if (!apps.length) return;
+  const pick = $("app-pick");
+  pick.replaceChildren(...apps.map((a) => {
+    const opt = document.createElement("option");
+    opt.value = a.id;
+    opt.textContent = `${a.name}${a.version ? ` ${a.version}` : ""}${a.installed ? "" : " · installs on launch"}`;
+    return opt;
+  }));
+  const current = $("app").value.trim();
+  if (apps.some((a) => a.id === current)) pick.value = current;
+  else $("app").value = pick.value;
+  $("apps-picker").hidden = false;
+}
+
+// launchApp starts the picked app at its first screen; the server installs
+// the build first when this device does not have it.
+async function launchApp() {
+  const pick = $("app-pick");
+  const id = pick.value;
+  const label = pick.selectedOptions[0] ? pick.selectedOptions[0].textContent.split(" · ")[0] : id;
+  $("app").value = id;
+  $("btn-launch").disabled = true;
+  status.textContent = `launching ${label}…`;
+  const res = await fetch(`/api/devices/${encodeURIComponent(udid)}/app/launch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ app: id }),
+  }).catch((err) => ({ ok: false, json: async () => ({ error: err.message }) }));
+  const body = await res.json().catch(() => ({}));
+  $("btn-launch").disabled = false;
+  status.textContent = res.ok ? `${label} launched` : `launch: ${body.error || res.status}`;
+  if (res.ok) loadApps(); // it is installed now
 }
 
 async function refreshLibrary() {
@@ -339,6 +387,8 @@ let capturePoll = null;
 let asserting = false;
 
 $("btn-record").addEventListener("click", toggleRecord);
+$("btn-launch").addEventListener("click", launchApp);
+$("app-pick").addEventListener("change", () => { $("app").value = $("app-pick").value; });
 $("btn-assert").addEventListener("click", () => setAsserting(!asserting));
 
 function setAsserting(on) {

@@ -274,3 +274,28 @@ func TestCatalogFromFolder(t *testing.T) {
 		t.Error("a nil catalog lists nothing")
 	}
 }
+
+func TestCatalogFor(t *testing.T) {
+	app := iosBuild(t, "TestHive.app")
+	fakeTools(t, simPlist, hostArch[0])
+	apk := filepath.Join("..", "home", "android", "devicelab-android-driver.apk")
+	c, err := NewCatalog([]string{app, apk}, &fakeDevice{present: map[string]bool{"SIM/dev.devicelab.testhive": true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ios := c.For(context.Background(), "SIM")
+	if len(ios) != 1 || ios[0].ID != "dev.devicelab.testhive" || !ios[0].Installed {
+		t.Errorf("simulator offer = %+v", ios)
+	}
+	android := c.For(context.Background(), "emulator-5554")
+	if len(android) != 1 || android[0].ID != "dev.devicelab.driver.android" || android[0].Installed {
+		t.Errorf("emulator offer = %+v", android)
+	}
+	var none *Catalog
+	if got := none.For(context.Background(), "SIM"); got == nil || len(got) != 0 {
+		t.Errorf("nil catalog = %#v, want an empty list", got)
+	}
+	if PlatformOf("emulator-5554") != Android || PlatformOf("AAAA-BBBB") != IOS {
+		t.Error("PlatformOf")
+	}
+}

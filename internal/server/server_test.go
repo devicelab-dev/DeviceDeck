@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devicelab-dev/DeviceDeck/internal/apps"
 	"github.com/devicelab-dev/DeviceDeck/internal/capture"
 	"github.com/devicelab-dev/DeviceDeck/internal/input"
 	"github.com/devicelab-dev/DeviceDeck/internal/runner"
@@ -895,11 +896,15 @@ func TestOpenURL(t *testing.T) {
 	}
 }
 
-// fakeApps records which launches asked for a registered build.
+// fakeApps records which launches asked for a registered build, and offers
+// a fixed list.
 type fakeApps struct {
 	asked []string
 	err   error
+	offer []apps.Listed
 }
+
+func (a *fakeApps) For(_ context.Context, udid string) []apps.Listed { return a.offer }
 
 func (a *fakeApps) Ensure(_ context.Context, udid, appID string) error {
 	a.asked = append(a.asked, udid+"/"+appID)
@@ -924,5 +929,21 @@ func TestLaunchAppUsesRegisteredBuilds(t *testing.T) {
 	rec = do(t, srv, "POST", "/api/devices/AAA/app/launch", `{"app":"com.example"}`)
 	if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "disk full") {
 		t.Errorf("failed install: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestDeviceApps(t *testing.T) {
+	f := &fakeBackend{}
+	srv := newTestServer(f)
+	rec := do(t, srv, "GET", "/api/devices/AAA/apps", "")
+	if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != `{"apps":[]}` {
+		t.Errorf("no registry: %d %s", rec.Code, rec.Body)
+	}
+	srv.SetApps(&fakeApps{offer: []apps.Listed{{App: apps.App{ID: "dev.devicelab.testhive", Name: "Test Hive", Platform: apps.IOS}, Installed: true}}})
+	rec = do(t, srv, "GET", "/api/devices/AAA/apps", "")
+	for _, want := range []string{`"id":"dev.devicelab.testhive"`, `"name":"Test Hive"`, `"installed":true`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("listing missing %s: %s", want, rec.Body)
+		}
 	}
 }

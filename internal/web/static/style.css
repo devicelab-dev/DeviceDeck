@@ -62,6 +62,9 @@ select, input, button {
 
 /* Roomy when there is space, shrinkable when there is not. */
 input#app { width: 230px; flex: 0 1 230px; min-width: 110px; }
+#apps-picker { display: inline-flex; gap: 6px; align-items: center; }
+#apps-picker[hidden] { display: none; }
+#app-pick { max-width: 240px; }
 button { cursor: pointer; }
 button:hover { border-color: var(--accent); }
 button.active { background: var(--accent); border-color: var(--accent); color: #fff; }

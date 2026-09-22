@@ -108,8 +108,12 @@ func (w welcome) devices(b *strings.Builder) {
 	}
 	for _, d := range w.booted {
 		// Pad before styling: colour codes are invisible but counted.
-		fmt.Fprintf(b, "    %-*s  %s %s\n", width, d.Name, brand.Dim(fmt.Sprintf("%-9s", d.OS), w.fancy),
-			w.link(w.local+"/device/"+d.UDID))
+		page := w.local + "/device/" + d.UDID
+		fmt.Fprintf(b, "    %-*s  %s %s\n", width, d.Name, brand.Dim(fmt.Sprintf("%-9s", d.OS), w.fancy), w.link(page))
+		for _, a := range w.appsFor(d.UDID) {
+			fmt.Fprintf(b, "    %-*s  %s %s\n", width, "", brand.Dim(fmt.Sprintf("%-9s", "with app"), w.fancy),
+				w.link(page+"?app="+a.ID+"&reset=yes"))
+		}
 	}
 	fmt.Fprintf(b, "    %s\n", brand.Dim(fmt.Sprintf("%d of %d booted · /device/booted opens the only one", len(w.booted), w.total), w.fancy))
 }
@@ -201,6 +205,17 @@ func (w welcome) claude(b *strings.Builder) {
 		fmt.Fprintf(b, "    %d. %s\n       %s\n", i+1, s.what, s.do)
 	}
 	fmt.Fprintf(b, "    %s\n       %s\n", brand.Dim("Or give Claude device tools over MCP:", w.fancy), w.cmd(claudeMCP))
+}
+
+// appsFor is the registered builds that suit a device's platform.
+func (w welcome) appsFor(udid string) []apps.App {
+	var out []apps.App
+	for _, a := range w.apps {
+		if a.Platform == apps.PlatformOf(udid) {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // exampleURL is the device page to suggest: with an app registered, it opens
