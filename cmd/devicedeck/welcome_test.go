@@ -187,7 +187,7 @@ func TestWelcomeListsRegisteredApps(t *testing.T) {
 	w := welcome{local: "http://127.0.0.1:8787", apps: []apps.App{
 		{
 			ID: "dev.devicelab.testhive", Name: "Test Hive", Path: "/b/TestHive.app", Platform: apps.IOS,
-			Version: "1.0 (1)", MinOS: "iOS 16.6", Arch: []string{"x86_64", "arm64"}, Size: 2951622, Built: built,
+			Version: "1.0 (1)", MinOS: "iOS 16.6", Arch: []string{"x86_64", "arm64"}, Size: 2951622, Modified: built,
 		},
 		{
 			ID: "com.testhiveapp", Name: "app-release", Path: "/b/app-release.apk", Platform: apps.Android,
@@ -199,7 +199,7 @@ func TestWelcomeListsRegisteredApps(t *testing.T) {
 	for _, want := range []string{
 		"APPS  installed on a device the first time it is launched there",
 		"Test Hive    iOS      dev.devicelab.testhive",
-		"1.0 (1) · iOS 16.6+ · x86_64, arm64 · 2.8 MB · built 12 Mar 2026",
+		"1.0 (1) · iOS 16.6+ · x86_64, arm64 · 2.8 MB · modified 12 Mar 2026",
 		"/b/TestHive.app",
 		"app-release  Android  com.testhiveapp",
 		"1.0 (1) · Android API 24+ · no native code · 19.4 MB",

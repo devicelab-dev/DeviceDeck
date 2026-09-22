@@ -35,8 +35,8 @@ type App struct {
 	MinOS    string   // "iOS 15.0" or "Android API 24"
 	Arch     []string // simulator slices, or the APK's native ABIs (none: pure Java/Kotlin)
 	Size     int64
-	Built    time.Time
-	Warnings []string // what may stop it running here, found up front
+	Modified time.Time // the file's date: when it was built, unless it was copied since
+	Warnings []string  // what may stop it running here, found up front
 }
 
 // hostArch is this Mac's CPU as simulator slices and Android ABIs name it.
@@ -53,7 +53,7 @@ func Identify(path string) (App, error) {
 		return App{}, fmt.Errorf("--app %s: %w", path, err)
 	}
 	base := filepath.Base(path)
-	app := App{Path: path, Name: strings.TrimSuffix(base, filepath.Ext(base)), Built: info.ModTime()}
+	app := App{Path: path, Name: strings.TrimSuffix(base, filepath.Ext(base)), Modified: info.ModTime()}
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".app":
 		err = readIOS(&app)

@@ -138,7 +138,7 @@ func (w welcome) appsSection(b *strings.Builder) {
 }
 
 // appDetails is the one-line summary of a build: "1.4.0 (42) · iOS 16.6+ ·
-// arm64, x86_64 · 2.8 MB · built 12 Mar 2026".
+// arm64, x86_64 · 2.8 MB · modified 12 Mar 2026".
 func appDetails(a apps.App) string {
 	var parts []string
 	if a.Version != "" {
@@ -154,8 +154,8 @@ func appDetails(a apps.App) string {
 		parts = append(parts, "no native code")
 	}
 	parts = append(parts, humanSize(a.Size))
-	if !a.Built.IsZero() {
-		parts = append(parts, "built "+a.Built.Format("2 Jan 2006"))
+	if !a.Modified.IsZero() {
+		parts = append(parts, "modified "+a.Modified.Format("2 Jan 2006"))
 	}
 	return strings.Join(parts, " · ")
 }
