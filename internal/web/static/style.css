@@ -61,10 +61,44 @@ select, input, button {
 }
 
 /* Roomy when there is space, shrinkable when there is not. */
-input#app { width: 230px; flex: 0 1 230px; min-width: 110px; }
-#apps-picker { display: inline-flex; gap: 6px; align-items: center; }
-#apps-picker[hidden] { display: none; }
-#app-pick { max-width: 240px; }
+/* ---------- console sidebar ---------- */
+
+#sidebar {
+  width: 280px;
+  flex: 0 0 280px;
+  background: var(--panel);
+  border-right: 1px solid var(--edge);
+  padding: 16px 14px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+#sidebar h3 {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 8px;
+}
+#sidebar input, #sidebar select { width: 100%; min-width: 0; }
+#sidebar label { display: block; font-size: 12px; color: var(--dim); margin: 10px 0 4px; }
+#sidebar label:first-of-type { margin-top: 0; }
+#device-label { font-weight: 600; font-size: 15px; word-break: break-word; }
+#device-meta { color: var(--dim); font-size: 12px; margin: 2px 0 10px; }
+.copy-row { display: flex; gap: 6px; }
+.copy-row input { flex: 1; font: 12px ui-monospace, Menlo, monospace; color: var(--dim); }
+.copy-row .copy { flex: 0 0 auto; }
+#apps-picker { display: flex; gap: 6px; margin-bottom: 6px; }
+#apps-picker select { flex: 1; }
+#btn-launch { flex: 0 0 auto; }
+.controls { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.controls button { width: 100%; }
+@media (max-width: 860px) {
+  #sidebar { width: 220px; flex-basis: 220px; }
+}
+
 button { cursor: pointer; }
 button:hover { border-color: var(--accent); }
 button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -189,6 +223,7 @@ main { flex: 1; display: flex; min-height: 0; }
 
 #panel h2 { font-size: 13px; margin-bottom: 8px; word-break: break-all; }
 #panel pre { font-size: 12px; color: var(--dim); white-space: pre-wrap; word-break: break-all; }
+#panel pre.hint { font-family: inherit; font-size: 13px; line-height: 1.5; word-break: normal; }
 
 /* ---------- device library ---------- */
 
@@ -324,7 +359,6 @@ main { flex: 1; display: flex; min-height: 0; }
   line-height: 1.6;
 }
 
-#device-label { font-weight: 600; margin: 0 4px; }
 .console-only { display: inline-flex; align-items: center; gap: 8px; }
 
 .platform-badge {
@@ -414,4 +448,12 @@ main { flex: 1; display: flex; min-height: 0; }
 #video.asserting {
   cursor: crosshair;
   outline: 2px solid #1d7a3c;
+}
+
+/* With room to spare, the inspector panel stays open beside the device
+   rather than appearing only while inspecting. Last in the file, and as
+   strong as the global [hidden] rule, so it wins on wide screens only. */
+@media (min-width: 1500px) {
+  #panel[hidden] { display: block !important; }
+  #panel { width: 340px; }
 }

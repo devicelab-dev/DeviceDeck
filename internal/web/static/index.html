@@ -13,23 +13,8 @@
     <a class="maker" href="https://devicelab.dev" target="_blank" rel="noopener"><img src="devicelab-logo.png" alt="" width="16" height="16">by DeviceLab</a>
     <span class="console-only" hidden id="console-controls">
       <button id="btn-back" title="Back to device library">&#8249; Devices</button>
-      <span id="device-label"></span>
-      <input id="app" placeholder="app bundle id (for tree)" spellcheck="false">
-      <span id="apps-picker" hidden>
-        <select id="app-pick" title="App builds passed to devicedeck with --app"></select>
-        <button id="btn-launch" title="Install it if this device lacks it, then launch it at its first screen">&#9654; Launch</button>
-      </span>
     </span>
     <span class="spacer"></span>
-    <span class="console-only" hidden id="console-actions">
-      <button id="btn-record" title="Record session as a Maestro flow">&#9679; Record</button>
-      <button id="btn-assert" title="Record an assertion: the next tap asserts the element is visible instead of tapping it" hidden>&#10003; Assert</button>
-      <button id="btn-home" title="Swipe to home">Home</button>
-      <button id="btn-switcher" title="App switcher">Switcher</button>
-      <button id="btn-lock" title="Lock button">Lock</button>
-      <button id="btn-shot" title="Save screenshot">Shot</button>
-      <button id="btn-inspect" title="Toggle tree inspector">Inspect</button>
-    </span>
     <span id="status"></span>
     <a class="star" href="https://github.com/devicelab-dev/DeviceDeck" target="_blank" rel="noopener" title="Star DeviceDeck on GitHub">&#9733; Star</a>
   </header>
@@ -41,6 +26,41 @@
     <div id="library-groups"></div>
   </section>
   <main id="console-view" hidden>
+    <aside id="sidebar">
+      <section>
+        <h3>Device</h3>
+        <div id="device-label"></div>
+        <div id="device-meta"></div>
+        <div class="copy-row"><input id="device-id" readonly spellcheck="false"><button class="copy" data-copy="device-id" title="Copy the device id">Copy</button></div>
+      </section>
+      <section>
+        <h3>App</h3>
+        <span id="apps-picker" hidden>
+          <select id="app-pick" title="App builds passed to devicedeck with --app"></select>
+          <button id="btn-launch" title="Install it if this device lacks it, then launch it at its first screen">&#9654; Launch</button>
+        </span>
+        <input id="app" placeholder="app bundle id (for Record and Inspect)" spellcheck="false">
+      </section>
+      <section>
+        <h3>Controls</h3>
+        <div class="controls">
+          <button id="btn-home" title="Swipe to home">Home</button>
+          <button id="btn-switcher" title="App switcher">Switcher</button>
+          <button id="btn-lock" title="Lock button">Lock</button>
+          <button id="btn-shot" title="Save screenshot">Shot</button>
+          <button id="btn-inspect" title="Toggle tree inspector">Inspect</button>
+          <button id="btn-record" title="Record session as a Maestro flow">&#9679; Record</button>
+          <button id="btn-assert" title="Record an assertion: the next tap asserts the element is visible instead of tapping it" hidden>&#10003; Assert</button>
+        </div>
+      </section>
+      <section>
+        <h3>Use it</h3>
+        <label for="device-url">From tests</label>
+        <div class="copy-row"><input id="device-url" readonly spellcheck="false"><button class="copy" data-copy="device-url" title="Copy the device page URL">Copy</button></div>
+        <label for="claude-ask">From Claude Code</label>
+        <div class="copy-row"><input id="claude-ask" readonly spellcheck="false"><button class="copy" data-copy="claude-ask" title="Copy a prompt for Claude">Copy</button></div>
+      </section>
+    </aside>
     <div id="stage">
       <canvas id="video" tabindex="0"></canvas>
       <div id="overlay" hidden></div>

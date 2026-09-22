@@ -10,6 +10,9 @@ const overlay = $("overlay");
 const status = $("status");
 
 let udid = null;
+// knownDevices is the last device listing, so the console view can show a
+// device's name and OS without asking again.
+let knownDevices = [];
 let videoWS = null;
 let input = null;
 let pointerDown = false;
@@ -29,7 +32,6 @@ function showLibrary() {
   $("library").hidden = false;
   $("console-view").hidden = true;
   $("console-controls").hidden = true;
-  $("console-actions").hidden = true;
   $("apps-picker").hidden = true;
   $("stage-loading").hidden = true;
   canvas.classList.remove("connecting");
@@ -53,8 +55,7 @@ function showConsole(next, name, shape) {
   $("library").hidden = true;
   $("console-view").hidden = false;
   $("console-controls").hidden = false;
-  $("console-actions").hidden = false;
-  $("device-label").textContent = name || next;
+  showDeviceInfo(next, name);
   // The first frame can take seconds on a cold session — show the
   // pulsing silhouette instead of an empty canvas until it arrives.
   awaitingFirstFrame = true;
@@ -70,6 +71,47 @@ function showConsole(next, name, shape) {
   connectVideo();
   connectInput();
   loadApps();
+}
+
+// ---------- sidebar ----------
+
+// showDeviceInfo fills the sidebar for the device on screen: its name, OS
+// and id, and the links a test or Claude uses to reach it.
+function showDeviceInfo(id, name) {
+  const d = knownDevices.find((x) => x.udid === id);
+  $("device-label").textContent = (d && d.name) || name || id;
+  const android = d ? d.os.startsWith("android") : false;
+  $("device-meta").textContent = d ? (android ? "Android emulator" : `${d.os} simulator`) : "";
+  $("device-id").value = id;
+  updateUseLinks();
+}
+
+// updateUseLinks keeps the "Use it" fields on the device page for the app
+// in the app field: the URL a test opens, and a prompt for Claude Code
+// with Playwright MCP. The origin is whatever this console was opened on,
+// so a teammate on the network gets an address that works for them.
+function updateUseLinks() {
+  if (!udid) return;
+  const app = $("app").value.trim();
+  const page = `${location.origin}/device/${encodeURIComponent(udid)}` +
+    (app ? `?app=${encodeURIComponent(app)}` : "");
+  $("device-url").value = page;
+  $("claude-ask").value = `Open ${page} with Playwright and tell me what is on screen`;
+}
+
+// copyField copies a sidebar field. The clipboard API needs a secure
+// context, which a console opened over plain http on the network is not,
+// so the fallback selects the text and uses the older copy command.
+async function copyField(button) {
+  const field = $(button.dataset.copy);
+  try {
+    await navigator.clipboard.writeText(field.value);
+  } catch {
+    field.select();
+    document.execCommand("copy");
+  }
+  button.textContent = "Copied";
+  setTimeout(() => { button.textContent = "Copy"; }, 1200);
 }
 
 // ---------- registered apps (--app) ----------
@@ -96,6 +138,7 @@ async function loadApps() {
   if (apps.some((a) => a.id === current)) pick.value = current;
   else $("app").value = pick.value;
   $("apps-picker").hidden = false;
+  updateUseLinks();
 }
 
 // launchApp starts the picked app at its first screen; the server installs
@@ -105,6 +148,7 @@ async function launchApp() {
   const id = pick.value;
   const label = pick.selectedOptions[0] ? pick.selectedOptions[0].textContent.split(" · ")[0] : id;
   $("app").value = id;
+  updateUseLinks();
   $("btn-launch").disabled = true;
   status.textContent = `launching ${label}…`;
   const res = await fetch(`/api/devices/${encodeURIComponent(udid)}/app/launch`, {
@@ -120,6 +164,7 @@ async function launchApp() {
 
 async function refreshLibrary() {
   const { devices } = await (await fetch("/api/devices")).json();
+  knownDevices = devices;
   const groups = $("library-groups");
   groups.innerHTML = "";
   const running = devices.filter((d) => d.booted);
@@ -388,7 +433,9 @@ let asserting = false;
 
 $("btn-record").addEventListener("click", toggleRecord);
 $("btn-launch").addEventListener("click", launchApp);
-$("app-pick").addEventListener("change", () => { $("app").value = $("app-pick").value; });
+$("app-pick").addEventListener("change", () => { $("app").value = $("app-pick").value; updateUseLinks(); });
+$("app").addEventListener("input", updateUseLinks);
+for (const b of document.querySelectorAll("button.copy")) b.addEventListener("click", () => copyField(b));
 $("btn-assert").addEventListener("click", () => setAsserting(!asserting));
 
 function setAsserting(on) {
@@ -521,6 +568,7 @@ function flashResolved(step) {
 function showFlow(yaml, steps) {
   $("panel").hidden = false;
   $("node-title").textContent = `Captured flow — ${steps.length} steps`;
+  $("node-info").classList.remove("hint");
   $("node-info").textContent = yaml;
   let link = $("panel").querySelector("a.download");
   if (!link) {
@@ -564,8 +612,23 @@ async function toggleInspector() {
   $("panel").hidden = !inspecting;
   overlay.hidden = !inspecting;
   if (inspecting) await refreshTree();
-  else overlay.innerHTML = "";
+  else {
+    overlay.innerHTML = "";
+    panelIdle();
+  }
 }
+
+// panelIdle is what the right panel says when nothing is being inspected.
+// On a wide screen the panel stays open, so it explains how to fill it.
+function panelIdle() {
+  $("node-title").textContent = "Inspector";
+  $("node-info").classList.add("hint");
+  $("node-info").textContent =
+    "Press Inspect, then hover an element on the device to see its id, role and text: " +
+    "the selectors a test or Claude uses.\n\nPress Record to capture what you do as a " +
+    "Maestro flow; the steps appear here when you stop.";
+}
+panelIdle();
 
 async function refreshTree() {
   status.textContent = "fetching tree…";
@@ -614,6 +677,7 @@ function renderOverlay(nodes) {
 
 function showNode(node) {
   $("node-title").textContent = node.identifier || node.label || node.type;
+  $("node-info").classList.remove("hint");
   $("node-info").textContent = JSON.stringify(node, null, 2);
 }
 
