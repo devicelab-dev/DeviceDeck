@@ -457,19 +457,37 @@ main { flex: 1; display: flex; min-height: 0; }
 }
 .frame-promo {
   position: absolute;
-  left: 20px;
-  right: 20px;
-  bottom: 36px;
+  left: 16px;
+  right: 16px;
+  bottom: 28px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  padding: 16px 14px 14px;
+  border: 1px solid var(--edge);
+  border-radius: 14px;
+  background: rgba(26, 30, 38, 0.75);
   text-align: center;
   font-size: 12px;
   line-height: 1.45;
   color: var(--dim);
   text-decoration: none;
 }
+.frame-promo:hover { border-color: var(--accent); }
+.promo-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.promo-title { color: var(--text); font-size: 15px; font-weight: 600; }
+.promo-line { min-height: 3em; transition: opacity 0.35s ease; }
+.promo-line.fading { opacity: 0; }
 .frame-promo strong { color: var(--accent); font-size: 13px; }
 .frame-promo:hover strong { text-decoration: underline; }
 #video.connecting { visibility: hidden; }

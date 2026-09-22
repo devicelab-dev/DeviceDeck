@@ -79,6 +79,7 @@ function openDeviceView(next, name, shape) {
     (shape && shape.tablet ? " tablet" : "") + (shape && shape.android ? " android" : "");
   $("loading-text").textContent = `Connecting to ${name || next}…`;
   $("stage-loading").hidden = false;
+  rotatePromo();
   canvas.classList.add("connecting");
   if (new URLSearchParams(location.search).get("device") !== next) {
     history.pushState({}, "", `${location.pathname}?device=${encodeURIComponent(next)}`);
@@ -122,6 +123,36 @@ async function warmEngine(device) {
     revealWhenReady();
   };
   poll("POST");
+}
+
+// PROMO_LINES are devicelab.dev's own points, shown one at a time on the
+// loading frame while a device boots and its engine starts.
+const PROMO_LINES = [
+  "The flows you capture here run unchanged on real iPhones and Android phones you own.",
+  "Run the tests you already have on devices you own.",
+  "Peer to peer: your app and your data never leave your network.",
+  "$99 per device. That's the whole pricing page.",
+  "Already paying a cloud lab? Stop renting. Start owning.",
+];
+const PROMO_EVERY_MS = 4500;
+let promoTimer = null;
+
+// rotatePromo cycles the loading frame's DeviceLab line while the frame is
+// up, and stops on its own once the device is ready.
+function rotatePromo() {
+  clearInterval(promoTimer);
+  let i = 0;
+  const line = $("promo-line");
+  line.textContent = PROMO_LINES[0];
+  promoTimer = setInterval(() => {
+    if ($("stage-loading").hidden) { clearInterval(promoTimer); return; }
+    line.classList.add("fading");
+    setTimeout(() => {
+      i = (i + 1) % PROMO_LINES.length;
+      line.textContent = PROMO_LINES[i];
+      line.classList.remove("fading");
+    }, 350);
+  }, PROMO_EVERY_MS);
 }
 
 // showStage puts a line on the loading screen while it is up.
