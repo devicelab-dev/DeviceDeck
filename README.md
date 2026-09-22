@@ -20,35 +20,28 @@ Playwright and Cypress tests. No Appium, no new tool.**
 ![Single binary](https://img.shields.io/badge/ships-single_binary-brightgreen)
 [![by DeviceLab.dev](https://img.shields.io/badge/by-DeviceLab.dev-4f8cff)](https://devicelab.dev)
 
-[Two commands](#two-commands-two-superpowers) · [Quick start](#quick-start) · [Using it](#using-it) · [Docs](docs/) · [Known limits](#known-limits)
+[What it does](#what-it-does) · [Quick start](#quick-start) · [Using it](#using-it) · [Docs](docs/) · [Known limits](#known-limits)
 
 </div>
 
 ---
 
-## Two commands, two superpowers
+## What it does
 
-**1. Share your simulators — for manual testing.**
+**Share your simulators.** Run `devicedeck` on a Mac and everyone on your network can drive its
+simulators and emulators from their own browser — tap, type, and **Inspect** the native UI — with
+no Xcode, no Android Studio, and no device of their own.
 
-```bash
-devicedeck        # serves on 0.0.0.0:8787, so teammates can open it too
-```
+**Automate them with the tools you already use.** The app's native UI is served as an ordinary web
+page, so Playwright, Cypress and Puppeteer tests drive it by selector, and your AI agent drives it
+through [Playwright MCP](https://github.com/microsoft/playwright-mcp) — the same browser tool it
+uses for the web. Nothing mobile-specific to learn.
 
-Anyone on your team then drives any simulator or emulator **from their own browser, on any
-machine** — tap, type, **Inspect** the native tree — with no Xcode, no Android Studio, and no
-local device. Your Macs' sims, shared like a web app.
+**Record a flow.** Use the app by hand in the console and DeviceDeck writes it down as a
+[Maestro](https://maestro.dev) flow, with durable selectors, ready to review and replay — unchanged
+on real devices at [devicelab.dev](https://devicelab.dev).
 
-**2. Automate it — with the tools you already use.**
-
-```bash
-claude mcp add playwright npx @playwright/mcp@latest    # the browser tool your agent already has
-claude plugin marketplace add devicelab-dev/DeviceDeck  # DeviceDeck's skills (+ optional MCP)
-```
-
-Your AI agent now drives your mobile app through **Playwright MCP** — the same browser tool it uses
-for the web — and your Playwright/Cypress **tests** drive it by selector too. Nothing mobile-specific.
-
-One binary behind both — nothing to fork, no Xcode project to open.
+One binary behind all three — nothing to fork, no Xcode project to open.
 
 ## How it works
 
@@ -62,35 +55,37 @@ await page.getByRole('button', { name: 'Sign In' }).click();
 await expect(page.getByText('Hello, devicelab!')).toBeVisible();
 ```
 
-A single Go binary streams the Simulator or emulator to the browser and serves that DOM — the same
+A single Go binary streams the simulator or emulator to the browser and serves that DOM — the same
 page and selectors drive iOS and Android alike.
 
 ## Status
 
-Working, not yet released. Both platforms drive end to end: **Playwright, Cypress and Puppeteer each
-log into and check out of TestHive through the same DOM**, and the console drives any device by hand.
-It is an ordinary web page, so any browser driver works with no mobile-specific code. Typing is
-checked against the device's own read-back, so a keystroke that does not land is retyped rather than
-lost — on iOS *and* on Android's masked password fields.
+Early release. Both platforms drive end to end: **Playwright, Cypress and Puppeteer each log into and
+check out of TestHive through the same DOM**, and the console drives any device by hand. It is an
+ordinary web page, so any browser driver works with no mobile-specific code. Typing is checked
+against the device's own read-back, so a keystroke that does not land is retyped rather than lost —
+on iOS *and* on Android's masked password fields.
 
-What that does not cover: it has only ever run on the machine it was built on. Expect first-contact
-problems. See [**Known limits**](#known-limits).
+It has run on a handful of Macs so far, so expect some first-contact problems — please
+[open an issue](https://github.com/devicelab-dev/DeviceDeck/issues) with the log folder it prints.
+See [**Known limits**](#known-limits).
 
 ## Requirements
 
-- **macOS to *host*** — iOS Simulators, `simctl`/CoreSimulator, and the Swift sidecars are
-  macOS-only, so the machine that runs the devices is a Mac. **Clients are any OS:** the surface is a
-  web page, so people, tests, and agents drive it from Linux, Windows, or another Mac over the network.
-- **Xcode** with at least one iOS Simulator runtime — **iOS 26.2 or newer is strongly recommended**;
-  on 18.6 the simulator's render server crashes under repeated capture.
-- **For Android:** the Android SDK with `adb` and `emulator` on `PATH`.
+- **A Mac to host.** iOS Simulators, `simctl`/CoreSimulator and the Swift sidecars are
+  macOS-only, so the machine that runs the devices is a Mac. **Clients can be any OS:** the surface
+  is a web page, so people, tests and agents drive it from Linux, Windows or another Mac.
+- **Xcode** with at least one iOS Simulator runtime — **iOS 26.2 or newer is strongly
+  recommended**; on 18.6 the simulator's render server crashes under repeated capture.
+- **For Android:** the Android SDK, with `adb` and `emulator` on `PATH`, and at least one virtual
+  device.
+
+`devicedeck doctor` checks all of this and says how to fix anything missing.
 
 ## Quick start
 
-Install DeviceDeck whichever way you prefer, then run `devicedeck`.
-
-**Install script** — fetches a release into `~/.devicedeck` and adds its `bin` folder to your `PATH`.
-No sudo, and nothing else to install: the Android driver ships inside the binary.
+**Install** with the script — it puts DeviceDeck in `~/.devicedeck` and adds its `bin` folder to
+your `PATH`. No sudo, and nothing else to install: the Android driver ships inside the binary.
 
 ```bash
 curl -fsSL https://open.devicelab.dev/install/devicedeck | bash
@@ -98,110 +93,150 @@ curl -fsSL https://open.devicelab.dev/install/devicedeck | bash
 curl -fsSL https://open.devicelab.dev/install/devicedeck | bash -s -- --version 0.1.0
 ```
 
-**Release archive** — download it from [Releases](https://github.com/devicelab-dev/DeviceDeck/releases), extract, and run in place (the two sidecars sit beside the binary in `bin/`):
+Or download an archive from [Releases](https://github.com/devicelab-dev/DeviceDeck/releases) and run
+it in place (the two sidecars sit beside the binary in `bin/`):
 
 ```bash
 tar xzf devicedeck-<version>-darwin-arm64.tar.gz
 ./devicedeck-<version>-darwin-arm64/bin/devicedeck
 ```
 
-**From source** — needs the Xcode toolchain for the Swift sidecars:
+Or build from source (needs the Xcode toolchain for the Swift sidecars): `make sidecar && make build`.
+
+**Run it:**
 
 ```bash
-make sidecar
-make build
+devicedeck                                                    # the console: http://127.0.0.1:8787
+devicedeck --app build/MyApp.app --app build/app-release.apk  # …with your app builds
 ```
 
-Then start the server and open the console:
+It prints the console link (and the network address teammates use), your registered apps, how to
+connect Claude Code, and any missing tools with how to fix them. Open the console, pick a device,
+and it boots, starts streaming, and launches your app.
 
-```bash
-devicedeck              # same as `devicedeck serve` → http://127.0.0.1:8787
-```
+With `--app`, a build is installed the first time it is launched on a device — from the console, a
+test or Claude. Pass `.app` simulator builds and `.apk` files, or a folder of them.
 
-Point it at your app builds and it installs them for you, the first time each app is launched on a
-device — from the console, a test, or Claude:
-
-```bash
-devicedeck --app build/MyApp.app --app build/app-release.apk   # iOS simulator build + Android APK
-```
-
-It prints the console link, each booted device's link, the registered apps, the Claude Code setup,
-and any missing tools with how to fix them. `devicedeck doctor` checks the tools on their own: Xcode, the iOS
-runtime, adb, an Android emulator, Node.js, Claude Code, and maestro-runner.
-
-Pick a device in the console and it boots and starts streaming.
-
-Everything DeviceDeck writes lives in `~/.devicedeck` (set `DEVICEDECK_HOME` to move it): the
-binaries, the Android driver it installs onto emulators, and the iOS runner it builds on first use.
-To uninstall, delete that folder and the `# DeviceDeck` PATH line from your shell profile.
+Everything DeviceDeck writes lives in `~/.devicedeck` (set `DEVICEDECK_HOME` to move it). To
+uninstall, delete that folder and the `# DeviceDeck` line from your shell profile.
 
 ## Using it
 
 ### With your tests
 
-Point Playwright, Cypress, or Puppeteer at `/device/{udid}?app={bundleId}` — accessibility ids are
-`data-testid`, roles and labels are ARIA, so you drive it with ordinary selectors (a single worker;
-one driver per device). [`examples/`](examples/) has runnable login + checkout projects for all
-three. **Guide:** [docs/testing.md](docs/testing.md).
+Point Playwright, Cypress or Puppeteer at `/device/{udid}?app={bundleId}` — accessibility ids are
+`data-testid`, roles and labels are ARIA, so you drive it with ordinary selectors.
+[`examples/`](examples/) has runnable login and checkout projects for all three. **Guide:**
+[docs/testing.md](docs/testing.md).
 
-### With an agent
+**One device, one worker.** A device takes one driver at a time: two clients tapping at once would
+interleave into nonsense, so a second one is refused and told who holds the device. Test runners go
+parallel by default, so set one worker per device (`workers: 1` in Playwright) — and to run in
+parallel, boot more devices and give each worker its own. In the console, tabs hand the device to
+the tab you are using, and **Take over** disconnects whoever holds it.
 
-An AI agent drives the device the same way it drives the web: it **snapshots the page**, reasons over
-the tree, and acts by ref — no bespoke tool, no coordinates, no vision model. Here one uses stock
-[Playwright MCP](https://github.com/microsoft/playwright-mcp) to pick the right **Add** among five
-identical ones and add *Maestro* to the cart:
+### With an AI agent
+
+Add the browser tool your agent already has, then DeviceDeck's skills:
+
+```bash
+claude mcp add playwright npx @playwright/mcp@latest
+claude plugin marketplace add devicelab-dev/DeviceDeck
+```
+
+The agent drives the device the way it drives the web: it **snapshots the page**, reasons over the
+tree, and acts by ref — no bespoke tool, no coordinates, no vision model. Here it picks the right
+**Add** among five identical ones and adds *Maestro* to the cart:
 
 <div align="center">
 <img src="docs/demo-agent.gif" width="820" alt="An AI agent using Playwright MCP: browser_snapshot returns the product screen as an accessibility tree with five identical Add buttons, a reasoning step picks the one after Maestro (add-to-cart-2, ref e24), browser_click adds it, and opening the cart confirms Maestro was added — not Appium.">
 </div>
 
 That disambiguation is an [included spec](examples/playwright/tests/platform/mcp-agent.spec.ts) that
-passes end to end. Setup is the two commands from [Two commands](#two-commands-two-superpowers), and
-the plugin's skills teach the agent the device layer. **Guide:** [docs/agents.md](docs/agents.md).
+passes end to end. Prefer device tools over MCP? `claude mcp add devicedeck -- devicedeck mcp`.
+**Guide:** [docs/agents.md](docs/agents.md).
 
 ### By hand — the console
 
-The console lists every simulator and emulator, running or not. Click one to boot and stream it;
-drive it with your mouse and keyboard, and **Inspect** overlays the native tree. Share it across a
-team with `--addr` → [docs/device-farm.md](docs/device-farm.md).
+The console lists every simulator and emulator on the Mac, and every build you passed with `--app`.
+Pick a device to boot and stream it, or **Launch** an app straight onto a running one. Drive it with
+your mouse and keyboard; **Inspect** overlays the native tree and shows each element's id, role and
+text — the selectors a test or an agent will use. **End session** shuts the device down when you are
+done.
+
+Teammates open the network address `devicedeck` prints; there is nothing to configure. More on
+sharing a Mac's devices with a team: [docs/device-farm.md](docs/device-farm.md).
 
 The mirror has a few quirks a web test wouldn't expect — only the current screen is mirrored, fields
 are real `<input>`s, typing is verified. See [docs/behaviors.md](docs/behaviors.md).
 
+### Record a flow
+
+Press **Record**, use the app, and press **Stop**. DeviceDeck writes what you did as a Maestro flow:
+each tap is addressed by the most durable selector on screen (an id first, then text), graded for
+how likely it is to survive the next build. Right-click an element while recording to **assert it is
+visible** or **wait until it is visible**.
+
+```yaml
+# devicedeck: tapOn selector=id confidence=high
+- tapOn:
+    id: "login-button"
+    label: "login-button"
+# devicedeck: extendedWaitUntil visible selector=id confidence=high
+- extendedWaitUntil:
+    visible:
+      id: "products-screen"
+    timeout: 10000
+```
+
+Passwords are never written into the flow: a password field becomes `${PASSWORD_INPUT}`, supplied
+when you replay. Screens with no durable ids are flagged at the top of the flow, with how to add
+them. Copy or save the flow, then replay it with
+[maestro-runner](https://github.com/devicelab-dev/maestro-runner):
+
+```bash
+maestro-runner --driver devicelab test flow.yaml -e PASSWORD_INPUT=…
+```
+
+The same file runs unchanged on real devices at [devicelab.dev](https://devicelab.dev).
+[`examples/captured/`](examples/captured/) has recorded flows.
+
 ## Scope
 
-Simulators and emulators only — no real hardware, no camera, biometrics, or carrier. Within that,
+Simulators and emulators only — no real hardware, no camera, biometrics or carrier. Within that,
 the ceiling is physics, not an artificial limit.
 
 ## Known limits
 
-- **Android video is ~18 fps and much heavier than iOS.** The emulator's gRPC screenshot stream
-  offers no video codec, so every frame is a full PNG rather than an H.264 delta. Emulators
-  DeviceDeck boots run headless, because macOS throttles an occluded window and the emulator's window
-  is occluded exactly when you are watching the browser.
-- **A freshly launched app swallows touches for about a second** after its screen is already in the
-  accessibility tree, reporting itself hittable and stable throughout — so there is nothing to wait on
-  but the effect. `POST /app/launch` waits this window out for you: it returns when the app is actually
-  taking input, so a test that launches through it can act at once. A raw terminate+launch outside the
-  endpoint cannot, and must prove the app is taking input first.
-- **Two-finger gestures are dropped on Android.** They work on iOS; there is no mapping for them in
-  the Android driver, and they are discarded rather than guessed at.
-- **A device serves one driver at a time**, and a second claim is refused rather than shared. That
-  includes the console: a browser tab left open on a device will refuse your test run, and the refused
-  page says so on screen. A driver that dies without closing its socket is detected by ping within
-  about half a minute, and the device is released.
-- **A raw relaunch does not reset app state** — a native app stays logged in across terminate+launch,
-  the surprise that makes web-style tests flaky against it. `POST /app/launch` wipes the app's data
-  first *by default*, starting at a first-run screen; pass `?reset=no` to resume where it was left.
 - **The server is unauthenticated.** It listens on all interfaces (`0.0.0.0:8787`) by default, so
   anyone on your network can view and drive your devices. That suits a trusted office or home
-  network; on shared Wi-Fi run `devicedeck --addr 127.0.0.1:8787` to keep it to this Mac.
-  There is no access control yet — do not hang it on the open internet as-is.
-- **Every run is logged.** Each `serve` or `mcp` run writes a folder under `~/.devicedeck/logs`
-  (the path is printed at startup): `devicedeck.log` with every request, device event and tool
-  call, `runner.log` from the device driver, one log per sidecar and device, and `crash.log` if
-  the process panics. The terminal shows the startup guide plus warnings and errors only;
-  `DEVICEDECK_LOG=info` or `DEVICEDECK_LOG=debug` shows more there too. The last 20 runs are kept.
+  network; on shared Wi-Fi run `devicedeck --addr 127.0.0.1:8787` to keep it to this Mac. There is
+  no access control yet — do not put it on the open internet as-is.
+- **A driver that dies without closing its connection holds its device for up to half a minute**,
+  until a missed ping releases it — see [one device, one worker](#with-your-tests).
+- **Android video is ~18 fps and heavier than iOS.** The emulator's gRPC screenshot stream offers no
+  video codec, so every frame is a full PNG rather than an H.264 delta. Emulators DeviceDeck boots
+  run headless, because macOS throttles an occluded window — and the emulator's window is occluded
+  exactly when you are watching the browser.
+- **A freshly launched app swallows touches for about a second** after its screen is already in the
+  accessibility tree. `POST /app/launch` waits this window out, so a test that launches through it
+  can act at once; a raw terminate-and-launch outside it cannot.
+- **A raw relaunch does not reset app state** — a native app stays logged in across
+  terminate-and-launch. `POST /app/launch` wipes the app's data first *by default*, starting at a
+  first-run screen; pass `?reset=no` to resume where it was left.
+- **Two-finger gestures are dropped on Android.** They work on iOS; the Android driver has no mapping
+  for them, so they are discarded rather than guessed at.
+
+## Troubleshooting
+
+`devicedeck doctor` checks the tools DeviceDeck needs: Xcode, the iOS runtime, adb, an Android
+emulator, Node.js, Claude Code and maestro-runner.
+
+Every run writes a folder under `~/.devicedeck/logs` (the path is printed at startup):
+`devicedeck.log` with every request, device event and tool call, `runner.log` from the device
+driver, one log per sidecar and device, and `crash.log` if the process panics. The terminal shows
+only what needs attention; `DEVICEDECK_LOG=info` or `debug` shows more there too. The last 20 runs
+are kept — attach the folder to an issue.
 
 ## Licence
 
