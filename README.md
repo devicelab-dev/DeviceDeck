@@ -13,12 +13,26 @@ Playwright and Cypress tests. No Appium, no new tool.**
 
 <sub>Stock Playwright driving a real iOS Simulator from another machine — the same DOM an AI agent drives too.</sub>
 
-![License](https://img.shields.io/badge/license-Apache_2.0-blue.svg)
-![Platform](https://img.shields.io/badge/host-macOS-lightgrey?logo=apple)
-![iOS + Android](https://img.shields.io/badge/devices-iOS_%2B_Android-success)
-![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
-![Single binary](https://img.shields.io/badge/ships-single_binary-brightgreen)
-[![by DeviceLab.dev](https://img.shields.io/badge/by-DeviceLab.dev-4f8cff)](https://devicelab.dev)
+<p>
+<a href="docs/testing.md"><img alt="Playwright" src="https://img.shields.io/badge/Playwright-2EAD33"></a>
+<a href="examples/cypress"><img alt="Cypress" src="https://img.shields.io/badge/Cypress-17202C?logo=cypress&logoColor=white"></a>
+<a href="examples/puppeteer"><img alt="Puppeteer" src="https://img.shields.io/badge/Puppeteer-40B5A4?logo=puppeteer&logoColor=white"></a>
+<a href="docs/agents.md"><img alt="Playwright MCP" src="https://img.shields.io/badge/Playwright_MCP-2EAD33?logo=modelcontextprotocol&logoColor=white"></a>
+<a href="docs/agents.md"><img alt="Claude Code" src="https://img.shields.io/badge/Claude_Code-D97757?logo=claude&logoColor=white"></a>
+<a href="#record-a-flow"><img alt="Maestro flows" src="https://img.shields.io/badge/Maestro_flows-4f8cff"></a>
+<a href="https://github.com/devicelab-dev/maestro-runner"><img alt="maestro-runner" src="https://img.shields.io/badge/maestro--runner-4f8cff"></a>
+</p>
+<p>
+<img alt="iOS Simulator" src="https://img.shields.io/badge/iOS_Simulator-000000?logo=apple&logoColor=white">
+<img alt="Android Emulator" src="https://img.shields.io/badge/Android_Emulator-3DDC84?logo=android&logoColor=white">
+<img alt="macOS host" src="https://img.shields.io/badge/host-macOS-lightgrey?logo=apple">
+<img alt="Single binary" src="https://img.shields.io/badge/ships-single_binary-brightgreen">
+</p>
+<p>
+<a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache_2.0-blue"></a>
+<img alt="Go 1.26" src="https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white">
+<a href="https://devicelab.dev"><img alt="by DeviceLab.dev" src="https://img.shields.io/badge/by-DeviceLab.dev-4f8cff"></a>
+</p>
 
 [What it does](#what-it-does) · [Quick start](#quick-start) · [Using it](#using-it) · [Docs](docs/) · [Known limits](#known-limits)
 
