@@ -146,7 +146,7 @@ func TestCloseDeactivates(t *testing.T) {
 func TestLevel(t *testing.T) {
 	for in, want := range map[string]slog.Level{
 		"debug": slog.LevelDebug, "INFO": slog.LevelInfo, "warn": slog.LevelWarn,
-		"error": slog.LevelError, "": slog.LevelInfo, "loud": slog.LevelInfo,
+		"error": slog.LevelError, "": slog.LevelWarn, "loud": slog.LevelWarn,
 	} {
 		if got := Level(in); got != want {
 			t.Errorf("Level(%q) = %v, want %v", in, got, want)

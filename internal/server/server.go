@@ -655,7 +655,14 @@ func writeJSON(w http.ResponseWriter, payload any) {
 }
 
 func httpError(w http.ResponseWriter, status int, err error) {
-	slog.Warn("request failed", "status", status, "err", err)
+	// A server-side failure is worth a warning; a bad request (a stale tab
+	// on a placeholder address, a mistyped id) is the caller's and goes to
+	// the log file only.
+	level := slog.LevelDebug
+	if status >= http.StatusInternalServerError {
+		level = slog.LevelWarn
+	}
+	slog.Log(context.Background(), level, "request failed", "status", status, "err", err)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": err.Error()})

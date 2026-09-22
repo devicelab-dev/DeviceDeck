@@ -200,8 +200,8 @@ the ceiling is physics, not an artificial limit.
 - **Every run is logged.** Each `serve` or `mcp` run writes a folder under `~/.devicedeck/logs`
   (the path is printed at startup): `devicedeck.log` with every request, device event and tool
   call, `runner.log` from the device driver, one log per sidecar and device, and `crash.log` if
-  the process panics. The terminal shows info level; `DEVICEDECK_LOG=debug` shows everything
-  there too. The last 20 runs are kept.
+  the process panics. The terminal shows the startup guide plus warnings and errors only;
+  `DEVICEDECK_LOG=info` or `DEVICEDECK_LOG=debug` shows more there too. The last 20 runs are kept.
 
 ## Licence
 

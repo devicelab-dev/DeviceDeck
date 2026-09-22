@@ -22,8 +22,11 @@ func captureLogs(t *testing.T) *bytes.Buffer {
 
 func TestLogRequestsLevelsAndFields(t *testing.T) {
 	h := logRequests(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/tree") && r.URL.Query().Get("fail") != "" {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/tree") && r.URL.Query().Get("fail") != "":
 			w.WriteHeader(http.StatusInternalServerError)
+		case strings.HasSuffix(r.URL.Path, "/missing"):
+			w.WriteHeader(http.StatusNotFound)
 		}
 		_, _ = w.Write([]byte("ok"))
 	}))
@@ -35,6 +38,7 @@ func TestLogRequestsLevelsAndFields(t *testing.T) {
 		{"POST", "/api/devices/AAA/boot", "level=INFO"},
 		{"POST", "/api/devices/AAA/capture/stop", "level=INFO"},
 		{"GET", "/api/devices/AAA/tree?fail=1", "level=WARN"},
+		{"GET", "/api/devices/AAA/missing", "level=DEBUG"},
 	} {
 		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
 			buf := captureLogs(t)
@@ -98,7 +102,10 @@ func TestStatusRecorderWithoutOptionalInterfaces(t *testing.T) {
 func TestHTTPErrorIsLogged(t *testing.T) {
 	buf := captureLogs(t)
 	httpError(httptest.NewRecorder(), http.StatusNotFound, errors.New("no such device"))
-	if !strings.Contains(buf.String(), "request failed") || !strings.Contains(buf.String(), "status=404") {
-		t.Errorf("log = %q", buf.String())
+	httpError(httptest.NewRecorder(), http.StatusBadGateway, errors.New("engine down"))
+	log := buf.String()
+	if !strings.Contains(log, "level=DEBUG msg=\"request failed\" status=404") ||
+		!strings.Contains(log, "level=WARN msg=\"request failed\" status=502") {
+		t.Errorf("a 4xx must be debug and a 5xx a warning:\n%s", log)
 	}
 }

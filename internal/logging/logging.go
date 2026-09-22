@@ -34,7 +34,9 @@ import (
 const Keep = 20
 
 // EnvLevel sets the terminal's level ("debug", "info", "warn", "error").
-// The file always records debug.
+// Unset, the terminal shows warnings and errors only: the startup guide is
+// printed directly, and everything else is in the run's files, which
+// always record debug.
 const EnvLevel = "DEVICEDECK_LOG"
 
 // Run is one process's log folder. Close it on exit to flush and release the
@@ -103,11 +105,11 @@ func (r *Run) captureCrashes() {
 // Path is the location of a named file inside the run folder.
 func (r *Run) Path(name string) string { return filepath.Join(r.Dir, name) }
 
-// Level parses a terminal level name, defaulting to info for anything else.
+// Level parses a terminal level name, defaulting to warn for anything else.
 func Level(name string) slog.Level {
 	var l slog.Level
 	if err := l.UnmarshalText([]byte(strings.ToUpper(name))); err != nil {
-		return slog.LevelInfo
+		return slog.LevelWarn
 	}
 	return l
 }

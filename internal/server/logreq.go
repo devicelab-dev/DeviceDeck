@@ -34,8 +34,11 @@ func logRequests(next http.Handler) http.Handler {
 
 // requestLevel picks how loudly a finished request is logged.
 func requestLevel(r *http.Request, status int) slog.Level {
-	if status >= http.StatusBadRequest {
-		return slog.LevelWarn
+	switch {
+	case status >= http.StatusInternalServerError:
+		return slog.LevelWarn // ours to look at
+	case status >= http.StatusBadRequest:
+		return slog.LevelDebug // the caller's mistake: the log file has it
 	}
 	for _, suffix := range lifecycleSuffixes {
 		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, suffix) {
