@@ -1,9 +1,12 @@
 package sim
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -46,6 +49,18 @@ func TestBooted(t *testing.T) {
 	}
 }
 
+func TestAllIncludesShutdown(t *testing.T) {
+	c := &Client{run: fixedRun([]byte(fixture), nil)}
+	all, err := c.All(context.Background())
+	if err != nil {
+		t.Fatalf("All: %v", err)
+	}
+	booted, _ := c.Booted(context.Background())
+	if len(all) <= len(booted) {
+		t.Fatalf("All returned %d devices, Booted %d; All must include shutdown ones", len(all), len(booted))
+	}
+}
+
 func TestBootedErrors(t *testing.T) {
 	tests := []struct {
 		name string
@@ -64,19 +79,76 @@ func TestBootedErrors(t *testing.T) {
 	}
 }
 
-func TestScreenshotPassesThrough(t *testing.T) {
+func TestScreenshot(t *testing.T) {
 	want := []byte{0x89, 'P', 'N', 'G'}
-	var gotArgs string
+	var gotArgs []string
 	c := &Client{run: func(_ context.Context, name string, args ...string) ([]byte, error) {
-		gotArgs = name + " " + strings.Join(args, " ")
-		return want, nil
+		gotArgs = append([]string{name}, args...)
+		return nil, os.WriteFile(args[len(args)-1], want, 0o600)
 	}}
 	out, err := c.Screenshot(context.Background(), "AAA")
-	if err != nil || string(out) != string(want) {
+	if err != nil || !bytes.Equal(out, want) {
 		t.Fatalf("Screenshot = %x, %v", out, err)
 	}
-	if gotArgs != "xcrun simctl io AAA screenshot --type=png -" {
+	if strings.Join(gotArgs[:6], " ") != "xcrun simctl io AAA screenshot --type=png" {
 		t.Errorf("command = %q", gotArgs)
+	}
+	if dest := gotArgs[6]; dest == "-" || !filepath.IsAbs(dest) {
+		t.Errorf("screenshot written to %q, want an absolute temp path", dest)
+	} else if _, err := os.Stat(filepath.Dir(dest)); !os.IsNotExist(err) {
+		t.Errorf("temp dir %s not cleaned up", filepath.Dir(dest))
+	}
+}
+
+func TestScreenshotErrors(t *testing.T) {
+	t.Run("simctl fails", func(t *testing.T) {
+		c := &Client{run: fixedRun(nil, errors.New("no device"))}
+		if _, err := c.Screenshot(context.Background(), "AAA"); err == nil {
+			t.Fatal("expected error")
+		}
+	})
+	t.Run("simctl writes nothing", func(t *testing.T) {
+		c := &Client{run: fixedRun(nil, nil)}
+		if _, err := c.Screenshot(context.Background(), "AAA"); err == nil {
+			t.Fatal("expected error for a missing file")
+		}
+	})
+	t.Run("no temp dir", func(t *testing.T) {
+		t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "missing"))
+		c := &Client{run: fixedRun(nil, nil)}
+		if _, err := c.Screenshot(context.Background(), "AAA"); err == nil ||
+			!strings.Contains(err.Error(), "temp dir") {
+			t.Fatalf("err = %v", err)
+		}
+	})
+}
+
+func TestBoot(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		bootErr, appErr error
+		wantErr         bool
+	}{
+		{"boots and opens the app", nil, nil, false},
+		{"missing Simulator app is not a failure", nil, errors.New("Unable to find application named 'Simulator'"), false},
+		{"boot failure is returned", errors.New("invalid device"), nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls []string
+			c := &Client{run: func(_ context.Context, name string, args ...string) ([]byte, error) {
+				calls = append(calls, name+" "+strings.Join(args, " "))
+				if name == "open" {
+					return nil, tc.appErr
+				}
+				return nil, tc.bootErr
+			}}
+			if err := c.Boot(context.Background(), "AAA"); (err != nil) != tc.wantErr {
+				t.Fatalf("Boot err = %v, wantErr %v", err, tc.wantErr)
+			}
+			if calls[0] != "xcrun simctl boot AAA" {
+				t.Errorf("first call = %q", calls[0])
+			}
+		})
 	}
 }
 

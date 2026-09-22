@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -46,15 +48,18 @@ func (c *Client) All(ctx context.Context) ([]Device, error) {
 	return c.list(ctx)
 }
 
-// Boot starts a stopped simulator and brings the Simulator app forward
-// so its screen actually renders (framebuffer capture needs a running
-// render server).
+// Boot starts a stopped simulator, then asks the Simulator app to open so a
+// person at the Mac can see it. The app is best-effort: Xcode 27 no longer
+// ships it, and the video sidecar captures the framebuffer headless (checked
+// on Xcode 27), so a missing app is logged, never a failed boot.
 func (c *Client) Boot(ctx context.Context, udid string) error {
 	if _, err := c.run(ctx, "xcrun", "simctl", "boot", udid); err != nil {
 		return err
 	}
-	_, err := c.run(ctx, "open", "-a", "Simulator")
-	return err
+	if _, err := c.run(ctx, "open", "-a", "Simulator"); err != nil {
+		slog.Debug("simulator app not opened; continuing headless", "udid", udid, "err", err)
+	}
+	return nil
 }
 
 // OpenURL opens a URL on the simulator — an https link in Safari, or a
@@ -140,10 +145,20 @@ func (c *Client) Booted(ctx context.Context) ([]Device, error) {
 	return booted, nil
 }
 
-// Screenshot captures a PNG of the device's screen. simctl only writes to
-// files or stdout; "-" selects stdout so no temp file is needed.
+// Screenshot captures a PNG of the device's screen through a temporary file.
+// Not stdout: Xcode 27's simctl takes "-" as a file name, which returned no
+// bytes and left a file called "-" in the server's working directory.
 func (c *Client) Screenshot(ctx context.Context, udid string) ([]byte, error) {
-	return c.run(ctx, "xcrun", "simctl", "io", udid, "screenshot", "--type=png", "-")
+	dir, err := os.MkdirTemp("", "devicedeck-shot-*")
+	if err != nil {
+		return nil, fmt.Errorf("screenshot temp dir: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	path := filepath.Join(dir, "screen.png")
+	if _, err := c.run(ctx, "xcrun", "simctl", "io", udid, "screenshot", "--type=png", path); err != nil {
+		return nil, err
+	}
+	return os.ReadFile(path)
 }
 
 func (c *Client) list(ctx context.Context) ([]Device, error) {

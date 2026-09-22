@@ -10,5 +10,6 @@ let package = Package(
         .executableTarget(name: "devicedeck-hid", dependencies: ["HIDProtocol", "SimCore"]),
         .executableTarget(name: "devicedeck-video", dependencies: ["SimCore"]),
         .testTarget(name: "HIDProtocolTests", dependencies: ["HIDProtocol"]),
+        .testTarget(name: "SimCoreTests", dependencies: ["SimCore"]),
     ]
 )

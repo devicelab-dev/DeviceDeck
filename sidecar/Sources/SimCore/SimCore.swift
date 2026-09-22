@@ -57,9 +57,25 @@ public enum DeveloperDir {
         return selected.isEmpty ? "/Applications/Xcode.app/Contents/Developer" : selected
     }
 
+    /// The SimulatorKit binary for a developer dir. Xcode 27 moved it from
+    /// Developer/Library/PrivateFrameworks to Contents/SharedFrameworks, so the
+    /// first candidate that exists wins; with neither present the legacy path
+    /// is returned so the dlopen error names a concrete file.
     public static func simulatorKitPath(_ developerDir: String) -> String {
-        (developerDir as NSString)
-            .appendingPathComponent("Library/PrivateFrameworks/SimulatorKit.framework/SimulatorKit")
+        let candidates = simulatorKitCandidates(developerDir)
+        return candidates.first { FileManager.default.fileExists(atPath: $0) } ?? candidates[0]
+    }
+
+    /// Where SimulatorKit lives relative to a developer dir, newest layout last:
+    /// Xcode 26 and earlier, then Xcode 27+.
+    public static func simulatorKitCandidates(_ developerDir: String) -> [String] {
+        let dev = developerDir as NSString
+        return [
+            dev.appendingPathComponent("Library/PrivateFrameworks/SimulatorKit.framework/SimulatorKit"),
+            ((dev.deletingLastPathComponent as NSString)
+                .appendingPathComponent("SharedFrameworks/SimulatorKit.framework/SimulatorKit") as NSString)
+                .standardizingPath,
+        ]
     }
 
     private static func runXcodeSelect() -> String {
