@@ -63,6 +63,24 @@ npx playwright test
 Using Gemini CLI, Codex, VS Code or Cursor? Only step 2 changes — see [Other agents](#other-agents).
 Prefer to use devices by hand? Open the console at `http://127.0.0.1:8787`.
 
+### Or install with npm
+
+In a Playwright project, add DeviceDeck as a dev dependency, so every machine and CI job runs the
+same version — no install script, nothing downloaded after `npm install`:
+
+```bash
+npm install --save-dev devicedeck
+npx devicedeck --app path/to/MyApp.app
+```
+
+Or try it without installing: `npx devicedeck --app path/to/MyApp.app`. For the Claude plugin, which
+starts `devicedeck mcp` itself, install it globally so it is on your `PATH`: `npm install -g
+devicedeck`. Playwright can also start it for you, in `playwright.config.ts`:
+
+```ts
+webServer: { command: 'npx devicedeck --app path/to/MyApp.app', url: 'http://127.0.0.1:8787', reuseExistingServer: true },
+```
+
 ## What it does
 
 **Share your simulators.** Run `devicedeck` on a Mac and everyone on your network can drive its
@@ -143,6 +161,10 @@ Press **Record**, use the app, press **Stop**: DeviceDeck writes it as a
 [devicelab.dev](https://devicelab.dev). **Guide:** [docs/flows.md](docs/flows.md).
 
 ## Install options
+
+With npm: `npm install --save-dev devicedeck` in a project, or `npm install -g devicedeck` — see
+[Or install with npm](#or-install-with-npm). The host is a Mac; installing it on Linux (a CI job that
+drives a remote Mac, say) is harmless.
 
 The install script puts DeviceDeck in `~/.devicedeck` and adds its `bin` folder to your `PATH` — no
 sudo, and nothing else to install: the Android driver ships inside the binary. Pin a version with

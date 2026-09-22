@@ -1,0 +1,41 @@
+{
+  "name": "devicedeck",
+  "version": "0.1.1",
+  "description": "Automate your iOS and Android app like a web app: the simulator or emulator is served as a web page, so Playwright tests and AI agents drive the native app by selector.",
+  "keywords": [
+    "playwright",
+    "ios",
+    "android",
+    "simulator",
+    "emulator",
+    "mobile-testing",
+    "e2e",
+    "mcp",
+    "maestro"
+  ],
+  "homepage": "https://github.com/devicelab-dev/DeviceDeck#readme",
+  "bugs": "https://github.com/devicelab-dev/DeviceDeck/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/devicelab-dev/DeviceDeck.git"
+  },
+  "license": "Apache-2.0",
+  "author": "DeviceLab (https://devicelab.dev)",
+  "type": "commonjs",
+  "main": "lib/resolve.js",
+  "bin": {
+    "devicedeck": "bin/devicedeck.js"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "optionalDependencies": {
+    "@devicelab/devicedeck-darwin-arm64": "0.1.1",
+    "@devicelab/devicedeck-darwin-x64": "0.1.1"
+  }
+}

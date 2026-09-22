@@ -1,4 +1,4 @@
-.PHONY: build test lint lint-js quality cover-gaps hooks vet clean sidecar sidecar-test release release-signed release-all stage sign package drivers
+.PHONY: build test lint lint-js quality cover-gaps hooks vet clean sidecar sidecar-test release release-signed release-all npm stage sign package drivers
 
 BINARY := devicedeck
 PKG := github.com/devicelab-dev/DeviceDeck
@@ -132,6 +132,14 @@ release-all:
 	$(MAKE) release VERSION=$(VERSION) ARCH=arm64
 	$(MAKE) release VERSION=$(VERSION) ARCH=x86_64
 	@echo; echo "ready to upload:"; ls -l $(RELEASE_DIR)
+
+# npm builds DeviceDeck's npm packages from a release in dist/<version>/:
+# devicedeck (the launcher people install) and one @devicelab/devicedeck-darwin-*
+# package per Mac architecture, carrying that release's signed binaries.
+# It does not publish; it prints the publish commands.
+#   make npm VERSION=0.1.1
+npm:
+	VERSION=$(VERSION) ./npm/build-npm.sh
 
 clean:
 	rm -f $(BINARY) coverage.out

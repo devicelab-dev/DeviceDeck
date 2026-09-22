@@ -52,3 +52,5 @@ AuthKey_*
 
 # JS lint / type-check tooling (package.json at the root)
 /node_modules/
+# npm platform packages, generated from dist/<version>/ by npm/build-npm.sh
+/npm/platforms/
