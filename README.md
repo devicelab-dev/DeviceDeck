@@ -11,7 +11,7 @@ iOS + Android · native UI mirrored as **real DOM** · your web tools and agents
 
 <img src="docs/demo-login.gif" width="820" alt="A stock Playwright test on the left runs line by line — page.goto() to a Simulator on a Mac at 10.0.4.21, getByRole().fill() for username and password, click Sign In, expect the logged-in screen — while a browser tab on the right shows the iOS Simulator reacting live and the runner goes green.">
 
-*Stock Playwright driving a real iOS Simulator from another machine — the same DOM an AI agent drives too.*
+Stock Playwright driving a real iOS Simulator from another machine — the same DOM an AI agent drives too.
 
 <p>
 <a href="docs/testing.md"><img alt="Playwright" src="https://img.shields.io/badge/Playwright-2EAD33"></a>
