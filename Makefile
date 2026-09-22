@@ -11,9 +11,10 @@ LDFLAGS := -X $(PKG)/internal/version.Version=$(VERSION) -X $(PKG)/internal/vers
 ARCH ?= $(shell uname -m)
 GOARCH := $(if $(filter x86_64,$(ARCH)),amd64,arm64)
 DIST := dist/$(BINARY)-$(VERSION)-darwin-$(ARCH)
-# RELEASE_DIR is the upload layout the install script downloads from:
-# devicedeck/<version>/<archive> with a <archive>.sha256 beside each.
-RELEASE_DIR := dist/$(BINARY)/$(VERSION)
+# RELEASE_DIR holds one release, ready to upload to devicedeck/<version>/ —
+# the path the install script downloads from: each archive with an
+# <archive>.sha256 beside it.
+RELEASE_DIR := dist/$(VERSION)
 SIDECAR_BIN = $(shell swift build --package-path sidecar -c release --arch $(ARCH) --show-bin-path)
 
 # -trimpath strips filesystem paths (module-cache and repo paths under
