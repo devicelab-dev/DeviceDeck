@@ -10,11 +10,13 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/devicelab-dev/DeviceDeck/internal/apps"
 	"github.com/devicelab-dev/DeviceDeck/internal/capture"
 	"github.com/devicelab-dev/DeviceDeck/internal/input"
+	"github.com/devicelab-dev/DeviceDeck/internal/platform"
 	"github.com/devicelab-dev/DeviceDeck/internal/runner"
 	"github.com/devicelab-dev/DeviceDeck/internal/sim"
 )
@@ -163,7 +165,24 @@ func (s *Server) Handler() http.Handler {
 	if s.console != nil {
 		mux.Handle("GET /", s.console)
 	}
-	return logRequests(mux)
+	return logRequests(rejectBadDeviceIDs(mux))
+}
+
+// rejectBadDeviceIDs answers an /api/devices/<id>/… request whose id no
+// device can have with 404, before any handler runs, so a stale tab left on
+// a placeholder address does not start (and fail) a device engine on
+// every poll.
+func rejectBadDeviceIDs(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if rest, ok := strings.CutPrefix(r.URL.Path, "/api/devices/"); ok {
+			id, _, _ := strings.Cut(rest, "/")
+			if id != "" && !platform.ValidID(id) {
+				httpError(w, http.StatusNotFound, fmt.Errorf("%q is not a device id; GET /api/devices lists them", id))
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {

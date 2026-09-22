@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -283,6 +284,15 @@ func TestDevicePageWithoutFirstTree(t *testing.T) {
 		body := getWith(t, "/device/AAA", first).Body.String()
 		if !strings.Contains(body, firstTreeSlot) {
 			t.Errorf("%s: empty slot expected in page: %s", name, body)
+		}
+	}
+}
+
+func TestDevicePageWithAPlaceholderIDGoesHome(t *testing.T) {
+	for _, path := range []string{"/device/%3Cudid%3E", "/device/%7Budid%7D"} {
+		rec := get(t, path)
+		if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/" {
+			t.Errorf("%s: %d to %q, want a redirect to /", path, rec.Code, rec.Header().Get("Location"))
 		}
 	}
 }

@@ -9,6 +9,8 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+
+	"github.com/devicelab-dev/DeviceDeck/internal/platform"
 )
 
 //go:embed static
@@ -52,6 +54,13 @@ func Handler(first FirstTree) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/", http.FileServer(http.FS(sub)))
 	mux.HandleFunc("GET /device/{udid}", func(w http.ResponseWriter, r *http.Request) {
+		// An id no device can have, typically the startup guide's
+		// "<udid>" placeholder clicked as is, goes to the console, where
+		// the real devices are listed.
+		if !platform.ValidID(r.PathValue("udid")) {
+			http.Redirect(w, r, "/", http.StatusFound)
+			return
+		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write(withFirstTree(r, page, first))
 	})

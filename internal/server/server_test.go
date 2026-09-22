@@ -947,3 +947,14 @@ func TestDeviceApps(t *testing.T) {
 		}
 	}
 }
+
+func TestPlaceholderDeviceIDIsRejected(t *testing.T) {
+	f := &fakeBackend{}
+	rec := do(t, newTestServer(f), "GET", "/api/devices/%3Cudid%3E/tree", "")
+	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "not a device id") {
+		t.Fatalf("placeholder id: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(t, newTestServer(f), "GET", "/api/devices", ""); rec.Code != http.StatusOK {
+		t.Errorf("the device list itself must still answer: %d", rec.Code)
+	}
+}
