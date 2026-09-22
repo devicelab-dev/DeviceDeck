@@ -71,7 +71,14 @@ SRC="$(find "$TMP" -maxdepth 1 -type d -name 'devicedeck-*' | head -1)"
 
 say "Installing to ${HOME_DIR}…"
 mkdir -p "$BIN_DIR"
-cp "$SRC"/bin/devicedeck "$SRC"/bin/devicedeck-hid "$SRC"/bin/devicedeck-video "$BIN_DIR"/
+# Replace each binary with a rename, never an in-place copy. Overwriting a
+# signed executable's bytes (while it runs, or after macOS has cached its
+# signature) gets every later launch of that file killed; a rename gives
+# the new binary a fresh file, and a running server keeps its old one.
+for f in devicedeck devicedeck-hid devicedeck-video; do
+  cp "$SRC/bin/$f" "$BIN_DIR/.$f.new"
+  mv -f "$BIN_DIR/.$f.new" "$BIN_DIR/$f"
+done
 cp "$SRC"/LICENSE "$SRC"/ATTRIBUTION.md "$SRC"/README.md "$HOME_DIR"/ 2>/dev/null || true
 # Signed + notarized builds pass Gatekeeper on their own, and curl does not set
 # the quarantine bit anyway — this strip is a harmless fallback for unsigned/dev
