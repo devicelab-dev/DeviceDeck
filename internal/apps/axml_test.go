@@ -11,9 +11,23 @@ import (
 	"unicode/utf16"
 )
 
-// axml builds a minimal compiled manifest: a string pool (UTF-8 or UTF-16)
-// and one start tag carrying the given attributes (name index, value index).
-func axml(strs []string, utf8 bool, attrs [][2]uint32) []byte {
+// attr is one attribute: a name index, a string value index (noString for
+// none), and a typed integer value.
+type attr struct {
+	name, raw uint32
+	typ       byte
+	data      uint32
+}
+
+const noString = 0xFFFFFFFF
+
+// tag is a start tag: its name index and attributes.
+type tag struct {
+	name  uint32
+	attrs []attr
+}
+
+func stringPoolChunk(strs []string, utf8 bool) []byte {
 	le := binary.LittleEndian
 	var body bytes.Buffer
 	offsets := make([]uint32, len(strs))
@@ -30,9 +44,6 @@ func axml(strs []string, utf8 bool, attrs [][2]uint32) []byte {
 			body.Write([]byte{0, 0})
 		}
 	}
-	for body.Len()%4 != 0 {
-		body.WriteByte(0)
-	}
 	pool := make([]byte, 28+4*len(strs))
 	le.PutUint16(pool[0:], chunkStringPool)
 	le.PutUint16(pool[2:], 28)
@@ -45,67 +56,84 @@ func axml(strs []string, utf8 bool, attrs [][2]uint32) []byte {
 	for i, o := range offsets {
 		le.PutUint32(pool[28+4*i:], o)
 	}
-	pool = append(pool, body.Bytes()...)
+	return append(pool, body.Bytes()...)
+}
 
-	tag := make([]byte, 36+attrSize*len(attrs))
-	le.PutUint16(tag[0:], chunkStartTag)
-	le.PutUint16(tag[2:], 16)
-	le.PutUint32(tag[4:], uint32(len(tag)))
-	le.PutUint16(tag[24:], 20) // attributes start 20 bytes after the header
-	le.PutUint16(tag[26:], attrSize)
-	le.PutUint16(tag[28:], uint16(len(attrs)))
-	for i, a := range attrs {
-		le.PutUint32(tag[36+attrSize*i+4:], a[0])
-		le.PutUint32(tag[36+attrSize*i+8:], a[1])
+func startTag(t tag) []byte {
+	le := binary.LittleEndian
+	c := make([]byte, 36+attrSize*len(t.attrs))
+	le.PutUint16(c[0:], chunkStartTag)
+	le.PutUint16(c[2:], 16)
+	le.PutUint32(c[4:], uint32(len(c)))
+	le.PutUint32(c[20:], t.name)
+	le.PutUint16(c[24:], 20) // attributes start 20 bytes after the header
+	le.PutUint16(c[26:], attrSize)
+	le.PutUint16(c[28:], uint16(len(t.attrs)))
+	for i, a := range t.attrs {
+		o := 36 + attrSize*i
+		le.PutUint32(c[o+4:], a.name)
+		le.PutUint32(c[o+8:], a.raw)
+		c[o+15] = a.typ
+		le.PutUint32(c[o+16:], a.data)
 	}
-	head := make([]byte, 8)
-	le.PutUint16(head, 0x0003)
-	le.PutUint16(head[2:], 8)
-	out := append(append(head, pool...), tag...)
-	le.PutUint32(out[4:], uint32(len(out)))
+	return c
+}
+
+// axml assembles a compiled manifest from a pool and tags.
+func axml(strs []string, utf8 bool, tags ...tag) []byte {
+	out := []byte{3, 0, 8, 0, 0, 0, 0, 0}
+	out = append(out, stringPoolChunk(strs, utf8)...)
+	for _, t := range tags {
+		out = append(out, startTag(t)...)
+	}
+	binary.LittleEndian.PutUint32(out[4:], uint32(len(out)))
 	return out
 }
 
-func TestManifestPackage(t *testing.T) {
-	strs := []string{"versionCode", "package", "com.example.app", "manifest"}
-	pkg := [2]uint32{1, 2}
-	for _, tc := range []struct {
-		name string
-		data []byte
-		want string
-	}{
-		{"UTF-8 pool", axml(strs, true, [][2]uint32{{0, 3}, pkg}), "com.example.app"},
-		{"UTF-16 pool", axml(strs, false, [][2]uint32{pkg}), "com.example.app"},
-		{"no package attribute", axml(strs, true, [][2]uint32{{0, 3}}), ""},
-		{"package value out of range", axml(strs, true, [][2]uint32{{1, 99}}), ""},
-		{"no start tag", axml(strs, true, nil)[:8+28+4*len(strs)], ""},
-		{"empty", nil, ""},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := manifestPackage(tc.data)
-			if got != tc.want || (tc.want == "") != (err != nil) {
-				t.Errorf("manifestPackage = %q, %v; want %q", got, err, tc.want)
-			}
-		})
+// testManifest is a manifest like TestHive's: string package and
+// versionName, integer versionCode and minSdkVersion.
+func testManifest(utf8 bool) []byte {
+	strs := []string{"manifest", "package", "versionName", "versionCode", "uses-sdk", "minSdkVersion", "com.example.app", "2.3.1"}
+	return axml(strs, utf8,
+		tag{0, []attr{{1, 6, 0, 0}, {2, 7, 0, 0}, {3, noString, typeIntDec, 42}}},
+		tag{4, []attr{{5, noString, typeIntDec, 24}}},
+	)
+}
+
+func TestParseManifest(t *testing.T) {
+	want := manifest{Package: "com.example.app", VersionName: "2.3.1", VersionCode: "42", MinSDK: "24"}
+	for _, utf8 := range []bool{true, false} {
+		if got, err := parseManifest(testManifest(utf8)); err != nil || got != want {
+			t.Errorf("utf8=%v: %+v, %v", utf8, got, err)
+		}
+	}
+	noPkg := axml([]string{"manifest", "versionName", "1"}, true, tag{0, []attr{{1, 2, 0, 0}}})
+	if _, err := parseManifest(noPkg); err == nil {
+		t.Error("a manifest without a package must be an error")
+	}
+	bad := testManifest(true)
+	binary.LittleEndian.PutUint32(bad[12:], 4) // the pool claims a size below its header
+	if _, err := parseManifest(bad); err == nil {
+		t.Error("a malformed chunk must stop the walk")
+	}
+	if _, err := parseManifest(nil); err == nil {
+		t.Error("empty data must be an error")
 	}
 }
 
-func TestMalformedChunks(t *testing.T) {
-	good := axml([]string{"package", "com.x"}, true, [][2]uint32{{0, 1}})
-	bad := append([]byte{}, good...)
-	binary.LittleEndian.PutUint32(bad[12:], 4) // pool chunk claims 4 bytes
-	if _, err := manifestPackage(bad); err == nil {
-		t.Error("a chunk smaller than its header must stop the walk")
+func TestTagEdges(t *testing.T) {
+	pool := []string{"manifest", "package", "com.x"}
+	if tagName(make([]byte, 10), pool) != "" || len(tagAttrs(make([]byte, 20), pool)) != 0 {
+		t.Error("a truncated tag has no name or attributes")
 	}
-	if _, err := packageAttr(make([]byte, 20), nil); err == nil {
-		t.Error("a truncated tag must be an error")
+	c := startTag(tag{0, []attr{{1, 2, 0, 0}}})
+	binary.LittleEndian.PutUint16(c[28:], 3) // claims three attributes, holds one
+	if got := tagAttrs(c, pool); len(got) != 1 || got["package"] != "com.x" {
+		t.Errorf("attributes past the chunk must be ignored: %v", got)
 	}
-	tag := make([]byte, 36)
-	binary.LittleEndian.PutUint16(tag[2:], 16)
-	binary.LittleEndian.PutUint16(tag[24:], 100) // attributes start past the end
-	binary.LittleEndian.PutUint16(tag[28:], 3)
-	if _, err := packageAttr(tag, []string{"package"}); err == nil {
-		t.Error("attributes past the chunk must be ignored")
+	untyped := startTag(tag{0, []attr{{1, noString, 0x03, 0}}}) // neither string nor integer
+	if got := tagAttrs(untyped, pool); len(got) != 0 {
+		t.Errorf("an unreadable value must be skipped: %v", got)
 	}
 	if stringPool(make([]byte, 10)) != nil {
 		t.Error("a truncated pool has no strings")
@@ -138,47 +166,52 @@ func TestPoolStringEdges(t *testing.T) {
 	}
 }
 
-func TestAPKPackageRealBuilds(t *testing.T) {
-	for file, want := range map[string]string{
-		"devicelab-android-driver.apk":      "dev.devicelab.driver.android",
-		"devicelab-android-driver-test.apk": "dev.devicelab.driver.android.test",
+// writeAPK zips a manifest and any extra (empty) files into an APK.
+func writeAPK(t *testing.T, manifest []byte, files ...string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "app-release.apk")
+	f, err := os.Create(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	if manifest != nil {
+		w, _ := zw.Create("AndroidManifest.xml")
+		_, _ = w.Write(manifest)
+	}
+	for _, name := range files {
+		_, _ = zw.Create(name)
+	}
+	_ = zw.Close()
+	_ = f.Close()
+	return p
+}
+
+func TestReadManifestErrors(t *testing.T) {
+	for name, path := range map[string]string{
+		"no manifest": writeAPK(t, nil, "classes.dex"),
+		"corrupt":     corruptAPK(t),
 	} {
-		got, err := apkPackage(filepath.Join("..", "home", "android", file))
-		if err != nil || got != want {
-			t.Errorf("%s = %q, %v; want %q", file, got, err, want)
+		zr, err := zip.OpenReader(path)
+		if err != nil {
+			t.Fatal(err)
 		}
+		if _, err := readManifest(&zr.Reader); err == nil {
+			t.Errorf("%s: expected an error", name)
+		}
+		_ = zr.Close()
 	}
 }
 
-func TestAPKPackageErrors(t *testing.T) {
-	dir := t.TempDir()
-	notZip := filepath.Join(dir, "broken.apk")
-	if err := os.WriteFile(notZip, []byte("not a zip"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	noManifest := filepath.Join(dir, "empty.apk")
-	f, _ := os.Create(noManifest)
-	zw := zip.NewWriter(f)
-	_, _ = zw.Create("classes.dex")
-	_ = zw.Close()
-	_ = f.Close()
-	// A manifest whose compressed bytes are damaged: the zip opens, the
-	// read fails its checksum.
-	corrupt := filepath.Join(dir, "corrupt.apk")
-	f, _ = os.Create(corrupt)
-	zw = zip.NewWriter(f)
-	w, _ := zw.Create("AndroidManifest.xml")
-	_, _ = w.Write(bytes.Repeat([]byte("manifest"), 64))
-	_ = zw.Close()
-	_ = f.Close()
-	raw, _ := os.ReadFile(corrupt)
+// corruptAPK damages the compressed manifest bytes, so the zip opens but
+// the read fails its checksum.
+func corruptAPK(t *testing.T) string {
+	t.Helper()
+	p := writeAPK(t, bytes.Repeat([]byte("manifest"), 64))
+	raw, _ := os.ReadFile(p)
 	raw[55] ^= 0xff // inside the compressed data, past the 49-byte local header
-	if err := os.WriteFile(corrupt, raw, 0o600); err != nil {
+	if err := os.WriteFile(p, raw, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for _, p := range []string{notZip, noManifest, corrupt} {
-		if _, err := apkPackage(p); err == nil {
-			t.Errorf("%s: expected an error", filepath.Base(p))
-		}
-	}
+	return p
 }

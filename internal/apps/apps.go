@@ -8,11 +8,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"time"
 
 	"github.com/devicelab-dev/DeviceDeck/internal/platform"
 )
@@ -23,46 +25,47 @@ const (
 	Android = "Android"
 )
 
-// App is one registered build.
+// App is one registered build and what was read from it.
 type App struct {
 	ID       string // bundle id or package name
-	Name     string // the file's base name, for people
+	Name     string // display name for people
 	Path     string
 	Platform string
+	Version  string   // "1.4.0 (42)": marketing version and build
+	MinOS    string   // "iOS 15.0" or "Android API 24"
+	Arch     []string // simulator slices, or the APK's native ABIs (none: pure Java/Kotlin)
+	Size     int64
+	Built    time.Time
+	Warnings []string // what may stop it running here, found up front
 }
 
-// plistRead returns one key from an Info.plist; replaced in tests.
-var plistRead = func(plist, key string) (string, error) {
-	out, err := exec.Command("plutil", "-extract", key, "raw", "-o", "-", plist).Output()
-	return strings.TrimSpace(string(out)), err
-}
+// hostArch is this Mac's CPU as simulator slices and Android ABIs name it.
+var hostArch = map[string][2]string{"arm64": {"arm64", "arm64-v8a"}, "amd64": {"x86_64", "x86_64"}}[runtime.GOARCH]
 
-// Identify reads a build's id. A .app is an iOS simulator build, a .apk an
+// Identify reads a build: a .app is an iOS simulator build, a .apk an
 // Android one; a device .ipa is refused with what to build instead.
 func Identify(path string) (App, error) {
-	if _, err := os.Stat(path); err != nil {
-		return App{}, fmt.Errorf("app %s: %w", path, err)
+	info, err := os.Stat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return App{}, fmt.Errorf("--app %s: no such file", path)
+	}
+	if err != nil {
+		return App{}, fmt.Errorf("--app %s: %w", path, err)
 	}
 	base := filepath.Base(path)
-	app := App{Path: path, Name: strings.TrimSuffix(base, filepath.Ext(base))}
-	var err error
+	app := App{Path: path, Name: strings.TrimSuffix(base, filepath.Ext(base)), Built: info.ModTime()}
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".app":
-		app.Platform = IOS
-		app.ID, err = plistRead(filepath.Join(path, "Info.plist"), "CFBundleIdentifier")
+		err = readIOS(&app)
 	case ".apk":
-		app.Platform = Android
-		app.ID, err = apkPackage(path)
+		err = readAndroid(&app)
 	case ".ipa":
 		return App{}, fmt.Errorf("%s is a device build; a simulator needs the .app from a simulator build", base)
 	default:
 		return App{}, fmt.Errorf("%s is not an app build; pass a .app (iOS) or .apk (Android)", base)
 	}
-	if err == nil && app.ID == "" {
-		err = errors.New("no app id found")
-	}
 	if err != nil {
-		return App{}, fmt.Errorf("read the app id of %s: %w", base, err)
+		return App{}, fmt.Errorf("read %s: %w", base, err)
 	}
 	return app, nil
 }

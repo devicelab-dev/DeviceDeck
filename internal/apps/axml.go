@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"unicode/utf16"
 )
 
@@ -15,32 +16,34 @@ const (
 	chunkStartTag   = 0x0102
 	flagUTF8        = 1 << 8
 	attrSize        = 20
+	typeIntDec      = 0x10 // an attribute stored as a decimal integer
 )
 
-// apkPackage reads the package name from an APK's compiled
-// AndroidManifest.xml. It needs no Android SDK tools: DeviceDeck runs on a
-// Mac that may have none, and the name is one attribute of the first tag.
-func apkPackage(path string) (string, error) {
-	zr, err := zip.OpenReader(path)
-	if err != nil {
-		return "", fmt.Errorf("read %s: %w", path, err)
-	}
-	defer func() { _ = zr.Close() }()
+// manifest is what DeviceDeck reads from an APK's compiled
+// AndroidManifest.xml.
+type manifest struct {
+	Package, VersionName, VersionCode, MinSDK string
+}
+
+// readManifest opens an APK and reads its manifest. It needs no Android SDK
+// tools: DeviceDeck runs on a Mac that may have none.
+func readManifest(zr *zip.Reader) (manifest, error) {
 	f, err := zr.Open("AndroidManifest.xml")
 	if err != nil {
-		return "", fmt.Errorf("%s has no AndroidManifest.xml: %w", path, err)
+		return manifest{}, fmt.Errorf("no AndroidManifest.xml: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 	data, err := io.ReadAll(io.LimitReader(f, 16<<20))
 	if err != nil {
-		return "", err
+		return manifest{}, err
 	}
-	return manifestPackage(data)
+	return parseManifest(data)
 }
 
-// manifestPackage walks the AXML chunks: the string pool first, then the
-// first start tag, which is <manifest>, and its package attribute.
-func manifestPackage(data []byte) (string, error) {
+// parseManifest walks the AXML chunks: the string pool, then each start
+// tag, keeping the attributes of <manifest> and <uses-sdk>.
+func parseManifest(data []byte) (manifest, error) {
+	var m manifest
 	var pool []string
 	for off := 8; off+8 <= len(data); {
 		typ := binary.LittleEndian.Uint16(data[off:])
@@ -48,38 +51,57 @@ func manifestPackage(data []byte) (string, error) {
 		if size < 8 || off+size > len(data) {
 			break
 		}
-		chunk := data[off : off+size]
-		switch typ {
+		switch chunk := data[off : off+size]; typ {
 		case chunkStringPool:
 			pool = stringPool(chunk)
 		case chunkStartTag:
-			return packageAttr(chunk, pool)
+			m.take(chunk, pool)
 		}
 		off += size
 	}
-	return "", errors.New("no manifest tag in AndroidManifest.xml")
+	if m.Package == "" {
+		return m, errors.New("manifest has no package")
+	}
+	return m, nil
 }
 
-// packageAttr finds the attribute named "package" on a start tag.
-func packageAttr(chunk []byte, pool []string) (string, error) {
+// take copies the attributes it knows from one start tag.
+func (m *manifest) take(chunk []byte, pool []string) {
+	attrs := tagAttrs(chunk, pool)
+	switch tagName(chunk, pool) {
+	case "manifest":
+		m.Package, m.VersionName, m.VersionCode = attrs["package"], attrs["versionName"], attrs["versionCode"]
+	case "uses-sdk":
+		m.MinSDK = attrs["minSdkVersion"]
+	}
+}
+
+func tagName(chunk []byte, pool []string) string {
+	if len(chunk) < 24 {
+		return ""
+	}
+	return lookup(pool, binary.LittleEndian.Uint32(chunk[20:]))
+}
+
+// tagAttrs reads a start tag's attributes: a string value when it has one,
+// otherwise a decimal integer (versionCode and minSdkVersion are stored so).
+func tagAttrs(chunk []byte, pool []string) map[string]string {
+	out := map[string]string{}
 	if len(chunk) < 36 {
-		return "", errors.New("truncated manifest tag")
+		return out
 	}
-	headerSize := int(binary.LittleEndian.Uint16(chunk[2:]))
-	start := headerSize + int(binary.LittleEndian.Uint16(chunk[24:]))
+	start := int(binary.LittleEndian.Uint16(chunk[2:])) + int(binary.LittleEndian.Uint16(chunk[24:]))
 	count := int(binary.LittleEndian.Uint16(chunk[28:]))
-	for i := 0; i < count; i++ {
-		a := start + i*attrSize
-		if a+attrSize > len(chunk) {
-			break
-		}
-		if lookup(pool, binary.LittleEndian.Uint32(chunk[a+4:])) == "package" {
-			if v := lookup(pool, binary.LittleEndian.Uint32(chunk[a+8:])); v != "" {
-				return v, nil
-			}
+	for i := 0; i < count && start+(i+1)*attrSize <= len(chunk); i++ {
+		a := chunk[start+i*attrSize:]
+		name := lookup(pool, binary.LittleEndian.Uint32(a[4:]))
+		if v := lookup(pool, binary.LittleEndian.Uint32(a[8:])); v != "" {
+			out[name] = v
+		} else if a[15] == typeIntDec {
+			out[name] = strconv.Itoa(int(int32(binary.LittleEndian.Uint32(a[16:]))))
 		}
 	}
-	return "", errors.New("manifest has no package attribute")
+	return out
 }
 
 func lookup(pool []string, i uint32) string {

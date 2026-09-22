@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/devicelab-dev/DeviceDeck/internal/apps"
 	"github.com/devicelab-dev/DeviceDeck/internal/doctor"
@@ -182,18 +183,42 @@ func TestTildeHome(t *testing.T) {
 
 func TestWelcomeListsRegisteredApps(t *testing.T) {
 	var out bytes.Buffer
+	built := time.Date(2026, 3, 12, 0, 0, 0, 0, time.UTC)
 	w := welcome{local: "http://127.0.0.1:8787", apps: []apps.App{
-		{ID: "dev.devicelab.testhive", Name: "TestHive", Path: "/b/TestHive.app", Platform: apps.IOS},
-		{ID: "com.testhiveapp", Name: "app-release", Path: "/b/app-release.apk", Platform: apps.Android},
+		{
+			ID: "dev.devicelab.testhive", Name: "Test Hive", Path: "/b/TestHive.app", Platform: apps.IOS,
+			Version: "1.0 (1)", MinOS: "iOS 16.6", Arch: []string{"x86_64", "arm64"}, Size: 2951622, Built: built,
+		},
+		{
+			ID: "com.testhiveapp", Name: "app-release", Path: "/b/app-release.apk", Platform: apps.Android,
+			Version: "1.0 (1)", MinOS: "Android API 24", Size: 20316595,
+			Warnings: []string{"native code only for armeabi-v7a; this Mac's emulators need arm64-v8a"},
+		},
 	}}
 	w.write(&out)
 	for _, want := range []string{
-		"APPS", "TestHive", "dev.devicelab.testhive", "/b/TestHive.app",
-		"app-release", "com.testhiveapp", "installed on a device the first time",
+		"APPS  installed on a device the first time it is launched there",
+		"Test Hive    iOS      dev.devicelab.testhive",
+		"1.0 (1) · iOS 16.6+ · x86_64, arm64 · 2.8 MB · built 12 Mar 2026",
+		"/b/TestHive.app",
+		"app-release  Android  com.testhiveapp",
+		"1.0 (1) · Android API 24+ · no native code · 19.4 MB",
+		"! native code only for armeabi-v7a",
 		"device/booted?app=dev.devicelab.testhive",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("welcome missing %q:\n%s", want, out.String())
 		}
+	}
+}
+
+func TestHumanSize(t *testing.T) {
+	for n, want := range map[int64]string{512: "512 B", 2048: "2 KB", 3 << 20: "3.0 MB", 5 << 30: "5.0 GB"} {
+		if got := humanSize(n); got != want {
+			t.Errorf("humanSize(%d) = %q, want %q", n, got, want)
+		}
+	}
+	if got := appDetails(apps.App{Platform: apps.IOS, Size: 10}); got != "10 B" {
+		t.Errorf("minimal details = %q", got)
 	}
 }

@@ -113,17 +113,64 @@ func (w welcome) devices(b *strings.Builder) {
 	fmt.Fprintf(b, "    %s\n", brand.Dim(fmt.Sprintf("%d of %d booted · /device/booted opens the only one", len(w.booted), w.total), w.fancy))
 }
 
-// appsSection lists the --app builds; nothing when none were given.
+// appsSection shows each --app build as read from the file: id, version,
+// minimum OS, CPU slices, size and age, the path, and anything that would
+// stop it running here. Nothing when no builds were given.
 func (w welcome) appsSection(b *strings.Builder) {
 	if len(w.apps) == 0 {
 		return
 	}
-	w.section(b, "APPS")
+	fmt.Fprintf(b, "\n  %s  %s\n", brand.Bold("APPS", w.fancy),
+		brand.Dim("installed on a device the first time it is launched there", w.fancy))
+	width := 0
 	for _, a := range w.apps {
-		fmt.Fprintf(b, "    %-16s %s %-28s %s\n", a.Name, brand.Dim(fmt.Sprintf("%-8s", a.Platform), w.fancy),
-			a.ID, brand.Dim(tildeHome(a.Path), w.fancy))
+		width = max(width, len(a.Name))
 	}
-	fmt.Fprintf(b, "    %s\n", brand.Dim("installed on a device the first time it is launched there", w.fancy))
+	indent := strings.Repeat(" ", width+6)
+	for _, a := range w.apps {
+		fmt.Fprintf(b, "    %-*s  %s  %s\n", width, a.Name, brand.Dim(fmt.Sprintf("%-7s", a.Platform), w.fancy), a.ID)
+		fmt.Fprintf(b, "%s%s\n", indent, brand.Dim(appDetails(a), w.fancy))
+		fmt.Fprintf(b, "%s%s\n", indent, brand.Dim(tildeHome(a.Path), w.fancy))
+		for _, warn := range a.Warnings {
+			fmt.Fprintf(b, "%s%s %s\n", indent, brand.Bold("!", w.fancy), warn)
+		}
+	}
+}
+
+// appDetails is the one-line summary of a build: "1.4.0 (42) · iOS 16.6+ ·
+// arm64, x86_64 · 2.8 MB · built 12 Mar 2026".
+func appDetails(a apps.App) string {
+	var parts []string
+	if a.Version != "" {
+		parts = append(parts, a.Version)
+	}
+	if a.MinOS != "" {
+		parts = append(parts, a.MinOS+"+")
+	}
+	switch {
+	case len(a.Arch) > 0:
+		parts = append(parts, strings.Join(a.Arch, ", "))
+	case a.Platform == apps.Android:
+		parts = append(parts, "no native code")
+	}
+	parts = append(parts, humanSize(a.Size))
+	if !a.Built.IsZero() {
+		parts = append(parts, "built "+a.Built.Format("2 Jan 2006"))
+	}
+	return strings.Join(parts, " · ")
+}
+
+// humanSize renders a byte count the way Finder does, to one decimal.
+func humanSize(n int64) string {
+	switch {
+	case n >= 1<<30:
+		return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.0f KB", float64(n)/(1<<10))
+	}
+	return fmt.Sprintf("%d B", n)
 }
 
 func (w welcome) toolsSection(b *strings.Builder) {
