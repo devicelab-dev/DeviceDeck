@@ -60,6 +60,7 @@ claude plugin install devicedeck@devicedeck-marketplace
 npx playwright test
 ```
 
+Need a simulator build of your app, or the step-by-step? See [docs/getting-started.md](docs/getting-started.md).
 Using Gemini CLI, Codex, VS Code or Cursor? Only step 2 changes — see [Other agents](#other-agents).
 Prefer to use devices by hand? Open the console at `http://127.0.0.1:8787`.
 
@@ -239,6 +240,8 @@ the ceiling is physics, not an artificial limit.
   for them, so they are discarded rather than guessed at.
 
 ## Troubleshooting
+
+Every command, flag, environment variable and HTTP endpoint: [docs/cli-reference.md](docs/cli-reference.md).
 
 `devicedeck doctor` checks the tools DeviceDeck needs: Xcode, the iOS runtime, adb, an Android
 emulator, Node.js, Claude Code and maestro-runner.

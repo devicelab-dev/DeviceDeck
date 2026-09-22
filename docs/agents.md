@@ -56,10 +56,21 @@ npx skills add devicelab-dev/DeviceDeck
 }
 ```
 
+If you installed DeviceDeck with npm into a project, `devicedeck` is not on your `PATH`: use
+`npx devicedeck mcp` as the MCP command, or install it globally with `npm install -g devicedeck`.
+
 **Anything else** (Windsurf/Devin, Cline, JetBrains AI, …) — the same two servers in that
 client's MCP settings, in its own format; `npx skills add devicelab-dev/DeviceDeck` installs the
 skills for most agents. Clients that install [Agent Plugins](https://agent-plugins.org) can install
 this repository directly: `plugin.json`, `mcp.json` and `skills/` at its root are that bundle.
+
+## Ask for a test
+
+> Write a Playwright test that logs in to my app.
+
+The agent calls `list_apps` to find the build you registered with `devicedeck --app`, boots a
+simulator of its platform, launches the app (installing it first), drives it through the device page
+and writes a spec that selects by the app's accessibility ids. Review and run it like any other test.
 
 ## Tested with
 

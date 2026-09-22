@@ -27,6 +27,11 @@ You don't need a mobile test suite to start:
   post-launch tap-swallow window. It clears the app's data first, so the test starts at a
   first-run screen; post to `/app/launch?reset=no` to resume where the app was left instead.
 
+- **Let Playwright start DeviceDeck**, if you installed it with npm:
+  ```ts
+  webServer: { command: 'npx devicedeck --app path/to/MyApp.app', url: 'http://127.0.0.1:8787', reuseExistingServer: true },
+  ```
+
 ## Drive it
 
 ```ts
@@ -40,8 +45,9 @@ await expect(page.getByTestId('cart-button')).toBeVisible();
 - **Wait for the echo before submitting:** the device's own value is exposed on
   `data-dd-device-value` (a secure field reports bullets — check length).
 - **First render** waits on the tree-engine warm-up, so give the first selector ~30s.
-- **Native gestures** a DOM event can't express: `page.evaluate(() => devicedeck.gesture('home'))` —
-  see [behaviors](behaviors.md).
+- **Native gestures** a DOM event can't express, on `window.devicedeck`:
+  `page.evaluate(() => devicedeck.gesture('home'))` — also `swipe`, `button`, `key` and `screenshot()`;
+  see [behaviors](behaviors.md). The HTTP equivalents are in the [CLI reference](cli-reference.md#http-api).
 
 ## One device, one worker
 
