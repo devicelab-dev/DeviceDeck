@@ -45,3 +45,18 @@ jobs:
         run: make sidecar
       - name: Sidecar tests
         run: make sidecar-test
+
+  web:
+    # The console and device page JavaScript (internal/web/static): lint,
+    # including the ≤30-line / ≤3-level guardrail. Served as-is, so there
+    # is nothing to build — package.json holds only the checkers.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Lint
+        run: npm run lint:js

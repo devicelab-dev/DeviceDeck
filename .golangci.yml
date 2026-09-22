@@ -78,6 +78,8 @@ linters:
       # generated gRPC/protobuf for the Android emulator controller
       - internal/emugrpc
       - ".*\\.pb\\.go$"
+      # npm packages for the JS lint tooling; some ship stray Go sources
+      - node_modules
     rules:
       # Tests may ignore errors and use weaker constructs deliberately: quick
       # substring slicing, == on sentinel errors, unclosed one-shot response

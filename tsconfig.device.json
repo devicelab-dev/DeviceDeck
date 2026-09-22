@@ -1,0 +1,17 @@
+{
+  "//": "Type-checks the device page (/device/{udid}): the scripts device.html loads, in order.",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "strict": false,
+    "noEmit": true,
+    "target": "es2022",
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "skipLibCheck": true
+  },
+  "files": [
+    "internal/web/static/video-common.js",
+    "internal/web/static/input-common.js",
+    "internal/web/static/device.js"
+  ]
+}

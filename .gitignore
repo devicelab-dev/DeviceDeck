@@ -49,3 +49,6 @@ scripts/README.md
 AuthKey_*
 .env
 .env.*
+
+# JS lint / type-check tooling (package.json at the root)
+/node_modules/

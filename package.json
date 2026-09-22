@@ -1,0 +1,17 @@
+{
+  "name": "devicedeck-web-checks",
+  "private": true,
+  "description": "Lint and type-check for the console and device page JavaScript in internal/web/static. Dev tooling only: the files are served as-is, with no build step.",
+  "scripts": {
+    "lint:js": "eslint internal/web/static",
+    "typecheck:device": "tsc -p tsconfig.device.json",
+    "typecheck:console": "tsc -p tsconfig.console.json",
+    "check:js": "npm run lint:js && npm run typecheck:device"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.11.0",
+    "globals": "^17.12.0",
+    "typescript": "^7.0.2"
+  }
+}

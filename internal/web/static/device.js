@@ -30,7 +30,7 @@ const wantVideo = new URLSearchParams(location.search).get("video") === "1";
 // on load is destructive, and a plain refresh must never wipe state.
 const wantReset =
   !!appId && new URLSearchParams(location.search).get("reset") === "yes";
-const canvas = document.getElementById("video");
+const canvas = /** @type {HTMLCanvasElement} */ (document.getElementById("video"));
 const ctx = canvas.getContext("2d");
 const mirror = document.getElementById("mirror");
 
@@ -283,12 +283,7 @@ function setOrRemove(el, attr, value) {
 // screen-absolute, so coordinates convert to percentages of the
 // ancestor's frame and stay proportional at any canvas size.
 function syncNode(el, node, anchorFrame, owners) {
-  const f = node.frame;
-  el.style.left = `${((f.x - anchorFrame.x) / anchorFrame.width) * 100}%`;
-  el.style.top = `${((f.y - anchorFrame.y) / anchorFrame.height) * 100}%`;
-  el.style.width = `${(f.width / anchorFrame.width) * 100}%`;
-  el.style.height = `${(f.height / anchorFrame.height) * 100}%`;
-
+  placeNode(el, node.frame, anchorFrame);
   setOrRemove(el, "role", ROLES[node.type] || "");
   // Only the owner of a contested identifier carries it; see
   // identifierOwners for why the others are left without one.
@@ -328,10 +323,21 @@ function syncNode(el, node, anchorFrame, owners) {
     syncField(el, node);
     return;
   }
-  // Text for getByText: label, else value, painted transparent. Kept in
-  // a dedicated leading text node — assigning textContent would destroy
-  // the nested child elements.
-  const text = node.label || node.value || "";
+  syncText(el, node.label || node.value || "");
+}
+
+// placeNode positions el over frame f as percentages of its anchor's frame.
+function placeNode(el, f, anchorFrame) {
+  el.style.left = `${((f.x - anchorFrame.x) / anchorFrame.width) * 100}%`;
+  el.style.top = `${((f.y - anchorFrame.y) / anchorFrame.height) * 100}%`;
+  el.style.width = `${(f.width / anchorFrame.width) * 100}%`;
+  el.style.height = `${(f.height / anchorFrame.height) * 100}%`;
+}
+
+// syncText keeps the text for getByText (label, else value, painted
+// transparent) in a dedicated leading text node — assigning textContent
+// would destroy the nested child elements.
+function syncText(el, text) {
   const textNode =
     el.firstChild && el.firstChild.nodeType === Node.TEXT_NODE ? el.firstChild : null;
   if (!text) {
@@ -487,7 +493,7 @@ function acquireEl(existing, key, node) {
     return found;
   }
   const el = document.createElement(FIELD_TYPES.has(node.type) ? "input" : "div");
-  if (el.tagName === "INPUT") {
+  if (el instanceof HTMLInputElement) {
     // type=text even for secure fields: the role attribute below already
     // says textbox, and type=password invites the browser's own password
     // manager into a page that is meant to contain nothing but the app.
@@ -1009,7 +1015,7 @@ function centreOf(el) {
 // timeout because iOS never set the flag.
 const FOCUS_SETTLE_MS = 750;
 function waitReady(el) {
-  return new Promise((resolve) => {
+  return new Promise((/** @type {(value?: void) => void} */ resolve) => {
     const tick = () => {
       if (el.getAttribute("data-dd-focused") === "true" ||
           Date.now() - focusTapAt >= FOCUS_SETTLE_MS) resolve();
@@ -1272,7 +1278,7 @@ async function api(path, body) {
   return res.json();
 }
 
-window.devicedeck = {
+/** @type {any} */ (window).devicedeck = {
   udid,
   tap: (x, y) => api("/tap", { x, y }),
   swipe: (x1, y1, x2, y2, durationMs = 250) => api("/swipe", { x1, y1, x2, y2, durationMs }),

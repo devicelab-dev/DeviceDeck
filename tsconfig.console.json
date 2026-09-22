@@ -1,0 +1,18 @@
+{
+  "//": "Type-checks the console (/): the scripts index.html loads, in order.",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "strict": false,
+    "noEmit": true,
+    "target": "es2022",
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "skipLibCheck": true
+  },
+  "files": [
+    "internal/web/static/video-common.js",
+    "internal/web/static/input-common.js",
+    "internal/web/static/flow-yaml.js",
+    "internal/web/static/app.js"
+  ]
+}

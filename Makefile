@@ -1,4 +1,4 @@
-.PHONY: build test lint quality cover-gaps hooks vet clean sidecar sidecar-test release release-signed stage sign package drivers
+.PHONY: build test lint lint-js quality cover-gaps hooks vet clean sidecar sidecar-test release release-signed stage sign package drivers
 
 BINARY := devicedeck
 PKG := github.com/devicelab-dev/DeviceDeck
@@ -31,6 +31,12 @@ lint:
 	bash scripts/lint-token-slice.sh
 	go vet ./...
 	golangci-lint run ./...
+
+# lint-js lints and type-checks the console and device page scripts
+# (internal/web/static). Needs `npm install` once; the files are served as-is.
+lint-js:
+	npm run lint:js
+	npm run typecheck:device
 
 # quality is the fast gate that runs on every code change: it checks only what
 # changed against HEAD, so it stays quick. This is what the pre-commit hook and
