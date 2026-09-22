@@ -147,6 +147,9 @@ parallel by default, so set one worker per device (`workers: 1` in Playwright) �
 parallel, boot more devices and give each worker its own. In the console, tabs hand the device to
 the tab you are using, and **Take over** disconnects whoever holds it.
 
+The mirror has a few quirks a web test wouldn't expect — only the current screen is mirrored, fields
+are real `<input>`s, typing is verified. See [docs/behaviors.md](docs/behaviors.md).
+
 ### With an AI agent
 
 Add the browser tool your agent already has, then DeviceDeck's skills:
@@ -171,48 +174,17 @@ setup in [docs/agents.md](docs/agents.md#set-up-your-agent).
 
 ### By hand — the console
 
-The console lists every simulator and emulator on the Mac, and every build you passed with `--app`.
-Pick a device to boot and stream it, or **Launch** an app straight onto a running one. Drive it with
-your mouse and keyboard; **Inspect** overlays the native tree and shows each element's id, role and
-text — the selectors a test or an agent will use. **End session** shuts the device down when you are
-done.
-
-Teammates open the network address `devicedeck` prints; there is nothing to configure. More on
-sharing a Mac's devices with a team: [docs/device-farm.md](docs/device-farm.md).
-
-The mirror has a few quirks a web test wouldn't expect — only the current screen is mirrored, fields
-are real `<input>`s, typing is verified. See [docs/behaviors.md](docs/behaviors.md).
+The console lists every simulator, emulator and `--app` build on the Mac. Pick a device to boot and
+stream it, **Launch** an app onto it, and drive it with your mouse and keyboard; **Inspect** shows
+each element's id, role and text — the selectors your tests use. Teammates open the network address
+`devicedeck` prints. **Guide:** [docs/console.md](docs/console.md).
 
 ### Record a flow
 
-Press **Record**, use the app, and press **Stop**. DeviceDeck writes what you did as a Maestro flow:
-each tap is addressed by the most durable selector on screen (an id first, then text), graded for
-how likely it is to survive the next build. Right-click an element while recording to **assert it is
-visible** or **wait until it is visible**.
-
-```yaml
-# devicedeck: tapOn selector=id confidence=high
-- tapOn:
-    id: "login-button"
-    label: "login-button"
-# devicedeck: extendedWaitUntil visible selector=id confidence=high
-- extendedWaitUntil:
-    visible:
-      id: "products-screen"
-    timeout: 10000
-```
-
-Passwords are never written into the flow: a password field becomes `${PASSWORD_INPUT}`, supplied
-when you replay. Screens with no durable ids are flagged at the top of the flow, with how to add
-them. Copy or save the flow, then replay it with
-[maestro-runner](https://github.com/devicelab-dev/maestro-runner):
-
-```bash
-maestro-runner --driver devicelab test flow.yaml -e PASSWORD_INPUT=…
-```
-
-The same file runs unchanged on real devices at [devicelab.dev](https://devicelab.dev).
-[`examples/captured/`](examples/captured/) has recorded flows.
+Press **Record**, use the app, press **Stop**: DeviceDeck writes it as a
+[Maestro](https://maestro.dev) flow with graded, durable selectors — replayable with
+[maestro-runner](https://github.com/devicelab-dev/maestro-runner) and unchanged on real devices at
+[devicelab.dev](https://devicelab.dev). **Guide:** [docs/flows.md](docs/flows.md).
 
 ## Scope
 

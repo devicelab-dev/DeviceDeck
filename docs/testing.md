@@ -7,13 +7,15 @@ labels become ARIA. Nothing mobile-specific.
 ## Setup
 
 - Point your framework's `baseURL` at `http://127.0.0.1:8787`.
-- Run a **single worker** — a device serves one driver at a time.
+- Run a **single worker** per device — a device serves one driver at a time. For parallel runs, boot
+  more devices and give each worker its own.
 - **Launch the app fresh in a fixture** so the first action lands:
   ```ts
   await request.post(`/api/devices/${UDID}/app/launch`, { data: { app: APP } });
   ```
   It blocks until the app is *taking input* — absorbing the boot, the engine warm-up, and the
-  post-launch tap-swallow window. Pass `{ app, reset: false }` to resume instead of a first-run screen.
+  post-launch tap-swallow window. It clears the app's data first, so the test starts at a
+  first-run screen; post to `/app/launch?reset=no` to resume where the app was left instead.
 
 ## Drive it
 
