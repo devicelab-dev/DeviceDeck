@@ -339,3 +339,21 @@ func TestOpenURL(t *testing.T) {
 		t.Error("openurl failure must propagate")
 	}
 }
+
+func TestInstalled(t *testing.T) {
+	var got string
+	c := &Client{run: func(_ context.Context, name string, args ...string) ([]byte, error) {
+		got = name + " " + strings.Join(args, " ")
+		return []byte("/path/to/container\n"), nil
+	}}
+	if !c.Installed(context.Background(), "AAA", "dev.devicelab.testhive") {
+		t.Error("a found container means installed")
+	}
+	if got != "xcrun simctl get_app_container AAA dev.devicelab.testhive" {
+		t.Errorf("command = %q", got)
+	}
+	c = &Client{run: fixedRun(nil, errors.New("No such app"))}
+	if c.Installed(context.Background(), "AAA", "dev.devicelab.testhive") {
+		t.Error("a lookup error means not installed")
+	}
+}

@@ -194,3 +194,25 @@ func TestBootRouter(t *testing.T) {
 		})
 	}
 }
+
+// presence answers Installed with a fixed value and records the device.
+type presence struct {
+	yes  bool
+	seen string
+}
+
+func (p *presence) Installed(_ context.Context, udid, _ string) bool {
+	p.seen = udid
+	return p.yes
+}
+
+func TestInstalledRouter(t *testing.T) {
+	ios, android := &presence{yes: true}, &presence{}
+	r := InstalledRouter{IOS: ios, Android: android}
+	if !r.Installed(context.Background(), "AAAA-BBBB", "x") || ios.seen != "AAAA-BBBB" {
+		t.Error("simulator ids go to the iOS check")
+	}
+	if r.Installed(context.Background(), "emulator-5554", "x") || android.seen != "emulator-5554" {
+		t.Error("emulator serials go to the Android check")
+	}
+}

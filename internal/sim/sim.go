@@ -130,6 +130,14 @@ func (c *Client) Install(ctx context.Context, udid, appPath string) error {
 	return nil
 }
 
+// Installed reports whether appID is installed on the simulator. Any lookup
+// failure counts as not installed: installing then reports the real cause,
+// such as the simulator being shut down.
+func (c *Client) Installed(ctx context.Context, udid, appID string) bool {
+	_, err := c.run(ctx, "xcrun", "simctl", "get_app_container", udid, appID)
+	return err == nil
+}
+
 // Booted returns every currently booted simulator.
 func (c *Client) Booted(ctx context.Context) ([]Device, error) {
 	all, err := c.list(ctx)

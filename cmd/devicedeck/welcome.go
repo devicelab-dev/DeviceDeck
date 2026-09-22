@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/devicelab-dev/DeviceDeck/internal/apps"
 	"github.com/devicelab-dev/DeviceDeck/internal/brand"
 	"github.com/devicelab-dev/DeviceDeck/internal/doctor"
 	"github.com/devicelab-dev/DeviceDeck/internal/server"
@@ -31,6 +32,7 @@ type welcome struct {
 	network []string
 	booted  []sim.Device
 	total   int
+	apps    []apps.App
 	tools   []doctor.Result
 	logs    string
 	fancy   bool
@@ -39,10 +41,10 @@ type welcome struct {
 // newWelcome gathers the device picture and checks the tools, side by side
 // so the checks add no wait. A listing failure still prints the rest: the
 // links and setup are what matter most at startup.
-func newWelcome(ctx context.Context, devices server.DeviceLister, tools doctor.Env,
+func newWelcome(ctx context.Context, devices server.DeviceLister, tools doctor.Env, registered []apps.App,
 	local string, network []string, logs string, fancy bool,
 ) welcome {
-	w := welcome{local: local, network: network, logs: logs, fancy: fancy}
+	w := welcome{local: local, network: network, apps: registered, logs: logs, fancy: fancy}
 	checked := make(chan []doctor.Result, 1)
 	go func() { checked <- doctor.Run(ctx, tools) }()
 	all, _ := devices.All(ctx)
@@ -65,6 +67,7 @@ func (w welcome) write(out io.Writer) {
 	fmt.Fprintf(&b, "\n  %s %s\n", brand.Green("●", w.fancy), brand.Bold("Running", w.fancy))
 	w.open(&b)
 	w.devices(&b)
+	w.appsSection(&b)
 	w.toolsSection(&b)
 	w.claude(&b)
 	w.section(&b, "USE WITH TESTS")
@@ -98,11 +101,29 @@ func (w welcome) devices(b *strings.Builder) {
 			brand.Dim(fmt.Sprintf("Pick one of %d in the console.", w.total), w.fancy))
 		return
 	}
+	width := 0
+	for _, d := range w.booted {
+		width = max(width, len(d.Name))
+	}
 	for _, d := range w.booted {
 		// Pad before styling: colour codes are invisible but counted.
-		fmt.Fprintf(b, "    %-22s %s %s\n", d.Name, brand.Dim(fmt.Sprintf("%-10s", d.OS), w.fancy), w.link(w.local+"/device/"+d.UDID))
+		fmt.Fprintf(b, "    %-*s  %s %s\n", width, d.Name, brand.Dim(fmt.Sprintf("%-9s", d.OS), w.fancy),
+			w.link(w.local+"/device/"+d.UDID))
 	}
 	fmt.Fprintf(b, "    %s\n", brand.Dim(fmt.Sprintf("%d of %d booted · /device/booted opens the only one", len(w.booted), w.total), w.fancy))
+}
+
+// appsSection lists the --app builds; nothing when none were given.
+func (w welcome) appsSection(b *strings.Builder) {
+	if len(w.apps) == 0 {
+		return
+	}
+	w.section(b, "APPS")
+	for _, a := range w.apps {
+		fmt.Fprintf(b, "    %-16s %s %-28s %s\n", a.Name, brand.Dim(fmt.Sprintf("%-8s", a.Platform), w.fancy),
+			a.ID, brand.Dim(tildeHome(a.Path), w.fancy))
+	}
+	fmt.Fprintf(b, "    %s\n", brand.Dim("installed on a device the first time it is launched there", w.fancy))
 }
 
 func (w welcome) toolsSection(b *strings.Builder) {
@@ -123,12 +144,22 @@ func (w welcome) claude(b *strings.Builder) {
 	steps := []struct{ what, do string }{
 		{"Add the browser tool", w.cmd(claudePlaywright)},
 		{"Add DeviceDeck's skills", w.cmd(claudeSkills)},
-		{"Ask Claude", fmt.Sprintf("\"Open %s/device/booted and log in to my app\"", w.local)},
+		{"Ask Claude", fmt.Sprintf("\"Open %s and log in to my app\"", w.exampleURL())},
 	}
 	for i, s := range steps {
 		fmt.Fprintf(b, "    %d. %s\n       %s\n", i+1, s.what, s.do)
 	}
 	fmt.Fprintf(b, "    %s\n       %s\n", brand.Dim("Or give Claude device tools over MCP:", w.fancy), w.cmd(claudeMCP))
+}
+
+// exampleURL is the device page to suggest: with an app registered, it opens
+// that app, so the example works as written.
+func (w welcome) exampleURL() string {
+	u := w.local + "/device/booted"
+	if len(w.apps) > 0 {
+		u += "?app=" + w.apps[0].ID
+	}
+	return u
 }
 
 // cmd shows a command to copy, after a dimmed $ prompt.

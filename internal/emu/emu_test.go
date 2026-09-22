@@ -312,3 +312,27 @@ func TestOpenURL(t *testing.T) {
 		t.Error("adb failure must propagate")
 	}
 }
+
+func TestInstalled(t *testing.T) {
+	for _, tc := range []struct {
+		out  string
+		err  error
+		want bool
+	}{
+		{"package:/data/app/com.testhiveapp-1/base.apk\n", nil, true},
+		{"", nil, false},
+		{"", errors.New("device offline"), false},
+	} {
+		var got string
+		c := &Client{run: func(_ context.Context, name string, args ...string) ([]byte, error) {
+			got = name + " " + strings.Join(args, " ")
+			return []byte(tc.out), tc.err
+		}}
+		if ok := c.Installed(context.Background(), "emulator-5554", "com.testhiveapp"); ok != tc.want {
+			t.Errorf("Installed with %q/%v = %v, want %v", tc.out, tc.err, ok, tc.want)
+		}
+		if got != "adb -s emulator-5554 shell pm path com.testhiveapp" {
+			t.Errorf("command = %q", got)
+		}
+	}
+}

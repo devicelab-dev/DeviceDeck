@@ -118,8 +118,15 @@ Then start the server and open the console:
 devicedeck              # same as `devicedeck serve` → http://127.0.0.1:8787
 ```
 
-It prints the console link, each booted device's link, the Claude Code setup, and any missing
-tools with how to fix them. `devicedeck doctor` checks the tools on their own: Xcode, the iOS
+Point it at your app builds and it installs them for you, the first time each app is launched on a
+device — from the console, a test, or Claude:
+
+```bash
+devicedeck --app build/MyApp.app --app build/app-release.apk   # iOS simulator build + Android APK
+```
+
+It prints the console link, each booted device's link, the registered apps, the Claude Code setup,
+and any missing tools with how to fix them. `devicedeck doctor` checks the tools on their own: Xcode, the iOS
 runtime, adb, an Android emulator, Node.js, Claude Code, and maestro-runner.
 
 Pick a device in the console and it boots and starts streaming.

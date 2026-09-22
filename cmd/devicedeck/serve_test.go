@@ -20,6 +20,7 @@ import (
 	"github.com/devicelab-dev/DeviceDeck/internal/brand"
 	"github.com/devicelab-dev/DeviceDeck/internal/home"
 	"github.com/devicelab-dev/DeviceDeck/internal/ready"
+	"github.com/devicelab-dev/DeviceDeck/internal/server"
 	"github.com/devicelab-dev/DeviceDeck/internal/sim"
 )
 
@@ -268,7 +269,10 @@ func TestAttachRunnerLogFailureIsNotFatal(t *testing.T) {
 }
 
 func TestShutdown(t *testing.T) {
-	st := buildStack("/nonexistent/devicedeck-hid", "/nonexistent/devicedeck-video", 30)
+	st, err := buildStack("/nonexistent/devicedeck-hid", "/nonexistent/devicedeck-video", 30, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, keep := range []bool{false, true} {
 		shutdown(st, &http.Server{}, keep) // nothing driven: must return cleanly
 	}
@@ -474,12 +478,19 @@ func TestParseServeFlags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := &serveFlags{addr: ":9999", ready: true, readyApp: "com.x", fps: 15, keepDevices: true}
-	if !reflect.DeepEqual(got, want) {
+	want := &serveFlags{addr: ":9999", ready: true, apps: []string{"com.x"}, fps: 15, keepDevices: true}
+	if !reflect.DeepEqual(got, want) || got.readyApp() != "com.x" {
 		t.Errorf("flags = %+v, want %+v", got, want)
 	}
-	if def, err := parseServeFlags(nil); err != nil || def.addr != "0.0.0.0:8787" || def.fps != 30 {
+	if def, err := parseServeFlags(nil); err != nil || def.addr != "0.0.0.0:8787" || def.fps != 30 || def.readyApp() != "" {
 		t.Errorf("defaults = %+v, %v", def, err)
+	}
+	both, err := parseServeFlags([]string{"--app", "/b/TestHive.app", "--app", "/b/app-release.apk"})
+	if err != nil || !reflect.DeepEqual(both.apps, []string{"/b/TestHive.app", "/b/app-release.apk"}) {
+		t.Errorf("repeated --app = %+v, %v", both, err)
+	}
+	if _, err := parseServeFlags([]string{"--app", "com.example"}); err == nil || !strings.Contains(err.Error(), "only with --ready") {
+		t.Errorf("a bundle id without --ready: %v", err)
 	}
 	if _, err := parseServeFlags([]string{"--no-such-flag"}); err == nil {
 		t.Error("unknown flag accepted")
@@ -524,7 +535,10 @@ func TestWaitForExit(t *testing.T) {
 }
 
 func TestBuildStack(t *testing.T) {
-	st := buildStack("/nonexistent/devicedeck-hid", "/nonexistent/devicedeck-video", 30)
+	st, err := buildStack("/nonexistent/devicedeck-hid", "/nonexistent/devicedeck-video", 30, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if st.srv == nil || st.emu == nil || len(st.devices) != 2 || st.launches.Android != st.emu {
 		t.Fatalf("stack not wired: %+v", st)
 	}
@@ -565,5 +579,42 @@ func TestAnnounceUpdate(t *testing.T) {
 				t.Errorf("notice shown = %v, want %v (%q)", got, tc.wantNotice, out.String())
 			}
 		})
+	}
+}
+
+func TestBuildStackRegistersApps(t *testing.T) {
+	apk, _ := filepath.Abs(filepath.Join("..", "..", "internal", "home", "android", "devicelab-android-driver.apk"))
+	st, err := buildStack("/nonexistent/devicedeck-hid", "/nonexistent/devicedeck-video", 30, []string{apk, "com.ready.only"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := st.catalog.Apps()
+	if len(got) != 1 || got[0].ID != "dev.devicelab.driver.android" || got[0].Platform != "Android" {
+		t.Errorf("catalog = %+v", got)
+	}
+	if _, err := buildStack("/x", "/y", 30, []string{"/nope/Missing.app"}); err == nil {
+		t.Error("an unreadable --app must stop the start")
+	}
+}
+
+func TestGreet(t *testing.T) {
+	serveHome(t)
+	env, err := setupServe(&serveFlags{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer env.close()
+	st, err := buildStack("/x", "/y", 30, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.devices = server.MultiLister{&fakePlatform{devices: []sim.Device{{UDID: "SIM", Name: "iPhone", OS: "iOS 26.2", Booted: true}}}}
+	var out bytes.Buffer
+	// --ready on an already-booted device: resolves it, boots nothing.
+	greet(st, env, &serveFlags{addr: "127.0.0.1:8787", ready: true}, noTools(), "http://127.0.0.1:1/unreachable", &out)
+	for _, want := range []string{"Running", "http://127.0.0.1:8787/device/SIM", filepath.Base(env.logs.Dir)} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("greet output missing %q (%d bytes):\n%s", want, out.Len(), out.String())
+		}
 	}
 }

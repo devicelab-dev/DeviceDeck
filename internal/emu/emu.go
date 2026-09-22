@@ -106,6 +106,13 @@ func (c *Client) Install(ctx context.Context, serial, apkPath string) error {
 	return nil
 }
 
+// Installed reports whether package appID is installed on the emulator;
+// `pm path` prints its APK location only when it is.
+func (c *Client) Installed(ctx context.Context, serial, appID string) bool {
+	out, err := c.run(ctx, "adb", "-s", serial, "shell", "pm", "path", appID)
+	return err == nil && strings.Contains(string(out), "package:")
+}
+
 // Kill powers the emulator off via its console. DeviceDeck calls this on
 // exit for the emulators it drove — the counterpart to the simulator's
 // Shutdown — so a session leaves no detached emulator running. `adb emu

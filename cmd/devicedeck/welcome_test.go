@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/devicelab-dev/DeviceDeck/internal/apps"
 	"github.com/devicelab-dev/DeviceDeck/internal/doctor"
 	"github.com/devicelab-dev/DeviceDeck/internal/sim"
 	"github.com/devicelab-dev/DeviceDeck/internal/version"
@@ -28,7 +29,7 @@ func noTools() doctor.Env {
 func renderWelcome(t *testing.T, f *fakePlatform, fancy bool) string {
 	t.Helper()
 	var out bytes.Buffer
-	newWelcome(context.Background(), f, noTools(), "http://127.0.0.1:8787",
+	newWelcome(context.Background(), f, noTools(), nil, "http://127.0.0.1:8787",
 		[]string{"http://10.0.4.21:8787"}, "/home/.devicedeck/logs/serve-1", fancy).write(&out)
 	return out.String()
 }
@@ -176,5 +177,23 @@ func TestTildeHome(t *testing.T) {
 	t.Setenv("HOME", "")
 	if got := tildeHome("/tmp/x"); got != "/tmp/x" {
 		t.Errorf("no home: %q", got)
+	}
+}
+
+func TestWelcomeListsRegisteredApps(t *testing.T) {
+	var out bytes.Buffer
+	w := welcome{local: "http://127.0.0.1:8787", apps: []apps.App{
+		{ID: "dev.devicelab.testhive", Name: "TestHive", Path: "/b/TestHive.app", Platform: apps.IOS},
+		{ID: "com.testhiveapp", Name: "app-release", Path: "/b/app-release.apk", Platform: apps.Android},
+	}}
+	w.write(&out)
+	for _, want := range []string{
+		"APPS", "TestHive", "dev.devicelab.testhive", "/b/TestHive.app",
+		"app-release", "com.testhiveapp", "installed on a device the first time",
+		"device/booted?app=dev.devicelab.testhive",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("welcome missing %q:\n%s", want, out.String())
+		}
 	}
 }

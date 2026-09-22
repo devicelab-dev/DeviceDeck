@@ -104,6 +104,25 @@ func (r LaunchRouter) OpenURL(ctx context.Context, udid, rawURL string) error {
 	return r.IOS.OpenURL(ctx, udid, rawURL)
 }
 
+// appPresence reports whether an app is installed on one platform's device.
+type appPresence interface {
+	Installed(ctx context.Context, udid, appID string) bool
+}
+
+// InstalledRouter picks the platform's installed-app check per device.
+type InstalledRouter struct {
+	IOS     appPresence
+	Android appPresence
+}
+
+// Installed implements the check with platform routing.
+func (r InstalledRouter) Installed(ctx context.Context, udid, appID string) bool {
+	if platform.IsAndroidSerial(udid) {
+		return r.Android.Installed(ctx, udid, appID)
+	}
+	return r.IOS.Installed(ctx, udid, appID)
+}
+
 // validateAppFile rejects an install path that cannot work before the
 // install is attempted, with a message that says what to do instead: a
 // Simulator runs a simulator build (`.app`), not a device `.ipa`, and an

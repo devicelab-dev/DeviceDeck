@@ -78,6 +78,7 @@ type Server struct {
 	video       VideoSource
 	capture     CaptureService
 	console     http.Handler
+	apps        AppProvider
 	// inputs enforces one driver per device.
 	inputs *inputOwners
 	// sleep paces multi-frame gestures; injected so tests run instantly.
@@ -119,6 +120,17 @@ func (s *Server) sendFrame(ctx context.Context, udid string, frame []byte) error
 // SetConsole mounts the browser console at /. Optional — API-only servers
 // (and tests) skip it.
 func (s *Server) SetConsole(h http.Handler) { s.console = h }
+
+// AppProvider installs a registered app build on a device that is about to
+// launch it and does not have it yet (see internal/apps).
+type AppProvider interface {
+	Ensure(ctx context.Context, udid, appID string) error
+}
+
+// SetApps gives launches the builds passed with --app, so launching one by
+// its id installs it first where needed. Without it, launch uses only what
+// is already on the device or the request's own appFile.
+func (s *Server) SetApps(p AppProvider) { s.apps = p }
 
 // Handler returns the API routing table, wrapped so every request is logged.
 func (s *Server) Handler() http.Handler {
@@ -176,6 +188,23 @@ type installRequest struct {
 	AppFile string `json:"appFile"`
 }
 
+// prepareApp makes sure the app is on the device before launch. A request's
+// own app file is installed first: the one-call "ready" path. Otherwise a
+// build registered with --app is installed if the device lacks it. The
+// returned status is the HTTP code for the error.
+func (s *Server) prepareApp(ctx context.Context, udid string, req launchRequest) (int, error) {
+	if req.AppFile == "" {
+		if s.apps == nil {
+			return 0, nil
+		}
+		return http.StatusBadGateway, s.apps.Ensure(ctx, udid, req.App)
+	}
+	if err := validateAppFile(udid, req.AppFile); err != nil {
+		return http.StatusBadRequest, err
+	}
+	return http.StatusBadGateway, s.launch.Install(ctx, udid, req.AppFile)
+}
+
 // handleLaunchApp starts an app at a first-run screen by default — data
 // wiped, logged out — so a caller begins from the clean slate a new
 // automation session expects. ?reset=no resumes the app as it was left.
@@ -189,17 +218,9 @@ func (s *Server) handleLaunchApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	udid := r.PathValue("udid")
-	// An app file installs it first — the one-call "ready" path: install,
-	// then reset + launch below.
-	if req.AppFile != "" {
-		if err := validateAppFile(udid, req.AppFile); err != nil {
-			httpError(w, http.StatusBadRequest, err)
-			return
-		}
-		if err := s.launch.Install(r.Context(), udid, req.AppFile); err != nil {
-			httpError(w, http.StatusBadGateway, err)
-			return
-		}
+	if status, err := s.prepareApp(r.Context(), udid, req); err != nil {
+		httpError(w, status, err)
+		return
 	}
 	// Launch fresh by default: wipe the app's stored data first so the run
 	// begins at a first-run screen — logged out — which is the clean slate

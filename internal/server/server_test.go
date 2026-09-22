@@ -894,3 +894,35 @@ func TestOpenURL(t *testing.T) {
 		t.Errorf("malformed body status = %d", rec.Code)
 	}
 }
+
+// fakeApps records which launches asked for a registered build.
+type fakeApps struct {
+	asked []string
+	err   error
+}
+
+func (a *fakeApps) Ensure(_ context.Context, udid, appID string) error {
+	a.asked = append(a.asked, udid+"/"+appID)
+	return a.err
+}
+
+func TestLaunchAppUsesRegisteredBuilds(t *testing.T) {
+	f := &fakeBackend{nodes: []runner.Node{{Type: "Button", Label: "Sign In", Enabled: true}}}
+	apps := &fakeApps{}
+	srv := newTestServer(f)
+	srv.SetApps(apps)
+	rec := do(t, srv, "POST", "/api/devices/AAA/app/launch", `{"app":"com.example"}`)
+	if rec.Code != http.StatusOK || strings.Join(apps.asked, ",") != "AAA/com.example" || len(f.launched) != 1 {
+		t.Fatalf("launch: %d %s, asked %v, launched %v", rec.Code, rec.Body, apps.asked, f.launched)
+	}
+	// A request carrying its own file does not consult the registry.
+	do(t, srv, "POST", "/api/devices/EB69B42A/app/launch", `{"app":"com.example","appFile":"/x/My.app"}`)
+	if len(apps.asked) != 1 {
+		t.Errorf("registry consulted for an explicit file: %v", apps.asked)
+	}
+	apps.err = errors.New("install com.example: disk full")
+	rec = do(t, srv, "POST", "/api/devices/AAA/app/launch", `{"app":"com.example"}`)
+	if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "disk full") {
+		t.Errorf("failed install: %d %s", rec.Code, rec.Body)
+	}
+}

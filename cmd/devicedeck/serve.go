@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/devicelab-dev/DeviceDeck/internal/apps"
 	"github.com/devicelab-dev/DeviceDeck/internal/brand"
 	"github.com/devicelab-dev/DeviceDeck/internal/capture"
 	"github.com/devicelab-dev/DeviceDeck/internal/doctor"
@@ -36,9 +37,18 @@ import (
 // serveFlags is what `serve` was asked to do, parsed once so the wiring in
 // runServe reads as wiring.
 type serveFlags struct {
-	addr, hidPath, videoPath, readyApp string
-	fps                                int
-	keepDevices, ready                 bool
+	addr, hidPath, videoPath string
+	apps                     []string // --app, repeatable
+	fps                      int
+	keepDevices, ready       bool
+}
+
+// readyApp is what --ready works with: the first --app, or none.
+func (f *serveFlags) readyApp() string {
+	if len(f.apps) == 0 {
+		return ""
+	}
+	return f.apps[0]
 }
 
 // parseServeFlags parses serve's arguments into serveFlags.
@@ -54,10 +64,16 @@ func parseServeFlags(args []string) (*serveFlags, error) {
 		"leave the Android emulators DeviceDeck started running on exit (iOS simulators are shut down by the test runner regardless)")
 	flags.BoolVar(&f.ready, "ready", false,
 		"resolve a device (prefer booted, else newest iOS runtime >= 26.2), bring it up, and print a machine-readable status object")
-	flags.StringVar(&f.readyApp, "app", "",
-		"with --ready: an app to launch on the resolved device — a bundle id, or a .app/.apk path to install first")
+	flags.Func("app", "an app build (.app for iOS, .apk for Android) to install on a device the first "+
+		"time that app is launched there; repeat for both platforms. With --ready, a bundle id also works",
+		func(v string) error { f.apps = append(f.apps, v); return nil })
 	if err := flags.Parse(args); err != nil {
 		return nil, err
+	}
+	for _, a := range f.apps {
+		if !f.ready && !isAppFile(a) {
+			return nil, fmt.Errorf("--app %q: pass a .app or .apk path (a bundle id works only with --ready)", a)
+		}
 	}
 	return f, nil
 }
@@ -78,19 +94,16 @@ func runServe(args []string) error {
 		return err
 	}
 	defer env.close()
-	st := buildStack(env.hid, env.video, opts.fps)
+	st, err := buildStack(env.hid, env.video, opts.fps, opts.apps)
+	if err != nil {
+		return err
+	}
 	httpServer := &http.Server{Addr: opts.addr, Handler: st.srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	errCh, err := listen(httpServer)
 	if err != nil {
 		return err
 	}
-	local, network := localURL(opts.addr), networkURLs(opts.addr)
-	slog.Debug("devicedeck serving", "addr", opts.addr, "console", local, "network", network)
-	newWelcome(context.Background(), st.devices, doctor.System(), local, network, env.logs.Dir, env.hyper).write(os.Stderr)
-	go announceUpdate(context.Background(), http.DefaultClient, brand.UpdateURL, version.Version, os.Stderr)
-	if opts.ready {
-		bringReady(context.Background(), st.devices, st.boots, st.launches, local, opts.readyApp, os.Stdout)
-	}
+	greet(st, env, opts, doctor.System(), brand.UpdateURL, os.Stderr)
 	if err := waitForExit(errCh); err != nil {
 		slog.Error("server stopped", "err", err)
 		return err
@@ -264,7 +277,26 @@ type stack struct {
 	devices  server.MultiLister
 	boots    server.BootRouter
 	launches server.LaunchRouter
+	catalog  *apps.Catalog
 	srv      *server.Server
+}
+
+// appFiles keeps the --app values that are build paths; a bundle id is only
+// meaningful to --ready.
+func appFiles(args []string) []string {
+	var files []string
+	for _, a := range args {
+		if isAppFile(a) {
+			files = append(files, a)
+		}
+	}
+	return files
+}
+
+// appDevice is how the app catalog reaches devices: check, then install.
+type appDevice struct {
+	server.InstalledRouter
+	server.LaunchRouter
 }
 
 // androidInjector adapts the engines' concrete Android engine to the input
@@ -279,7 +311,8 @@ func (st *stack) androidInjector(ctx context.Context, udid string) (input.Androi
 
 // buildStack constructs the stack without starting any process: the
 // managers spawn their sidecars lazily, on the first device that needs one.
-func buildStack(hidBin, videoBin string, fps int) *stack {
+// The --app builds are identified here, so a bad path stops the start.
+func buildStack(hidBin, videoBin string, fps int, appArgs []string) (*stack, error) {
 	st := &stack{
 		inputs:  input.NewManager(hidBin),
 		videos:  video.NewManager(videoBin, fps),
@@ -297,7 +330,27 @@ func buildStack(hidBin, videoBin string, fps int) *stack {
 		server.ScreenshotRouter{IOS: simClient, Android: st.emu},
 		frames, st.engines, st.videos, capture.NewService(st.engines))
 	st.srv.SetConsole(web.Handler(st.srv.FirstTree))
-	return st
+	cat, err := apps.NewCatalog(appFiles(appArgs), appDevice{server.InstalledRouter{IOS: simClient, Android: st.emu}, st.launches})
+	if err != nil {
+		return nil, err
+	}
+	st.catalog = cat
+	st.srv.SetApps(cat)
+	return st, nil
+}
+
+// greet runs once the server is listening: the startup guide, the update
+// check in the background, and --ready. tools and updateURL are parameters so
+// tests can stand in for the machine and the network.
+func greet(st *stack, env *serveEnv, opts *serveFlags, tools doctor.Env, updateURL string, out io.Writer) {
+	ctx := context.Background()
+	local, network := localURL(opts.addr), networkURLs(opts.addr)
+	slog.Debug("devicedeck serving", "addr", opts.addr, "console", local, "network", network)
+	newWelcome(ctx, st.devices, tools, st.catalog.Apps(), local, network, env.logs.Dir, env.hyper).write(out)
+	go announceUpdate(ctx, http.DefaultClient, updateURL, version.Version, out)
+	if opts.ready {
+		bringReady(ctx, st.devices, st.boots, st.launches, local, opts.readyApp(), os.Stdout)
+	}
 }
 
 // listen binds the address before anything says the server is up, so a port
