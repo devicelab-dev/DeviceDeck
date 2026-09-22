@@ -14,9 +14,13 @@ difference: durable accessibility-id selectors, real-HID typing, native gestures
 lifecycle a web test would not know.
 
 **Prerequisites**
-- `devicedeck serve` is running (default `http://127.0.0.1:8787`) with a device booted. The
-  device page is `/device/{udid}?app={bundleId}` — use `booted` for the udid when one
-  simulator is up. If nothing is booted, open the console at the base URL and click a device.
+- `devicedeck` is running (default `http://127.0.0.1:8787`). The device page is
+  `/device/{udid}?app={bundleId}` — use `booted` for the udid when one simulator is up.
+- **If no device is booted, boot one yourself** — do not send the user to the console. With
+  DeviceDeck's MCP tools: `list_devices`, then `boot_device` on a simulator (or emulator) that
+  fits the app, then `launch_app` with the bundle id (a build registered with `devicedeck --app`
+  is installed first). `device_page_url` gives the page to open. Only without those tools, ask the
+  user to open the console at the base URL and pick a device.
 - You drive with **Playwright MCP** (`@playwright/mcp`) — the browser tool you already use for
   the web. (Cypress and Puppeteer drive the same DOM too — see [`examples/`](../../examples/) —
   but Playwright is the natural pairing, since it is also what drives.)
@@ -49,11 +53,13 @@ Write it like any web spec, with the same `data-testid` selectors — follow
 [`examples/playwright`](../../examples/playwright) as the canonical template. The idioms that
 matter here:
 
+- **Project:** if the folder has no Playwright setup, create one so `npx playwright test` runs:
+  `package.json` with `@playwright/test` as a dev dependency, and a `playwright.config.ts`.
 - **Config:** `baseURL: 'http://127.0.0.1:8787'`, `workers: 1`, `fullyParallel: false` — a
   device serves one driver at a time.
 - **Launch fresh in a fixture:** `request.post('/api/devices/{udid}/app/launch', { data: { app } })`
-  — it blocks until the app is taking input, so the first action lands (pass `reset: false`
-  to resume instead of starting first-run).
+  — it blocks until the app is taking input, so the first action lands. It clears the app's data
+  first; post to `/app/launch?reset=no` to resume where the app was left instead.
 - **Selectors:** `page.getByTestId('login-button')` / `getByRole`; Playwright auto-waits.
 - **Typing:** `page.keyboard.type(text, { delay: 150 })` — real HID pacing.
 - **Wait for the echo before submitting:** `page.waitForFunction` on the field's
@@ -72,13 +78,14 @@ matter here:
 - **One driver per device.** Run a single worker, and close any console tab left open on the
   device or it will refuse the run.
 
-## Optional: let the agent manage devices
+## Managing devices
 
-The above assumes a booted device with your app installed. If you want the **agent itself** to pick,
-boot, install, and launch, DeviceDeck's MCP adds `list_devices`, `boot_device`, `install_app`
+With DeviceDeck's MCP tools (the Claude plugin, the Gemini extension, or `devicedeck mcp` added by
+hand) the agent picks, boots, installs and launches itself: `list_devices`, `boot_device`, `install_app`
 (a `.app` for a Simulator or a `.apk` for an emulator — not a device `.ipa`), and `launch_app`
 (which also takes an `appFile` to install-then-launch in one call); `device_page_url` returns the
-page to hand to Playwright MCP. Otherwise a booted device plus Playwright MCP is all you need.
+page to hand to Playwright MCP. Without them, a device the user booted plus Playwright MCP is all you
+need.
 
 **If the app is not installed** (a launch fails with *"is it installed?"*) **or you were not given
 its file, ask the user** for the `.app`/`.apk` path or the bundle id — do not guess a bundle id or

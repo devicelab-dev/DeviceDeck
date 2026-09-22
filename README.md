@@ -134,53 +134,52 @@ uninstall, delete that folder and the `# DeviceDeck` line from your shell profil
 
 ## Using it
 
-### With your tests
-
-You don't need a mobile test suite to start — the device is a web page, so you get your first test
-the way you would for a website:
-
-- **Let your agent write it.** With the [agent setup](#with-an-ai-agent), ask it: *"Open
-  http://127.0.0.1:8787/device/booted?app=com.your.app and write a Playwright test that logs in."*
-  It drives the app and writes a spec that selects by the app's ids.
-- **Record it.** Playwright's [playwright-cli](https://github.com/microsoft/playwright-cli) records
-  what you do on the device page and writes ordinary locators — here is
-  [a recorded login](examples/playwright/tests/recorded/login-recorded.spec.ts).
-- **Start from an example.** [`examples/`](examples/) has runnable login and checkout projects for
-  Playwright, Cypress and Puppeteer — copy one and point it at your app.
-
-Tests point at `/device/{udid}?app={bundleId}`: accessibility ids are `data-testid`, roles and
-labels are ARIA, so every selector is an ordinary web one. **Guide:** [docs/testing.md](docs/testing.md).
-
-**One device, one worker.** A device takes one driver at a time: two clients tapping at once would
-interleave into nonsense, so a second one is refused and told who holds the device. Test runners go
-parallel by default, so set one worker per device (`workers: 1` in Playwright) — and to run in
-parallel, boot more devices and give each worker its own. In the console, tabs hand the device to
-the tab you are using, and **Take over** disconnects whoever holds it.
-
-The mirror has a few quirks a web test wouldn't expect — only the current screen is mirrored, fields
-are real `<input>`s, typing is verified. See [docs/behaviors.md](docs/behaviors.md).
-
-### With an AI agent
-
-Add the browser tool your agent already has, then DeviceDeck's skills:
+### Your first test, in four steps
 
 ```bash
+# 1. Start DeviceDeck with your app build (.app for a simulator, .apk for an emulator)
+devicedeck --app path/to/MyApp.app
+
+# 2. Give Claude Code the browser tool and DeviceDeck's plugin
 claude mcp add playwright npx @playwright/mcp@latest
 claude plugin marketplace add devicelab-dev/DeviceDeck
 claude plugin install devicedeck@devicedeck-marketplace
+
+# 3. Ask Claude — it boots a simulator, launches your app, drives it, writes the test
+#    "Write a Playwright test that logs in to my app com.your.app"
+
+# 4. Run it
+npx playwright test
 ```
 
-The agent drives the device the way it drives the web: it **snapshots the page**, reasons over the
-tree, and acts by ref — no bespoke tool, no coordinates, no vision model. Here it picks the right
-**Add** among five identical ones and adds *Maestro* to the cart:
+The agent drives the device the way it drives any web page: it **snapshots the page**, reasons over
+the tree, and acts by ref — no coordinates, no vision model. Here it picks the right **Add** among
+five identical ones:
 
 <div align="center">
 <img src="docs/demo-agent.gif" width="820" alt="An AI agent using Playwright MCP: browser_snapshot returns the product screen as an accessibility tree with five identical Add buttons, a reasoning step picks the one after Maestro (add-to-cart-2, ref e24), browser_click adds it, and opening the cart confirms Maestro was added — not Appium.">
 </div>
 
-That disambiguation is an [included spec](examples/playwright/tests/platform/mcp-agent.spec.ts) that
-passes end to end. Using Codex, Cursor, Gemini CLI or VS Code? Each has a two- or three-command
-setup in [docs/agents.md](docs/agents.md#set-up-your-agent).
+### Other agents
+
+Steps 1, 3 and 4 are the same; only step 2 changes.
+
+| Agent | Step 2 |
+|---|---|
+| **Gemini CLI** | `gemini extensions install https://github.com/devicelab-dev/DeviceDeck` |
+| **Codex CLI** | `codex mcp add playwright -- npx @playwright/mcp@latest`<br>`codex mcp add devicedeck -- devicedeck mcp`<br>`npx skills add devicelab-dev/DeviceDeck` |
+| **VS Code / Copilot** | `code --add-mcp '{"name":"playwright","command":"npx","args":["@playwright/mcp@latest"]}'`<br>`code --add-mcp '{"name":"devicedeck","command":"devicedeck","args":["mcp"]}'`<br>`npx skills add devicelab-dev/DeviceDeck` |
+| **Cursor, and others** | add the same two MCP servers in the agent's settings, then `npx skills add devicelab-dev/DeviceDeck` — [docs/agents.md](docs/agents.md#set-up-your-agent) |
+
+Each agent gets the same three pieces: **Playwright MCP** to drive the device page, DeviceDeck's
+**device tools** to boot devices and launch apps, and its **skills** for writing tests, recording
+flows and triaging failures.
+
+### Already have tests, or prefer to write them?
+
+Point Playwright, Cypress or Puppeteer at `http://127.0.0.1:8787/device/{udid}?app={bundleId}`,
+run **one worker per device**, and select by `data-testid` (the app's accessibility id) or by role.
+To record a test instead, or start from a template, see [docs/testing.md](docs/testing.md).
 
 ### By hand — the console
 
@@ -208,7 +207,7 @@ the ceiling is physics, not an artificial limit.
   network; on shared Wi-Fi run `devicedeck --addr 127.0.0.1:8787` to keep it to this Mac. There is
   no access control yet — do not put it on the open internet as-is.
 - **A driver that dies without closing its connection holds its device for up to half a minute**,
-  until a missed ping releases it — see [one device, one worker](#with-your-tests).
+  until a missed ping releases it — see [docs/testing.md](docs/testing.md#one-device-one-worker).
 - **Android video is ~18 fps and heavier than iOS.** The emulator's gRPC screenshot stream offers no
   video codec, so every frame is a full PNG rather than an H.264 delta. Emulators DeviceDeck boots
   run headless, because macOS throttles an occluded window — and the emulator's window is occluded
