@@ -48,7 +48,7 @@ header {
   border: 1px solid var(--edge); border-radius: 4px; padding: 2px 8px; margin-left: 8px;
 }
 .star:hover { border-color: var(--accent); color: var(--accent); }
-#panel a.realdevices { display: block; margin-top: 8px; color: var(--accent); font-size: 12px; }
+#panel .dl-card { margin-top: 14px; }
 .spacer { flex: 1; }
 
 select, input, button {
@@ -455,11 +455,15 @@ main { flex: 1; display: flex; min-height: 0; }
   text-align: center;
   padding: 0 24px;
 }
+/* The DeviceLab card: at the bottom of the loading frame, and under a
+   captured flow in the panel (a clone of the same element). */
 .frame-promo {
   position: absolute;
   left: 16px;
   right: 16px;
   bottom: 28px;
+}
+.dl-card {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -474,7 +478,7 @@ main { flex: 1; display: flex; min-height: 0; }
   color: var(--dim);
   text-decoration: none;
 }
-.frame-promo:hover { border-color: var(--accent); }
+.dl-card:hover { border-color: var(--accent); }
 .promo-head {
   display: inline-flex;
   align-items: center;
@@ -488,8 +492,8 @@ main { flex: 1; display: flex; min-height: 0; }
 .promo-title { color: var(--text); font-size: 15px; font-weight: 600; }
 .promo-line { min-height: 3em; transition: opacity 0.35s ease; }
 .promo-line.fading { opacity: 0; }
-.frame-promo strong { color: var(--accent); font-size: 13px; }
-.frame-promo:hover strong { text-decoration: underline; }
+.dl-card strong { color: var(--accent); font-size: 13px; }
+.dl-card:hover strong { text-decoration: underline; }
 #video.connecting { visibility: hidden; }
 
 /* An armed assertion is a mode: the next tap does not reach the device,
