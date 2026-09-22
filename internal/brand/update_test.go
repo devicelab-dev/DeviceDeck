@@ -64,7 +64,7 @@ func TestNewer(t *testing.T) {
 func TestUpdateNotice(t *testing.T) {
 	var b bytes.Buffer
 	UpdateNotice(&b, "0.1.0", "0.2.0")
-	if !strings.Contains(b.String(), "0.1.0 -> 0.2.0") || !strings.Contains(b.String(), Install) {
+	if !strings.Contains(b.String(), "0.1.0 → 0.2.0") || !strings.Contains(b.String(), Install) {
 		t.Errorf("notice = %q", b.String())
 	}
 }

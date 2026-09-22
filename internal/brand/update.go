@@ -80,5 +80,5 @@ func parseVersion(v string) ([3]int, bool) {
 
 // UpdateNotice is the message shown when a newer release exists.
 func UpdateNotice(w io.Writer, current, latest string) {
-	_, _ = fmt.Fprintf(w, "\n  Update available: %s -> %s\n  Run: %s\n\n", current, latest, Install)
+	_, _ = fmt.Fprintf(w, "\n  Update available: %s → %s\n  Run: %s\n\n", current, latest, Install)
 }
