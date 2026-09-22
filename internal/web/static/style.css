@@ -36,7 +36,15 @@ header {
   flex-wrap: wrap;
 }
 
-.brand { font-weight: 700; letter-spacing: 0.02em; margin-right: 8px; }
+.brand { font-weight: 700; letter-spacing: 0.02em; }
+.maker { color: var(--dim); font-size: 12px; margin-right: 8px; text-decoration: none; }
+.maker:hover { color: var(--accent); }
+.star {
+  color: var(--text); font-size: 12px; text-decoration: none; white-space: nowrap;
+  border: 1px solid var(--edge); border-radius: 4px; padding: 2px 8px; margin-left: 8px;
+}
+.star:hover { border-color: var(--accent); color: var(--accent); }
+#panel a.realdevices { display: block; margin-top: 8px; color: var(--accent); font-size: 12px; }
 .spacer { flex: 1; }
 
 select, input, button {

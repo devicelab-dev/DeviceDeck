@@ -95,3 +95,6 @@ esac
 say "Installed $("$BIN_DIR/devicedeck" version 2>/dev/null || echo "devicedeck ${VERSION}")"
 say "Open a new terminal (or: export PATH=\"$BIN_DIR:\$PATH\"), then run: devicedeck serve"
 say "Then open http://127.0.0.1:8787"
+echo
+echo "  DeviceDeck is built by DeviceLab.dev - run your captured flows on real devices: https://devicelab.dev"
+echo "  Like it? Star us on GitHub: https://github.com/devicelab-dev/DeviceDeck"

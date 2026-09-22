@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/devicelab-dev/DeviceDeck/internal/brand"
 	"github.com/devicelab-dev/DeviceDeck/internal/version"
 	"github.com/devicelab-dev/DeviceDeck/internal/video"
 )
@@ -65,7 +66,7 @@ func arg(i int) string {
 // it does — which, for a tool distributed as a tarball, is most first
 // contacts. It names the one command that matters and where to go next.
 func usage(w io.Writer) {
-	_, _ = fmt.Fprintf(w, `%s
+	_, _ = fmt.Fprintf(w, `%s - by %s (%s)
 
 Streams iOS Simulators and Android emulators to a browser, and turns a
 session driven by hand into a replayable test.
@@ -83,5 +84,8 @@ agent can list, boot, launch, and inspect devices; point its MCP client at it.
 Once running, open the console at the address it prints (by default
 http://127.0.0.1:8787) to pick a device. Point your own tests at
 /device/{udid} and drive it with ordinary web selectors.
-`, version.Line())
+
+%s: %s
+Star us on GitHub: %s
+`, version.Line(), brand.Maker, brand.Site, brand.RealRuns, brand.Site, brand.Repo)
 }

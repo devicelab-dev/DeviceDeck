@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/devicelab-dev/DeviceDeck/internal/brand"
 	"github.com/devicelab-dev/DeviceDeck/internal/capture"
 	"github.com/devicelab-dev/DeviceDeck/internal/emu"
 	"github.com/devicelab-dev/DeviceDeck/internal/home"
@@ -82,6 +83,7 @@ func runServe(args []string) error {
 	go func() { errCh <- httpServer.ListenAndServe() }()
 	local := localURL(opts.addr)
 	slog.Info("devicedeck serving", "addr", opts.addr, "console", local, "network", networkURLs(opts.addr))
+	go announceUpdate(context.Background(), http.DefaultClient, brand.UpdateURL, version.Version, os.Stderr)
 	if opts.ready {
 		bringReady(context.Background(), st.devices, st.boots, st.launches, local, opts.readyApp, os.Stdout)
 	}
@@ -90,6 +92,7 @@ func runServe(args []string) error {
 		return err
 	}
 	shutdown(st, httpServer, opts.keepDevices)
+	brand.Footer(os.Stderr, env.hyper)
 	return nil
 }
 
@@ -98,6 +101,7 @@ func runServe(args []string) error {
 type serveEnv struct {
 	hid, video string
 	logs       *logging.Run
+	hyper      bool // the terminal takes clickable links
 }
 
 // close flushes the run's logs, the runner's driver log included.
@@ -109,6 +113,10 @@ func (e *serveEnv) close() {
 // setupServe starts the run's logs first, so a failure in any later step
 // (preparing the home folder, finding a sidecar) is recorded in them too.
 func setupServe(opts *serveFlags) (*serveEnv, error) {
+	// Decided before the console is captured, while stderr is still the
+	// terminal itself.
+	hyper := brand.Hyperlinks(os.Stderr)
+	brand.Banner(os.Stderr, version.Line(), hyper)
 	dir, err := home.Dir()
 	if err != nil {
 		return nil, err
@@ -117,7 +125,7 @@ func setupServe(opts *serveFlags) (*serveEnv, error) {
 	if err != nil {
 		return nil, err
 	}
-	env := &serveEnv{logs: logs}
+	env := &serveEnv{logs: logs, hyper: hyper}
 	captureConsole(logs)
 	attachRunnerLog(logs.Path("runner.log"))
 	if err := env.resolve(dir, opts); err != nil {
@@ -146,6 +154,21 @@ func (e *serveEnv) resolve(dir string, opts *serveFlags) (err error) {
 // terminal level comes from DEVICEDECK_LOG; the files record everything.
 func startRunLogs(dir, kind string, term io.Writer) (*logging.Run, error) {
 	return logging.Start(dir, kind, term, logging.Level(os.Getenv(logging.EnvLevel)))
+}
+
+// announceUpdate tells the user when a newer DeviceDeck is released. It runs
+// in the background and says nothing when the check fails or the build is a
+// local one, so it never delays or clutters a start.
+func announceUpdate(ctx context.Context, client *http.Client, url, current string, w io.Writer) {
+	latest, err := brand.Latest(ctx, client, url)
+	if err != nil {
+		slog.Debug("update check skipped", "err", err)
+		return
+	}
+	if brand.Newer(latest, current) {
+		slog.Info("update available", "current", current, "latest", latest)
+		brand.UpdateNotice(w, current, latest)
+	}
 }
 
 // consoleCapturer is the part of a log run that copies stdout and stderr.

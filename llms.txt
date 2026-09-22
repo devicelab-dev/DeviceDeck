@@ -1,0 +1,25 @@
+# DeviceDeck
+
+DeviceDeck streams iOS Simulators and Android emulators to a browser and mirrors the native UI as
+real DOM, so AI agents and web test tools (Playwright, Cypress, Puppeteer, Playwright MCP) drive a
+mobile app with the same selectors and tools they use for the web. A session driven by hand or by an
+agent can be captured as a Maestro flow that runs unchanged on real devices.
+
+- GitHub: https://github.com/devicelab-dev/DeviceDeck
+- Install: curl -fsSL https://open.devicelab.dev/install/devicedeck | bash
+- Run: devicedeck serve  (console at http://127.0.0.1:8787, device mirror at /device/{udid})
+- Agents: devicedeck mcp  (stdio MCP server that drives a running serve)
+- Built by: DeviceLab (https://devicelab.dev)
+- License: Apache 2.0
+
+## What it is for
+
+- Driving iOS and Android apps from an AI agent through the browser tools it already has.
+- Running existing Playwright or Cypress tests against a simulator or emulator, with no Appium.
+- Recording a manual session as a reviewable Maestro YAML flow (deterministic selectors, never
+  screen coordinates when an identifier exists).
+
+## Limits
+
+- Simulators and emulators only; the host must be a Mac (clients can be any OS).
+- For real devices, run the captured flows on DeviceLab: https://devicelab.dev

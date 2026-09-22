@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devicelab-dev/DeviceDeck/internal/brand"
 	"github.com/devicelab-dev/DeviceDeck/internal/home"
 	"github.com/devicelab-dev/DeviceDeck/internal/ready"
 	"github.com/devicelab-dev/DeviceDeck/internal/sim"
@@ -117,7 +118,10 @@ func TestResolveBinaryRefusesDirectory(t *testing.T) {
 func TestUsageNamesTheEssentials(t *testing.T) {
 	var b strings.Builder
 	usage(&b)
-	for _, want := range []string{"devicedeck serve", "127.0.0.1:8787", "/device/", "version"} {
+	for _, want := range []string{
+		"devicedeck serve", "127.0.0.1:8787", "/device/", "version",
+		"by DeviceLab.dev (https://devicelab.dev)", "Star us on GitHub: " + brand.Repo,
+	} {
 		if !strings.Contains(b.String(), want) {
 			t.Errorf("usage does not mention %q:\n%s", want, b.String())
 		}
@@ -533,5 +537,33 @@ func TestBuildStack(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("console status = %d", resp.StatusCode)
+	}
+}
+
+func TestAnnounceUpdate(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/down" {
+			http.Error(w, "down", http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte(`{"latest_version":"0.2.0"}`))
+	}))
+	defer srv.Close()
+	for _, tc := range []struct {
+		name, path, current string
+		wantNotice          bool
+	}{
+		{"newer release", "/", "0.1.0", true},
+		{"already current", "/", "0.2.0", false},
+		{"local build", "/", "dev", false},
+		{"service down", "/down", "0.1.0", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out bytes.Buffer
+			announceUpdate(context.Background(), srv.Client(), srv.URL+tc.path, tc.current, &out)
+			if got := strings.Contains(out.String(), "Update available"); got != tc.wantNotice {
+				t.Errorf("notice shown = %v, want %v (%q)", got, tc.wantNotice, out.String())
+			}
+		})
 	}
 }

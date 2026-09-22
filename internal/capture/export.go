@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/devicelab-dev/DeviceDeck/internal/brand"
 )
 
 // ExportMaestro renders recorded steps as a Maestro YAML flow. The output
@@ -32,6 +34,7 @@ func ExportMaestroWithLint(appID string, steps []Step, findings []DesertFinding)
 
 func exportMaestro(appID string, steps []Step, findings []DesertFinding) string {
 	var b strings.Builder
+	b.WriteString(brand.FlowHeader())
 	fmt.Fprintf(&b, "appId: %s\n", appID)
 	fmt.Fprintf(&b, "name: %s\n", flowName(appID))
 	fmt.Fprintf(&b, "tags:\n  - devicedeck\n  - capture\n")

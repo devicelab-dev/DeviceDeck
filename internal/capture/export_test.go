@@ -7,6 +7,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/devicelab-dev/DeviceDeck/internal/brand"
 	"github.com/devicelab-dev/DeviceDeck/internal/runner"
 )
 
@@ -252,5 +253,17 @@ func TestUnsupportedFieldsUnknownPlatform(t *testing.T) {
 func TestUnsupportedFieldsParseError(t *testing.T) {
 	if _, err := runner.UnsupportedFields([]byte("appId: x\n---\n- notACommand: 1\n"), "ios"); err == nil {
 		t.Fatal("expected a parse error")
+	}
+}
+
+// Every captured flow opens with the DeviceDeck credit, as YAML comments, and
+// the runner that replays it on real devices still parses it unchanged.
+func TestExportCarriesBrandHeaderAndStillParses(t *testing.T) {
+	yaml := ExportMaestro("com.example", []Step{{Kind: "tapOn", ID: "sign-in"}})
+	if !strings.HasPrefix(yaml, brand.FlowHeader()+"appId: com.example\n") {
+		t.Fatalf("flow does not open with the brand header:\n%s", yaml)
+	}
+	if steps, err := runner.ValidateFlow([]byte(yaml)); err != nil || steps == 0 {
+		t.Fatalf("runner rejects the branded flow: %d steps, %v", steps, err)
 	}
 }

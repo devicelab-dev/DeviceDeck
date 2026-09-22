@@ -481,6 +481,16 @@ function showFlow(yaml, steps) {
   }
   link.href = URL.createObjectURL(new Blob([yaml], { type: "text/yaml" }));
   link.download = "flow.yaml";
+  // The flow runs unchanged on real devices: say where.
+  if (!$("panel").querySelector("a.realdevices")) {
+    const cta = document.createElement("a");
+    cta.className = "realdevices";
+    cta.href = "https://devicelab.dev";
+    cta.target = "_blank";
+    cta.rel = "noopener";
+    cta.textContent = "Run this flow unchanged on real devices at devicelab.dev →";
+    $("panel").appendChild(cta);
+  }
   status.textContent = `captured ${steps.length} steps`;
 }
 

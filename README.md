@@ -18,6 +18,7 @@ Playwright and Cypress tests. No Appium, no new tool.**
 ![iOS + Android](https://img.shields.io/badge/devices-iOS_%2B_Android-success)
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
 ![Single binary](https://img.shields.io/badge/ships-single_binary-brightgreen)
+[![by DeviceLab.dev](https://img.shields.io/badge/by-DeviceLab.dev-4f8cff)](https://devicelab.dev)
 
 [Two commands](#two-commands-two-superpowers) · [Quick start](#quick-start) · [Using it](#using-it) · [Docs](docs/) · [Known limits](#known-limits)
 
