@@ -32,11 +32,36 @@ Stock Playwright driving a real iOS Simulator from another machine — the same 
 <a href="https://devicelab.dev"><img alt="by DeviceLab.dev" src="https://img.shields.io/badge/by-DeviceLab.dev-4f8cff"></a>
 </p>
 
-[What it does](#what-it-does) · [Quick start](#quick-start) · [Using it](#using-it) · [Docs](docs/) · [Known limits](#known-limits)
+[Get started](#get-started) · [What it does](#what-it-does) · [Using it](#using-it) · [Docs](docs/) · [Known limits](#known-limits)
 
 </div>
 
 ---
+
+## Get started
+
+Needs a Mac with Xcode (and the Android SDK for Android) — `devicedeck doctor` says what's missing.
+
+```bash
+# 1. Install, then start DeviceDeck with your app build (.app for a simulator, .apk for an emulator)
+curl -fsSL https://open.devicelab.dev/install/devicedeck | bash
+export PATH="$HOME/.devicedeck/bin:$PATH"   # or open a new terminal
+devicedeck --app path/to/MyApp.app
+
+# 2. Give Claude Code the browser tool and DeviceDeck's plugin
+claude mcp add playwright npx @playwright/mcp@latest
+claude plugin marketplace add devicelab-dev/DeviceDeck
+claude plugin install devicedeck@devicedeck-marketplace
+
+# 3. Ask Claude — it boots a simulator, launches your app, drives it, writes the test
+#    "Write a Playwright test that logs in to my app com.your.app"
+
+# 4. Run it
+npx playwright test
+```
+
+Using Gemini CLI, Codex, VS Code or Cursor? Only step 2 changes — see [Other agents](#other-agents).
+Prefer to use devices by hand? Open the console at `http://127.0.0.1:8787`.
 
 ## What it does
 
@@ -70,87 +95,9 @@ await expect(page.getByText('Hello, devicelab!')).toBeVisible();
 A single Go binary streams the simulator or emulator to the browser and serves that DOM — the same
 page and selectors drive iOS and Android alike.
 
-## Status
-
-Early release. Both platforms drive end to end: **Playwright, Cypress and Puppeteer each log into and
-check out of TestHive through the same DOM**, and the console drives any device by hand. It is an
-ordinary web page, so any browser driver works with no mobile-specific code. Typing is checked
-against the device's own read-back, so a keystroke that does not land is retyped rather than lost —
-on iOS *and* on Android's masked password fields.
-
-It has run on a handful of Macs so far, so expect some first-contact problems — please
-[open an issue](https://github.com/devicelab-dev/DeviceDeck/issues) with the log folder it prints.
-See [**Known limits**](#known-limits).
-
-## Requirements
-
-- **A Mac to host.** iOS Simulators, `simctl`/CoreSimulator and the Swift sidecars are
-  macOS-only, so the machine that runs the devices is a Mac. **Clients can be any OS:** the surface
-  is a web page, so people, tests and agents drive it from Linux, Windows or another Mac.
-- **Xcode** with at least one iOS Simulator runtime — **iOS 26.2 or newer is strongly
-  recommended**; on 18.6 the simulator's render server crashes under repeated capture.
-- **For Android:** the Android SDK, with `adb` and `emulator` on `PATH`, and at least one virtual
-  device.
-
-`devicedeck doctor` checks all of this and says how to fix anything missing.
-
-## Quick start
-
-**Install** with the script — it puts DeviceDeck in `~/.devicedeck` and adds its `bin` folder to
-your `PATH`. No sudo, and nothing else to install: the Android driver ships inside the binary.
-
-```bash
-curl -fsSL https://open.devicelab.dev/install/devicedeck | bash
-# a specific version:
-curl -fsSL https://open.devicelab.dev/install/devicedeck | bash -s -- --version 0.1.0
-```
-
-Or download an archive from [Releases](https://github.com/devicelab-dev/DeviceDeck/releases) and run
-it in place (the two sidecars sit beside the binary in `bin/`):
-
-```bash
-tar xzf devicedeck-<version>-darwin-arm64.tar.gz
-./devicedeck-<version>-darwin-arm64/bin/devicedeck
-```
-
-Or build from source (needs the Xcode toolchain for the Swift sidecars): `make sidecar && make build`.
-
-**Run it:**
-
-```bash
-devicedeck                                                    # the console: http://127.0.0.1:8787
-devicedeck --app build/MyApp.app --app build/app-release.apk  # …with your app builds
-```
-
-It prints the console link (and the network address teammates use), your registered apps, how to
-connect Claude Code, and any missing tools with how to fix them. Open the console, pick a device,
-and it boots, starts streaming, and launches your app.
-
-With `--app`, a build is installed the first time it is launched on a device — from the console, a
-test or Claude. Pass `.app` simulator builds and `.apk` files, or a folder of them.
-
-Everything DeviceDeck writes lives in `~/.devicedeck` (set `DEVICEDECK_HOME` to move it). To
-uninstall, delete that folder and the `# DeviceDeck` line from your shell profile.
-
 ## Using it
 
-### Your first test, in four steps
-
-```bash
-# 1. Start DeviceDeck with your app build (.app for a simulator, .apk for an emulator)
-devicedeck --app path/to/MyApp.app
-
-# 2. Give Claude Code the browser tool and DeviceDeck's plugin
-claude mcp add playwright npx @playwright/mcp@latest
-claude plugin marketplace add devicelab-dev/DeviceDeck
-claude plugin install devicedeck@devicedeck-marketplace
-
-# 3. Ask Claude — it boots a simulator, launches your app, drives it, writes the test
-#    "Write a Playwright test that logs in to my app com.your.app"
-
-# 4. Run it
-npx playwright test
-```
+### How the agent drives it
 
 The agent drives the device the way it drives any web page: it **snapshots the page**, reasons over
 the tree, and acts by ref — no coordinates, no vision model. Here it picks the right **Add** among
@@ -162,7 +109,7 @@ five identical ones:
 
 ### Other agents
 
-Steps 1, 3 and 4 are the same; only step 2 changes.
+In [Get started](#get-started), steps 1, 3 and 4 are the same; only step 2 changes.
 
 | Agent | Step 2 |
 |---|---|
@@ -194,6 +141,54 @@ Press **Record**, use the app, press **Stop**: DeviceDeck writes it as a
 [Maestro](https://maestro.dev) flow with graded, durable selectors — replayable with
 [maestro-runner](https://github.com/devicelab-dev/maestro-runner) and unchanged on real devices at
 [devicelab.dev](https://devicelab.dev). **Guide:** [docs/flows.md](docs/flows.md).
+
+## Install options
+
+The install script puts DeviceDeck in `~/.devicedeck` and adds its `bin` folder to your `PATH` — no
+sudo, and nothing else to install: the Android driver ships inside the binary. Pin a version with
+`curl -fsSL https://open.devicelab.dev/install/devicedeck | bash -s -- --version 0.1.0`.
+
+Or download an archive from [Releases](https://github.com/devicelab-dev/DeviceDeck/releases) and run
+it in place (the two sidecars sit beside the binary in `bin/`):
+
+```bash
+tar xzf devicedeck-<version>-darwin-arm64.tar.gz
+./devicedeck-<version>-darwin-arm64/bin/devicedeck
+```
+
+Or build from source (needs the Xcode toolchain for the Swift sidecars): `make sidecar && make build`.
+
+`devicedeck` on its own starts the console at `http://127.0.0.1:8787`. `--app` takes `.app` simulator
+builds, `.apk` files, or a folder of them, and installs each the first time it is launched on a
+device. On start it prints the console link (and the network address teammates use), your apps, how
+to connect Claude Code, and any missing tools with how to fix them.
+
+Everything DeviceDeck writes lives in `~/.devicedeck` (set `DEVICEDECK_HOME` to move it). To
+uninstall, delete that folder and the `# DeviceDeck` line from your shell profile.
+
+## Requirements
+
+- **A Mac to host.** iOS Simulators, `simctl`/CoreSimulator and the Swift sidecars are
+  macOS-only, so the machine that runs the devices is a Mac. **Clients can be any OS:** the surface
+  is a web page, so people, tests and agents drive it from Linux, Windows or another Mac.
+- **Xcode** with at least one iOS Simulator runtime — **iOS 26.2 or newer is strongly
+  recommended**; on 18.6 the simulator's render server crashes under repeated capture.
+- **For Android:** the Android SDK, with `adb` and `emulator` on `PATH`, and at least one virtual
+  device.
+
+`devicedeck doctor` checks all of this and says how to fix anything missing.
+
+## Status
+
+Early release. Both platforms drive end to end: **Playwright, Cypress and Puppeteer each log into and
+check out of TestHive through the same DOM**, and the console drives any device by hand. It is an
+ordinary web page, so any browser driver works with no mobile-specific code. Typing is checked
+against the device's own read-back, so a keystroke that does not land is retyped rather than lost —
+on iOS *and* on Android's masked password fields.
+
+It has run on a handful of Macs so far, so expect some first-contact problems — please
+[open an issue](https://github.com/devicelab-dev/DeviceDeck/issues) with the log folder it prints.
+See [**Known limits**](#known-limits).
 
 ## Scope
 

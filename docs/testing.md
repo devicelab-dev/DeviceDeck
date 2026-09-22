@@ -8,7 +8,7 @@ labels become ARIA. Nothing mobile-specific.
 
 You don't need a mobile test suite to start:
 
-- **Let your agent write it** — the four steps in the [README](../README.md#your-first-test-in-four-steps).
+- **Let your agent write it** — the four steps in the [README](../README.md#get-started).
 - **Record it.** Playwright's [playwright-cli](https://github.com/microsoft/playwright-cli) records
   what you do on the device page (`recording-start` … `recording-stop`) and writes ordinary
   locators — here is [a recorded login](../examples/playwright/tests/recorded/login-recorded.spec.ts).
