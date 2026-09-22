@@ -88,7 +88,8 @@ problems. See [**Known limits**](#known-limits).
 
 Install DeviceDeck whichever way you prefer, then run `devicedeck serve`.
 
-**Install script** — fetches a release and puts `devicedeck` on your `PATH`:
+**Install script** — fetches a release into `~/.devicedeck` and adds its `bin` folder to your `PATH`.
+No sudo, and nothing else to install: the Android driver ships inside the binary.
 
 ```bash
 curl -fsSL https://open.devicelab.dev/install/devicedeck | bash
@@ -96,11 +97,11 @@ curl -fsSL https://open.devicelab.dev/install/devicedeck | bash
 curl -fsSL https://open.devicelab.dev/install/devicedeck | bash -s -- --version 0.1.0
 ```
 
-**Release archive** — download it from [Releases](https://github.com/devicelab-dev/DeviceDeck/releases), extract, and run in place (the two sidecars sit beside the binary):
+**Release archive** — download it from [Releases](https://github.com/devicelab-dev/DeviceDeck/releases), extract, and run in place (the two sidecars sit beside the binary in `bin/`):
 
 ```bash
 tar xzf devicedeck-<version>-darwin-arm64.tar.gz
-cd devicedeck-<version>-darwin-arm64
+./devicedeck-<version>-darwin-arm64/bin/devicedeck serve
 ```
 
 **From source** — needs the Xcode toolchain for the Swift sidecars:
@@ -117,6 +118,10 @@ devicedeck serve        # → http://127.0.0.1:8787
 ```
 
 Pick a device in the console and it boots and starts streaming.
+
+Everything DeviceDeck writes lives in `~/.devicedeck` (set `DEVICEDECK_HOME` to move it): the
+binaries, the Android driver it installs onto emulators, and the iOS runner it builds on first use.
+To uninstall, delete that folder and the `# DeviceDeck` PATH line from your shell profile.
 
 ## Using it
 

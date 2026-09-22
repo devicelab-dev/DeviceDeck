@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devicelab-dev/DeviceDeck/internal/home"
 	"github.com/devicelab-dev/DeviceDeck/internal/ready"
 	"github.com/devicelab-dev/DeviceDeck/internal/sim"
 )
@@ -70,38 +71,6 @@ func TestResolveBinarySkipsDirsAndMissing(t *testing.T) {
 	if _, err := resolveBinary("devicedeck-hid", ""); err == nil {
 		t.Fatal("expected not-found error")
 	}
-}
-
-func TestDefaultRunnerHome(t *testing.T) {
-	t.Run("respects explicit value", func(t *testing.T) {
-		t.Setenv("MAESTRO_RUNNER_HOME", "/explicit")
-		defaultRunnerHome()
-		if got := os.Getenv("MAESTRO_RUNNER_HOME"); got != "/explicit" {
-			t.Errorf("MAESTRO_RUNNER_HOME = %q", got)
-		}
-	})
-	t.Run("defaults to install dir when present", func(t *testing.T) {
-		home := t.TempDir()
-		if err := os.Mkdir(filepath.Join(home, ".maestro-runner"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		t.Setenv("HOME", home)
-		t.Setenv("MAESTRO_RUNNER_HOME", "")
-		os.Unsetenv("MAESTRO_RUNNER_HOME")
-		defaultRunnerHome()
-		if got := os.Getenv("MAESTRO_RUNNER_HOME"); got != filepath.Join(home, ".maestro-runner") {
-			t.Errorf("MAESTRO_RUNNER_HOME = %q", got)
-		}
-	})
-	t.Run("leaves unset when install dir missing", func(t *testing.T) {
-		t.Setenv("HOME", t.TempDir())
-		t.Setenv("MAESTRO_RUNNER_HOME", "")
-		os.Unsetenv("MAESTRO_RUNNER_HOME")
-		defaultRunnerHome()
-		if got := os.Getenv("MAESTRO_RUNNER_HOME"); got != "" {
-			t.Errorf("MAESTRO_RUNNER_HOME = %q, want unset", got)
-		}
-	})
 }
 
 // A path someone named explicitly must be honoured or refused. Falling
@@ -165,21 +134,44 @@ func TestResolveBinaryNotFoundAnywhere(t *testing.T) {
 	}
 }
 
-// When the home directory cannot be resolved, defaultRunnerHome must leave
-// MAESTRO_RUNNER_HOME untouched rather than point the runner at a guess.
-func TestDefaultRunnerHomeSkipsWhenHomeIsUnknown(t *testing.T) {
-	t.Setenv("MAESTRO_RUNNER_HOME", "")
-	os.Unsetenv("MAESTRO_RUNNER_HOME")
-	t.Setenv("HOME", "") // os.UserHomeDir errors on an empty $HOME
-	defaultRunnerHome()
-	if got := os.Getenv("MAESTRO_RUNNER_HOME"); got != "" {
-		t.Errorf("MAESTRO_RUNNER_HOME = %q, want left unset", got)
-	}
-}
-
 // arg reads os.Args by position and folds a missing argument into the
 // empty string, so the top-level dispatch reads uniformly whether or not
 // a subcommand was typed.
+func TestPrepareHome(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(home.EnvHome, dir)
+	t.Setenv("MAESTRO_RUNNER_HOME", "/elsewhere")
+	if err := prepareHome(); err != nil {
+		t.Fatal(err)
+	}
+	if got := os.Getenv("MAESTRO_RUNNER_HOME"); got != dir {
+		t.Errorf("runner home = %q, want %q", got, dir)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "drivers", "android", "devicelab-android-driver.apk")); err != nil {
+		t.Errorf("driver not installed: %v", err)
+	}
+}
+
+func TestPrepareHomeErrors(t *testing.T) {
+	t.Run("no home directory", func(t *testing.T) {
+		t.Setenv(home.EnvHome, "")
+		t.Setenv("HOME", "")
+		if err := prepareHome(); err == nil {
+			t.Fatal("expected an error")
+		}
+	})
+	t.Run("home is not writable", func(t *testing.T) {
+		file := filepath.Join(t.TempDir(), "file")
+		if err := os.WriteFile(file, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv(home.EnvHome, file)
+		if err := prepareHome(); err == nil || !strings.Contains(err.Error(), "prepare "+file) {
+			t.Fatalf("err = %v", err)
+		}
+	})
+}
+
 func TestArg(t *testing.T) {
 	saved := os.Args
 	t.Cleanup(func() { os.Args = saved })

@@ -17,6 +17,7 @@ import (
 
 	"github.com/devicelab-dev/DeviceDeck/internal/capture"
 	"github.com/devicelab-dev/DeviceDeck/internal/emu"
+	"github.com/devicelab-dev/DeviceDeck/internal/home"
 	"github.com/devicelab-dev/DeviceDeck/internal/input"
 	"github.com/devicelab-dev/DeviceDeck/internal/platform"
 	"github.com/devicelab-dev/DeviceDeck/internal/ready"
@@ -59,7 +60,7 @@ func parseServeFlags(args []string) (*serveFlags, error) {
 //
 // Coverage waiver: runServe is process-lifecycle wiring (real listener,
 // signals, real backends) verified by running the server; unit tests cover
-// parseServeFlags, resolveBinary, defaultRunnerHome, bringReady, waitForExit,
+// parseServeFlags, resolveBinary, prepareHome, bringReady, waitForExit,
 // powerOffAndroid, and everything behind the injected interfaces.
 func runServe(args []string) error {
 	opts, err := parseServeFlags(args)
@@ -79,7 +80,9 @@ func runServe(args []string) error {
 	if err != nil {
 		return err
 	}
-	defaultRunnerHome()
+	if err := prepareHome(); err != nil {
+		return err
+	}
 
 	st := buildStack(hidBin, videoBin, opts.fps)
 	httpServer := &http.Server{Addr: opts.addr, Handler: st.srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
@@ -195,22 +198,19 @@ func powerOffAndroid(ctx context.Context, driven []string, emus androidKiller) {
 	}
 }
 
-// defaultRunnerHome points the imported maestro-runner packages at the
-// user's maestro-runner install (~/.maestro-runner) when the env var is
-// unset. Without it, the runner's home resolution falls back to our cwd
-// and the vendored XCUITest runner source is never found.
-func defaultRunnerHome() {
-	if os.Getenv("MAESTRO_RUNNER_HOME") != "" {
-		return
-	}
-	home, err := os.UserHomeDir()
+// prepareHome gives the runner packages DeviceDeck's own home folder, with
+// the Android driver written into it, before anything resolves a driver or a
+// build cache. DeviceDeck never borrows another tool's install.
+func prepareHome() error {
+	dir, err := home.Dir()
 	if err != nil {
-		return
+		return err
 	}
-	candidate := filepath.Join(home, ".maestro-runner")
-	if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-		_ = os.Setenv("MAESTRO_RUNNER_HOME", candidate)
+	if err := home.Prepare(dir); err != nil {
+		return fmt.Errorf("prepare %s: %w", dir, err)
 	}
+	slog.Debug("devicedeck home", "dir", dir)
+	return nil
 }
 
 // resolveBinary finds a sidecar binary: explicit flag value, then the

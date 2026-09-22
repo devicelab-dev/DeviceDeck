@@ -21,7 +21,14 @@ BINS=(devicedeck-hid devicedeck-video devicedeck)   # sidecars first, main last
 : "${DEVELOPER_ID:=}"
 
 if [ -z "$DEVELOPER_ID" ]; then
-  echo "note: DEVELOPER_ID unset — leaving binaries unsigned (local/dev build)"
+  # Apple Silicon refuses to run a binary whose signature does not match its
+  # bytes, and the redaction step has just rewritten them. Re-apply the
+  # ad-hoc signature the linker gave them, so an unsigned archive still runs.
+  echo "note: DEVELOPER_ID unset — ad-hoc signing (runs locally; Gatekeeper will warn on other Macs)"
+  for b in "${BINS[@]}"; do
+    codesign --force --sign - "$DIST/$b"
+    codesign --verify --strict "$DIST/$b"
+  done
   exit 0
 fi
 

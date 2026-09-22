@@ -52,6 +52,16 @@ Derived material in `internal/emugrpc/`:
   `streamScreenshot` for Android video capture — `internal/video/emugrpc.go`.
   The generated files retain the upstream AOSP copyright header.
 
+## maestro-runner — Apache License 2.0
+
+https://github.com/devicelab-dev/maestro-runner
+
+DeviceDeck imports maestro-runner as a Go library for its device drivers, and
+the binary embeds the devicelab Android driver APKs that maestro-runner
+distributes (`internal/home/android/`), copied unmodified from the pinned
+module version. They are installed onto Android emulators to read the screen
+and inject input.
+
 These licences permit this use with attribution.
 
 Upstream copyright notices, retained here as those licences ask:
@@ -62,6 +72,9 @@ Upstream copyright notices, retained here as those licences ask:
   section 4(d) adds nothing further to propagate.)
 - tapflow — Copyright (c) 2026 tapflow contributors, MIT License.
   https://github.com/jo-duchan/tapflow/blob/main/LICENSE
+- maestro-runner and its devicelab Android driver — Copyright 2024 DeviceLab,
+  Apache License 2.0.
+  https://github.com/devicelab-dev/maestro-runner/blob/main/LICENSE
 - Android Emulator gRPC — Copyright (C) 2018 The Android Open Source
   Project, Apache License 2.0. Header retained in
   `internal/emugrpc/emulator_controller.pb.go`.
