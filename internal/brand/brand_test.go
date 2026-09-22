@@ -64,12 +64,32 @@ func TestBannerAndFooter(t *testing.T) {
 	out := b.String()
 	for _, want := range []string{
 		"devicedeck 0.1.0 (abc1234) - by DeviceLab.dev (https://devicelab.dev)",
-		Tagline,
+		"Automate your iOS and Android app like a web app.",
 		"Star us on GitHub (" + Repo + ")",
-		"Built by DeviceLab.dev (https://devicelab.dev) - " + RealRuns + ": https://devicelab.dev",
+		"Built by DeviceLab.dev (https://devicelab.dev) - Turn Your Devices Into a Distributed Device Lab",
+		RealRuns + ": https://devicelab.dev",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "\x1b") {
+		t.Errorf("plain output carries escape codes: %q", out)
+	}
+}
+
+func TestBannerOnATerminalIsStyled(t *testing.T) {
+	var b bytes.Buffer
+	Banner(&b, "devicedeck 0.1.0", true)
+	Footer(&b, true)
+	out := b.String()
+	for _, want := range []string{
+		"\x1b[1mdevicedeck 0.1.0\x1b[0m",                                  // bold product line
+		"\x1b]8;;https://devicelab.dev\x1b\\\x1b[36mDeviceLab.dev\x1b[0m", // cyan, clickable maker
+		"\x1b]8;;" + Repo + "\x1b\\Star us on GitHub",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("styled output missing %q:\n%q", want, out)
 		}
 	}
 }

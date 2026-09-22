@@ -3,9 +3,10 @@
 // captured flow, and the update notice. Keeping the words and links here
 // means every surface says the same thing, and changing a URL is one edit.
 //
-// The pattern follows maestro-runner's: plain links (no tracking), shown to
-// everyone, never gating anything. Terminal links are clickable (OSC 8)
-// where the terminal supports it; NO_COLOR or a non-terminal gets plain text.
+// The pattern and wording follow maestro-runner's: plain links (no tracking),
+// shown to everyone, never gating anything. On a terminal, DeviceLab.dev is
+// cyan and links are clickable (OSC 8); NO_COLOR or a pipe gets plain text
+// with the address written out.
 package brand
 
 import (
@@ -21,13 +22,22 @@ const (
 	Repo     = "https://github.com/devicelab-dev/DeviceDeck"
 	Install  = "curl -fsSL https://open.devicelab.dev/install/devicedeck | bash"
 	Maker    = "DeviceLab.dev"
-	Tagline  = "Your simulators and emulators in a browser. Record a flow once, run it anywhere."
+	Tagline  = "Automate your iOS and Android app like a web app."
+	Mission  = "Turn Your Devices Into a Distributed Device Lab" // DeviceLab's line, as in maestro-runner
 	RealRuns = "Run your captured flows unchanged on real devices"
 )
 
-// Hyperlinks reports whether f is a terminal that should get clickable
-// links: a character device, and NO_COLOR unset (the convention for "plain
-// output, please").
+// ANSI styles, applied only when the terminal takes them.
+const (
+	cyan  = "\x1b[36m"
+	bold  = "\x1b[1m"
+	reset = "\x1b[0m"
+)
+
+// Hyperlinks reports whether f is a terminal that should get colour and
+// clickable links: a character device, and NO_COLOR unset (the convention
+// for "plain output, please").
+
 func Hyperlinks(f *os.File) bool {
 	if os.Getenv("NO_COLOR") != "" {
 		return false
@@ -48,15 +58,31 @@ func Link(url, text string, hyper bool) string {
 	return "\x1b]8;;" + url + "\x1b\\" + text + "\x1b]8;;\x1b\\"
 }
 
-// Banner is printed when the server starts.
-func Banner(w io.Writer, versionLine string, hyper bool) {
-	_, _ = fmt.Fprintf(w, "\n  %s - by %s\n  %s\n  %s\n\n",
-		versionLine, Link(Site, Maker, hyper), Tagline, Link(Repo, "Star us on GitHub", hyper))
+// style wraps text in an ANSI style when the terminal takes colour.
+func style(code, text string, fancy bool) string {
+	if !fancy {
+		return text
+	}
+	return code + text + reset
 }
 
-// Footer is printed when the server stops.
-func Footer(w io.Writer, hyper bool) {
-	_, _ = fmt.Fprintf(w, "\n  Built by %s - %s: %s\n\n", Link(Site, Maker, hyper), RealRuns, Link(Site, Site, hyper))
+// maker is "DeviceLab.dev": cyan and clickable on a terminal, as in
+// maestro-runner.
+func maker(fancy bool) string {
+	return Link(Site, style(cyan, Maker, fancy), fancy)
+}
+
+// Banner is printed when the server starts.
+func Banner(w io.Writer, versionLine string, fancy bool) {
+	_, _ = fmt.Fprintf(w, "\n  %s - by %s\n  %s\n  %s\n\n",
+		style(bold, versionLine, fancy), maker(fancy), Tagline, Link(Repo, "Star us on GitHub", fancy))
+}
+
+// Footer is printed when the server stops: DeviceLab's own line, as in
+// maestro-runner, then where captured flows go next.
+func Footer(w io.Writer, fancy bool) {
+	_, _ = fmt.Fprintf(w, "\n  Built by %s - %s\n  %s: %s\n\n",
+		maker(fancy), Mission, RealRuns, Link(Site, style(cyan, Site, fancy), fancy))
 }
 
 // FlowHeader is the comment block at the top of every captured flow. Maestro
