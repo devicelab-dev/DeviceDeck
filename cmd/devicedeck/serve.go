@@ -330,6 +330,8 @@ func buildStack(hidBin, videoBin string, fps int, appArgs []string) (*stack, err
 		server.ScreenshotRouter{IOS: simClient, Android: st.emu},
 		frames, st.engines, st.videos, capture.NewService(st.engines))
 	st.srv.SetConsole(web.Handler(st.srv.FirstTree))
+	st.srv.SetEngineWarmer(bootThenWarm{android: st.emu, engines: st.engines},
+		engineDetail(runnerCacheDir(), st.devices, st.emu))
 	cat, err := apps.NewCatalog(appFiles(appArgs), appDevice{server.InstalledRouter{IOS: simClient, Android: st.emu}, st.launches})
 	if err != nil {
 		return nil, err

@@ -80,6 +80,7 @@ type Server struct {
 	capture     CaptureService
 	console     http.Handler
 	apps        AppProvider
+	warm        *warmups
 	// inputs enforces one driver per device.
 	inputs *inputOwners
 	// sleep paces multi-frame gestures; injected so tests run instantly.
@@ -143,6 +144,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/devices/{udid}/app/launch", s.handleLaunchApp)
 	mux.HandleFunc("POST /api/devices/{udid}/app/install", s.handleInstallApp)
 	mux.HandleFunc("GET /api/devices/{udid}/apps", s.handleDeviceApps)
+	mux.HandleFunc("POST /api/devices/{udid}/engine", s.handleEngineWarm)
+	mux.HandleFunc("GET /api/devices/{udid}/engine", s.handleEngineStatus)
 	mux.HandleFunc("POST /api/devices/{udid}/openurl", s.handleOpenURL)
 	mux.HandleFunc("GET /api/devices/{udid}/screenshot", s.handleScreenshot)
 	mux.HandleFunc("GET /api/devices/{udid}/tree", s.handleTree)

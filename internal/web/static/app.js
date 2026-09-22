@@ -33,6 +33,7 @@ function showLibrary() {
   $("console-view").hidden = true;
   $("console-controls").hidden = true;
   $("apps-picker").hidden = true;
+  clearTimeout(engineTimer);
   $("stage-loading").hidden = true;
   canvas.classList.remove("connecting");
   status.textContent = "";
@@ -43,6 +44,12 @@ function showLibrary() {
 }
 
 let awaitingFirstFrame = false;
+// The loading screen stays until the device is fully usable: video is
+// flowing and its engine (the tree reader behind Inspect, Record and
+// launches) has started, or failed, in which case video and touch still work.
+let videoReady = false;
+let engineSettled = false;
+let engineTimer = null;
 let loadingShownAt = 0;
 
 // The connecting state stays up at least this long even when the first
@@ -51,6 +58,14 @@ let loadingShownAt = 0;
 const MIN_LOADING_MS = 700;
 
 function showConsole(next, name, shape) {
+  openDeviceView(next, name, shape);
+  connectDevice();
+}
+
+// openDeviceView switches to a device's page at once and puts up its
+// loading screen; connecting to the device is a separate step, so a device
+// that is still booting can show that here rather than on the library card.
+function openDeviceView(next, name, shape) {
   udid = next;
   $("library").hidden = true;
   $("console-view").hidden = false;
@@ -68,12 +83,74 @@ function showConsole(next, name, shape) {
   if (new URLSearchParams(location.search).get("device") !== next) {
     history.pushState({}, "", `${location.pathname}?device=${encodeURIComponent(next)}`);
   }
+  videoReady = false;
+  engineSettled = false;
+  setEngineTools(false);
+}
+
+// connectDevice starts everything for the device on screen: video, input,
+// its apps, and its engine.
+function connectDevice() {
   connectVideo();
   connectInput();
   loadApps();
+  warmEngine(udid);
+}
+
+// ---------- engine warm-up ----------
+
+// warmEngine starts the device's engine as the view opens and reports each
+// stage on the loading screen, with elapsed seconds, so a first-time runner
+// build reads as progress rather than a hang.
+async function warmEngine(device) {
+  clearTimeout(engineTimer);
+  const poll = async (method) => {
+    if (udid !== device) return;
+    const res = await fetch(`/api/devices/${encodeURIComponent(device)}/engine`, { method }).catch(() => null);
+    const st = res && res.ok ? await res.json() : { state: "failed", error: "server unreachable" };
+    if (udid !== device) return;
+    if (st.state === "starting" || st.state === "") {
+      const secs = st.startedAt ? Math.round((Date.now() - Date.parse(st.startedAt)) / 1000) : 0;
+      showStage(`${st.detail || "Starting the device engine"}… ${secs}s`);
+      engineTimer = setTimeout(() => poll("GET"), 700);
+      return;
+    }
+    engineSettled = true;
+    setEngineTools(st.state === "ready");
+    if (st.state === "failed") status.textContent = `engine failed: ${st.error}. Video and touch still work; Inspect and Record need the engine.`;
+    revealWhenReady();
+  };
+  poll("POST");
+}
+
+// showStage puts a line on the loading screen while it is up.
+function showStage(text) {
+  if (!$("stage-loading").hidden) $("loading-text").textContent = text;
+}
+
+// setEngineTools enables the controls that read the UI tree.
+function setEngineTools(ready) {
+  for (const id of ["btn-inspect", "btn-record"]) {
+    $(id).disabled = !ready;
+    $(id).title = ready ? $(id).dataset.title || $(id).title : "Waiting for the device engine to start";
+  }
+}
+
+// revealWhenReady drops the loading screen once video and engine are both
+// settled, and otherwise says which one it is still waiting on.
+function revealWhenReady() {
+  if (!videoReady) { if (engineSettled) showStage("Connecting video…"); return; }
+  if (!engineSettled) return;
+  $("stage-loading").hidden = true;
+  canvas.classList.remove("connecting");
+  // Still-based streams (Android static screens) never configure a
+  // decoder, so nothing else clears the connecting status.
+  if (status.textContent === "connecting video…") status.textContent = "live";
 }
 
 // ---------- controls ----------
+
+for (const id of ["btn-inspect", "btn-record"]) $(id).dataset.title = $(id).title;
 
 // The Record tool's two faces; the button shows a dot to start and a
 // square to stop, as a recorder does.
@@ -246,7 +323,7 @@ function deviceCard(d) {
     action.addEventListener("click", () => showConsole(d.udid, d.name, deviceShape(d)));
   } else {
     action.textContent = "Boot";
-    action.addEventListener("click", () => bootDevice(d, card, glyph, action));
+    action.addEventListener("click", () => bootDevice(d));
   }
   card.appendChild(action);
   return card;
@@ -255,39 +332,45 @@ function deviceCard(d) {
 // bootDevice starts a stopped device and polls until it comes up, then
 // enters its console. AVDs come back under a fresh adb serial, so the
 // poll watches for any newly running device rather than the id.
-async function bootDevice(d, card, glyph, action) {
-  action.disabled = true;
-  action.textContent = "Starting…";
-  glyph.classList.add("booting");
-  const before = new Set(
-    (await (await fetch("/api/devices")).json()).devices.filter((x) => x.booted).map((x) => x.udid));
+// bootDevice opens the device's page straight away and shows the boot
+// there, counting seconds, then connects once the device is up. A stopped
+// emulator's id (avd:<name>) changes to an adb serial when it boots, so it
+// is recognised by its AVD name, never as "whatever booted next", which
+// could be a device someone else started at the same moment.
+async function bootDevice(d) {
+  const booting = d.udid;
+  const t0 = Date.now();
+  openDeviceView(d.udid, d.name, deviceShape(d));
+  const tick = () => showStage(`Booting ${d.name}… ${Math.round((Date.now() - t0) / 1000)}s`);
+  tick();
   const res = await fetch(`/api/devices/${encodeURIComponent(d.udid)}/boot`, { method: "POST", body: "{}" });
   if (!res.ok) {
-    action.disabled = false;
-    action.textContent = "Boot";
-    glyph.classList.remove("booting");
-    status.textContent = `boot failed: ${(await res.json()).error}`;
+    bootFailed(`Boot failed: ${(await res.json().catch(() => ({}))).error || res.status}`);
     return;
   }
-  const deadline = Date.now() + 120_000;
   const poll = async () => {
-    if (udid) return; // user entered another console meanwhile
+    if (udid !== booting) return; // navigated away
+    tick();
     const { devices } = await (await fetch("/api/devices")).json();
-    const fresh = devices.find((x) => x.booted && (x.udid === d.udid || !before.has(x.udid)));
-    if (fresh) {
-      showConsole(fresh.udid, fresh.name, deviceShape(fresh));
+    knownDevices = devices;
+    const up = devices.find((x) => x.booted && (x.udid === d.udid || (d.avd && x.avd === d.avd)));
+    if (up) {
+      udid = up.udid;
+      history.replaceState({}, "", `${location.pathname}?device=${encodeURIComponent(up.udid)}`);
+      showDeviceInfo(up.udid, up.name);
+      connectDevice();
       return;
     }
-    if (Date.now() > deadline) {
-      action.disabled = false;
-      action.textContent = "Boot";
-      glyph.classList.remove("booting");
-      status.textContent = "boot timed out — check the device manually";
-      return;
-    }
-    setTimeout(poll, 2000);
+    if (Date.now() - t0 > 180_000) bootFailed("Boot timed out; check the device and try again");
+    else setTimeout(poll, 1500);
   };
-  setTimeout(poll, 2000);
+  setTimeout(poll, 1500);
+}
+
+// bootFailed says so on the device page and in the status line.
+function bootFailed(message) {
+  showStage(message);
+  status.textContent = message;
 }
 
 function selectDevice(next) {
@@ -345,17 +428,8 @@ function connectVideo() {
     if (awaitingFirstFrame && bytes[0] !== 1) {
       awaitingFirstFrame = false;
       const device = udid;
-      const reveal = () => {
-        if (udid !== device) return; // navigated away meanwhile
-        $("stage-loading").hidden = true;
-        canvas.classList.remove("connecting");
-        // Still-based streams (Android static screens) never configure a
-        // decoder, so nothing else clears the connecting status.
-        if (status.textContent === "connecting video…") status.textContent = "live";
-      };
       const remaining = MIN_LOADING_MS - (Date.now() - loadingShownAt);
-      if (remaining > 0) setTimeout(reveal, remaining);
-      else reveal();
+      setTimeout(() => { if (udid === device) { videoReady = true; revealWhenReady(); } }, Math.max(0, remaining));
     }
     renderer.handleMessage(bytes);
   };

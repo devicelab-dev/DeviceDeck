@@ -253,6 +253,14 @@ func (s *Engines) engine(ctx context.Context, udid string) (engineAPI, error) {
 	return e, nil
 }
 
+// Warm starts udid's engine now, or finds it already running, so the first
+// tree read, Inspect or recording does not pay the startup. It returns when
+// the engine answers, or with the reason it could not start.
+func (s *Engines) Warm(ctx context.Context, udid string) error {
+	_, err := s.engine(ctx, udid)
+	return err
+}
+
 // AndroidInjector returns the input injector for an Android serial,
 // starting (or reusing) its engine — input rides the same session as
 // the tree, so the first tap on a cold device pays engine startup once.

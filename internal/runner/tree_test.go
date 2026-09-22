@@ -299,3 +299,23 @@ func TestStopFailuresStillClearTheCache(t *testing.T) {
 		t.Fatalf("engines left = %d, stopped a=%v b=%v", len(s.engines), a.stopped, b.stopped)
 	}
 }
+
+func TestWarmStartsOnceAndReportsFailure(t *testing.T) {
+	started := 0
+	s := &Engines{start: startSequence(&started, &fakeEngine{}), engines: make(map[string]engineAPI)}
+	for range 2 {
+		if err := s.Warm(context.Background(), "AAA"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if started != 1 {
+		t.Errorf("engine started %d times, want 1", started)
+	}
+	failing := &Engines{
+		start:   func(context.Context, string) (engineAPI, error) { return nil, errors.New("no device") },
+		engines: make(map[string]engineAPI),
+	}
+	if err := failing.Warm(context.Background(), "BBB"); err == nil {
+		t.Error("a failed start must be reported")
+	}
+}

@@ -50,7 +50,7 @@ func TestLogRequestsLevelsAndFields(t *testing.T) {
 
 func TestLogRequestsSurvivesWebSocketHijack(t *testing.T) {
 	buf := captureLogs(t)
-	srv := httptest.NewServer(logRequests(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	logged := logRequests(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		conn, rw, err := w.(http.Hijacker).Hijack()
 		if err != nil {
 			t.Errorf("hijack through the recorder failed: %v", err)
@@ -59,13 +59,20 @@ func TestLogRequestsSurvivesWebSocketHijack(t *testing.T) {
 		_, _ = rw.WriteString("HTTP/1.1 101 Switching Protocols\r\n\r\n")
 		_ = rw.Flush()
 		_ = conn.Close()
-	})))
+	}))
+	// A hijacked handler outlives the server's Close, so wait for it (and
+	// its log line) explicitly before reading the log.
+	done := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer close(done)
+		logged.ServeHTTP(w, r)
+	}))
 	defer srv.Close()
 	resp, err := http.Get(srv.URL + "/api/devices/AAA/video")
 	if err == nil {
 		_ = resp.Body.Close()
 	}
-	srv.Close() // wait for the handler, and its log line, to finish
+	<-done
 	if !strings.Contains(buf.String(), "status=101") {
 		t.Errorf("log = %q, want status=101", buf.String())
 	}

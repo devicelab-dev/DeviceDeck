@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fixture returns a runFunc serving canned outputs keyed by joined args.
@@ -191,6 +192,9 @@ func TestAll(t *testing.T) {
 	if len(devices) != 2 {
 		t.Fatalf("devices = %+v, want 2", devices)
 	}
+	if devices[0].AVD != "Pixel_7" || devices[1].AVD != "Pixel_8" {
+		t.Errorf("AVD names = %q, %q; a running emulator must carry its AVD", devices[0].AVD, devices[1].AVD)
+	}
 	if devices[0].UDID != "emulator-5554" || devices[1].UDID != AVDPrefix+"Pixel_8" {
 		t.Errorf("devices = %+v", devices)
 	}
@@ -334,5 +338,30 @@ func TestInstalled(t *testing.T) {
 		if got != "adb -s emulator-5554 shell pm path com.testhiveapp" {
 			t.Errorf("command = %q", got)
 		}
+	}
+}
+
+func TestWaitBooted(t *testing.T) {
+	bootPoll = time.Millisecond
+	t.Cleanup(func() { bootPoll = time.Second })
+	polls := 0
+	c := &Client{run: func(context.Context, string, ...string) ([]byte, error) {
+		polls++
+		if polls < 3 {
+			return []byte("\n"), nil // still booting
+		}
+		return []byte("1\n"), nil
+	}}
+	if err := c.WaitBooted(context.Background(), "emulator-5554"); err != nil || polls != 3 {
+		t.Fatalf("WaitBooted = %v after %d polls", err, polls)
+	}
+	never := &Client{run: func(context.Context, string, ...string) ([]byte, error) { return []byte("0\n"), nil }}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if err := never.WaitBooted(ctx, "emulator-5554"); err == nil || !strings.Contains(err.Error(), "did not finish booting") {
+		t.Errorf("never booted: %v", err)
+	}
+	if never.BootCompleted(context.Background(), "emulator-5554") {
+		t.Error("0 is not booted")
 	}
 }

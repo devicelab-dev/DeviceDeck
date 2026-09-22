@@ -19,6 +19,10 @@ type Device struct {
 	Name   string `json:"name"`
 	OS     string `json:"os"`
 	Booted bool   `json:"booted"`
+	// AVD is an Android emulator's virtual device name. It is what ties a
+	// stopped "avd:<name>" entry to the running emulator it becomes, whose
+	// id is a different adb serial; empty for simulators.
+	AVD string `json:"avd,omitempty"`
 }
 
 // runFunc executes a command and returns stdout. The default implementation

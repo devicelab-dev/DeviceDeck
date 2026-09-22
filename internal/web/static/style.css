@@ -477,6 +477,8 @@ main { flex: 1; display: flex; min-height: 0; }
 .tool svg .fill { fill: currentColor; stroke: none; }
 .tool.record svg { color: #f85149; }
 .tool.active { color: #fff; }
+.tool:disabled { opacity: 0.4; cursor: default; }
+.tool:disabled:hover { color: var(--dim); border-color: var(--edge); }
 @media (max-width: 1100px) {
   #panel { width: 260px; flex-basis: 260px; }
 }

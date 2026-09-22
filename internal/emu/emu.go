@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/devicelab-dev/DeviceDeck/internal/platform"
 	"github.com/devicelab-dev/DeviceDeck/internal/sim"
@@ -113,6 +114,30 @@ func (c *Client) Installed(ctx context.Context, serial, appID string) bool {
 	return err == nil && strings.Contains(string(out), "package:")
 }
 
+// BootCompleted reports whether Android on serial has finished booting.
+// adb lists an emulator well before that, while services such as the
+// package manager are still starting and an install fails with "Can't find
+// service: package".
+func (c *Client) BootCompleted(ctx context.Context, serial string) bool {
+	return c.prop(ctx, serial, "sys.boot_completed") == "1"
+}
+
+// bootPoll is how often WaitBooted checks; a var so tests need not wait.
+var bootPoll = time.Second
+
+// WaitBooted blocks until Android on serial has finished booting, or ctx
+// ends.
+func (c *Client) WaitBooted(ctx context.Context, serial string) error {
+	for !c.BootCompleted(ctx, serial) {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("android on %s did not finish booting: %w", serial, ctx.Err())
+		case <-time.After(bootPoll):
+		}
+	}
+	return nil
+}
+
 // Kill powers the emulator off via its console. DeviceDeck calls this on
 // exit for the emulators it drove — the counterpart to the simulator's
 // Shutdown — so a session leaves no detached emulator running. `adb emu
@@ -162,9 +187,10 @@ func (c *Client) All(ctx context.Context) ([]sim.Device, error) {
 		return nil, err
 	}
 	inUse := map[string]bool{}
-	for _, d := range running {
-		if name := c.avdName(ctx, d.UDID); name != "" {
+	for i := range running {
+		if name := c.avdName(ctx, running[i].UDID); name != "" {
 			inUse[name] = true
+			running[i].AVD = name
 		}
 	}
 	// Best-effort: adb working without the emulator tool installed still
@@ -178,6 +204,7 @@ func (c *Client) All(ctx context.Context) ([]sim.Device, error) {
 			running = append(running, sim.Device{
 				UDID: AVDPrefix + name,
 				Name: name,
+				AVD:  name,
 				OS:   "android",
 			})
 		}
