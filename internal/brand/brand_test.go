@@ -63,9 +63,9 @@ func TestBannerAndFooter(t *testing.T) {
 	Footer(&b, false)
 	out := b.String()
 	for _, want := range []string{
-		"devicedeck 0.1.0 (abc1234) - by DeviceLab.dev (https://devicelab.dev)",
+		"devicedeck 0.1.0 (abc1234)  ·  by DeviceLab.dev (https://devicelab.dev)",
 		"Automate your iOS and Android app like a web app.",
-		"Star us on GitHub (" + Repo + ")",
+		"★ Star us on GitHub (" + Repo + ")",
 		"Built by DeviceLab.dev (https://devicelab.dev) - Turn Your Devices Into a Distributed Device Lab",
 		RealRuns + ": https://devicelab.dev",
 	} {
@@ -86,7 +86,7 @@ func TestBannerOnATerminalIsStyled(t *testing.T) {
 	for _, want := range []string{
 		"\x1b[1mdevicedeck 0.1.0\x1b[0m",                                  // bold product line
 		"\x1b]8;;https://devicelab.dev\x1b\\\x1b[36mDeviceLab.dev\x1b[0m", // cyan, clickable maker
-		"\x1b]8;;" + Repo + "\x1b\\Star us on GitHub",
+		"\x1b]8;;" + Repo + "\x1b\\★ Star us on GitHub",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("styled output missing %q:\n%q", want, out)
@@ -106,11 +106,16 @@ func TestFlowHeaderIsOnlyComments(t *testing.T) {
 	}
 }
 
-func TestBoldAndCyan(t *testing.T) {
-	if Bold("x", false) != "x" || Cyan("x", false) != "x" {
-		t.Error("plain mode must not style")
-	}
-	if Bold("x", true) != "\x1b[1mx\x1b[0m" || Cyan("x", true) != "\x1b[36mx\x1b[0m" {
-		t.Error("terminal mode must style")
+func TestStyles(t *testing.T) {
+	for _, tc := range []struct {
+		fn   func(string, bool) string
+		code string
+	}{{Bold, "1"}, {Cyan, "36"}, {Green, "32"}, {Dim, "2"}} {
+		if tc.fn("x", false) != "x" {
+			t.Errorf("style %s applied in plain mode", tc.code)
+		}
+		if got := tc.fn("x", true); got != "\x1b["+tc.code+"mx\x1b[0m" {
+			t.Errorf("style %s = %q", tc.code, got)
+		}
 	}
 }

@@ -78,6 +78,9 @@ func TestRunHealthyMachine(t *testing.T) {
 
 func TestRunBareMachine(t *testing.T) {
 	results := Run(context.Background(), fakeMachine{}.env())
+	if len(Problems(results)) != len(results) {
+		t.Errorf("every check fails on a bare machine; Problems = %d of %d", len(Problems(results)), len(results))
+	}
 	for _, r := range results {
 		if r.Status == OK || r.Fix == "" {
 			t.Errorf("%s on a bare machine = %+v, want a problem with a fix", r.Name, r)
@@ -135,30 +138,21 @@ func TestNodeMajor(t *testing.T) {
 }
 
 func TestPrint(t *testing.T) {
-	results := Run(context.Background(), fakeMachine{}.env())
-	var full, short bytes.Buffer
-	Print(&full, results, false)
-	PrintProblems(&short, results, false)
-	for _, want := range []string{"✗ Xcode", "- Node.js", fixXcode, fixMaestroR} {
-		if !strings.Contains(full.String(), want) || !strings.Contains(short.String(), want) {
-			t.Errorf("output missing %q:\n%s\n%s", want, full.String(), short.String())
+	var full bytes.Buffer
+	Print(&full, Run(context.Background(), fakeMachine{}.env()), false)
+	for _, want := range []string{"TOOLS", "✗ Xcode", "- Node.js", "→ " + fixXcode, fixMaestroR} {
+		if !strings.Contains(full.String(), want) {
+			t.Errorf("output missing %q:\n%s", want, full.String())
 		}
 	}
 	var styled bytes.Buffer
-	Print(&styled, results, true)
+	Print(&styled, Run(context.Background(), fakeMachine{}.env()), true)
 	if !strings.Contains(styled.String(), "\x1b[1m✗\x1b[0m") {
 		t.Errorf("a missing tool should be bold on a terminal: %q", styled.String())
 	}
-
-	var ok bytes.Buffer
-	PrintProblems(&ok, Run(context.Background(), healthy().env()), false)
-	if !strings.Contains(ok.String(), "all found") {
-		t.Errorf("healthy summary = %q", ok.String())
-	}
-	var okFull bytes.Buffer
-	Print(&okFull, Run(context.Background(), healthy().env()), false)
-	if !strings.Contains(okFull.String(), "✓ Xcode") {
-		t.Errorf("full list = %q", okFull.String())
+	ok := Line(Run(context.Background(), healthy().env())[0], false)
+	if !strings.Contains(ok, "✓ Xcode") || strings.Contains(ok, "→") {
+		t.Errorf("an OK line has no fix: %q", ok)
 	}
 }
 

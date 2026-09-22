@@ -40,17 +40,19 @@ func TestWelcomeListsBootedDevicesWithLinks(t *testing.T) {
 		{UDID: "OFF", Name: "iPhone 16", OS: "iOS 18.6"},
 	}}, false)
 	for _, want := range []string{
-		"DeviceDeck is running.",
-		"Console          http://127.0.0.1:8787",
-		"On your network  http://10.0.4.21:8787",
-		"Booted devices (2 of 3 available)",
+		"● Running",
+		"OPEN", "Console    http://127.0.0.1:8787",
+		"Network    http://10.0.4.21:8787",
+		"DEVICES", "2 of 3 booted",
 		"http://127.0.0.1:8787/device/SIM",
 		"http://127.0.0.1:8787/device/EMU",
-		"http://127.0.0.1:8787/device/booted",
-		claudePlaywright, claudeSkills, claudeMCP,
+		"/device/booted",
+		"USE WITH CLAUDE CODE", "1. Add the browser tool", "$ " + claudePlaywright,
+		"$ " + claudeSkills, "$ " + claudeMCP,
+		"USE WITH TESTS", "baseURL    http://127.0.0.1:8787/device/<udid>",
 		"/home/.devicedeck/logs/serve-1",
 		"Ctrl-C",
-		"Tools to check", "Xcode", "install Xcode from the App Store",
+		"TOOLS", "✗ Xcode", "→ install Xcode from the App Store",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("welcome missing %q:\n%s", want, out)
@@ -66,11 +68,11 @@ func TestWelcomeListsBootedDevicesWithLinks(t *testing.T) {
 
 func TestWelcomeWithoutBootedDevices(t *testing.T) {
 	out := renderWelcome(t, &fakePlatform{devices: []sim.Device{{UDID: "OFF", Name: "iPhone 16"}}}, false)
-	if !strings.Contains(out, "No device is booted yet (1 available)") {
+	if !strings.Contains(out, "None booted yet. Pick one of 1 in the console.") {
 		t.Errorf("welcome = %s", out)
 	}
 	failed := renderWelcome(t, &fakePlatform{listErr: errors.New("simctl down")}, false)
-	if !strings.Contains(failed, "No device is booted yet (0 available)") || !strings.Contains(failed, claudePlaywright) {
+	if !strings.Contains(failed, "Pick one of 0 in the console.") || !strings.Contains(failed, claudePlaywright) {
 		t.Errorf("a failed listing must still print the setup:\n%s", failed)
 	}
 }
@@ -130,7 +132,7 @@ func TestCommand(t *testing.T) {
 func TestRunDoctor(t *testing.T) {
 	var out bytes.Buffer
 	runDoctor(context.Background(), noTools(), &out)
-	for _, want := range []string{version.Line(), "Tools", "✗ Xcode", "maestro-runner"} {
+	for _, want := range []string{version.Line(), "TOOLS", "✗ Xcode", "maestro-runner"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("doctor output missing %q:\n%s", want, out.String())
 		}
@@ -148,5 +150,31 @@ func TestExitOn(t *testing.T) {
 	exitOn("devicedeck", errors.New("port in use"))
 	if code != 1 {
 		t.Errorf("exit code = %d, want 1", code)
+	}
+}
+
+func TestWelcomeAllToolsFound(t *testing.T) {
+	var out bytes.Buffer
+	w := welcome{local: "http://127.0.0.1:8787", tools: []doctor.Result{{Name: "Xcode"}, {Name: "adb"}}}
+	w.write(&out)
+	if !strings.Contains(out.String(), "✓ All 2 found") {
+		t.Errorf("welcome = %s", out.String())
+	}
+}
+
+func TestTildeHome(t *testing.T) {
+	t.Setenv("HOME", "/Users/dev")
+	for in, want := range map[string]string{
+		"/Users/dev/.devicedeck/logs/x": "~/.devicedeck/logs/x",
+		"/Users/devx/logs":              "/Users/devx/logs",
+		"/tmp/logs":                     "/tmp/logs",
+	} {
+		if got := tildeHome(in); got != want {
+			t.Errorf("tildeHome(%q) = %q, want %q", in, got, want)
+		}
+	}
+	t.Setenv("HOME", "")
+	if got := tildeHome("/tmp/x"); got != "/tmp/x" {
+		t.Errorf("no home: %q", got)
 	}
 }

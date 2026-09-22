@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 
@@ -56,45 +57,92 @@ func newWelcome(ctx context.Context, devices server.DeviceLister, tools doctor.E
 	return w
 }
 
-// write prints the whole message.
+// write prints the whole message: a status line, then short sections with
+// bold headings, links in cyan, commands on their own $ lines, and
+// explanations dimmed so the eye goes to what can be clicked or copied.
 func (w welcome) write(out io.Writer) {
 	var b strings.Builder
-	w.header(&b)
+	fmt.Fprintf(&b, "\n  %s %s\n", brand.Green("●", w.fancy), brand.Bold("Running", w.fancy))
+	w.open(&b)
 	w.devices(&b)
-	doctor.PrintProblems(&b, w.tools, w.fancy)
-	w.usage(&b)
+	w.toolsSection(&b)
+	w.claude(&b)
+	w.section(&b, "USE WITH TESTS")
+	fmt.Fprintf(&b, "    %-10s %s\n", "baseURL", w.link(w.local+"/device/<udid>"))
+	fmt.Fprintf(&b, "\n  %s  %s\n  %s  %s\n\n", brand.Dim("Logs", w.fancy), tildeHome(w.logs),
+		brand.Dim("Stop", w.fancy), "Ctrl-C")
 	_, _ = io.WriteString(out, b.String())
 }
 
-func (w welcome) header(b *strings.Builder) {
-	fmt.Fprintf(b, "  %s\n\n", brand.Bold("DeviceDeck is running.", w.fancy))
-	fmt.Fprintf(b, "  Console          %s\n", w.link(w.local))
-	for _, u := range w.network {
-		fmt.Fprintf(b, "  On your network  %s\n", w.link(u))
+// section starts a block with a blank line and a bold heading.
+func (w welcome) section(b *strings.Builder, title string) {
+	fmt.Fprintf(b, "\n  %s\n", brand.Bold(title, w.fancy))
+}
+
+func (w welcome) open(b *strings.Builder) {
+	w.section(b, "OPEN")
+	fmt.Fprintf(b, "    %-10s %s\n", "Console", w.link(w.local))
+	for i, u := range w.network {
+		label := ""
+		if i == 0 {
+			label = "Network"
+		}
+		fmt.Fprintf(b, "    %-10s %s\n", label, w.link(u))
 	}
-	b.WriteString("\n")
 }
 
 func (w welcome) devices(b *strings.Builder) {
+	w.section(b, "DEVICES")
 	if len(w.booted) == 0 {
-		fmt.Fprintf(b, "  No device is booted yet (%d available). Open the console and pick one.\n\n", w.total)
+		fmt.Fprintf(b, "    None booted yet. %s\n",
+			brand.Dim(fmt.Sprintf("Pick one of %d in the console.", w.total), w.fancy))
 		return
 	}
-	fmt.Fprintf(b, "  Booted devices (%d of %d available), each a page your tests and agents can drive:\n", len(w.booted), w.total)
 	for _, d := range w.booted {
-		fmt.Fprintf(b, "    %-28s %-12s %s\n", d.Name, d.OS, w.link(w.local+"/device/"+d.UDID))
+		// Pad before styling: colour codes are invisible but counted.
+		fmt.Fprintf(b, "    %-22s %s %s\n", d.Name, brand.Dim(fmt.Sprintf("%-10s", d.OS), w.fancy), w.link(w.local+"/device/"+d.UDID))
 	}
-	fmt.Fprintf(b, "  With one device up, %s always points at it.\n\n", w.link(w.local+"/device/booted"))
+	fmt.Fprintf(b, "    %s\n", brand.Dim(fmt.Sprintf("%d of %d booted · /device/booted opens the only one", len(w.booted), w.total), w.fancy))
 }
 
-func (w welcome) usage(b *strings.Builder) {
-	fmt.Fprintf(b, "  Use it from Claude Code:\n    %s\n    %s\n", claudePlaywright, claudeSkills)
-	fmt.Fprintf(b, "    then ask: \"open %s/device/booted and log in to my app\"\n", w.local)
-	fmt.Fprintf(b, "    or give Claude device tools directly: %s\n\n", claudeMCP)
-	fmt.Fprintf(b, "  Use it from tests: point Playwright or Cypress at %s/device/<udid>\n\n", w.local)
-	fmt.Fprintf(b, "  Logs  %s\n  Stop  Ctrl-C\n\n", w.logs)
+func (w welcome) toolsSection(b *strings.Builder) {
+	w.section(b, "TOOLS")
+	problems := doctor.Problems(w.tools)
+	if len(problems) == 0 {
+		fmt.Fprintf(b, "    %s All %d found  %s\n", brand.Green("✓", w.fancy), len(w.tools),
+			brand.Dim("devicedeck doctor for details", w.fancy))
+		return
+	}
+	for _, r := range problems {
+		b.WriteString(doctor.Line(r, w.fancy))
+	}
 }
+
+func (w welcome) claude(b *strings.Builder) {
+	w.section(b, "USE WITH CLAUDE CODE")
+	steps := []struct{ what, do string }{
+		{"Add the browser tool", w.cmd(claudePlaywright)},
+		{"Add DeviceDeck's skills", w.cmd(claudeSkills)},
+		{"Ask Claude", fmt.Sprintf("\"Open %s/device/booted and log in to my app\"", w.local)},
+	}
+	for i, s := range steps {
+		fmt.Fprintf(b, "    %d. %s\n       %s\n", i+1, s.what, s.do)
+	}
+	fmt.Fprintf(b, "    %s\n       %s\n", brand.Dim("Or give Claude device tools over MCP:", w.fancy), w.cmd(claudeMCP))
+}
+
+// cmd shows a command to copy, after a dimmed $ prompt.
+func (w welcome) cmd(c string) string { return brand.Dim("$", w.fancy) + " " + c }
 
 func (w welcome) link(url string) string {
 	return brand.Link(url, brand.Cyan(url, w.fancy), w.fancy)
+}
+
+// tildeHome shortens a path under the home folder to ~/..., the way people
+// type it.
+func tildeHome(path string) string {
+	if home, err := os.UserHomeDir(); err == nil && strings.HasPrefix(path, home+"/") {
+		return "~" + strings.TrimPrefix(path, home)
+	}
+	return path
 }

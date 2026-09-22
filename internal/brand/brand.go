@@ -30,7 +30,9 @@ const (
 // ANSI styles, applied only when the terminal takes them.
 const (
 	cyan  = "\x1b[36m"
+	green = "\x1b[32m"
 	bold  = "\x1b[1m"
+	dim   = "\x1b[2m"
 	reset = "\x1b[0m"
 )
 
@@ -74,16 +76,24 @@ func Bold(text string, fancy bool) string { return style(bold, text, fancy) }
 // Cyan: see Bold.
 func Cyan(text string, fancy bool) string { return style(cyan, text, fancy) }
 
+// Green: see Bold.
+func Green(text string, fancy bool) string { return style(green, text, fancy) }
+
+// Dim: see Bold. For secondary text, so the eye lands on what matters.
+func Dim(text string, fancy bool) string { return style(dim, text, fancy) }
+
 // maker is "DeviceLab.dev": cyan and clickable on a terminal, as in
 // maestro-runner.
 func maker(fancy bool) string {
 	return Link(Site, style(cyan, Maker, fancy), fancy)
 }
 
-// Banner is printed when the server starts.
+// Banner is printed when the server starts: who makes it on the first line,
+// the pitch dimmed beneath.
 func Banner(w io.Writer, versionLine string, fancy bool) {
-	_, _ = fmt.Fprintf(w, "\n  %s - by %s\n  %s\n  %s\n\n",
-		style(bold, versionLine, fancy), maker(fancy), Tagline, Link(Repo, "Star us on GitHub", fancy))
+	_, _ = fmt.Fprintf(w, "\n  %s  ·  by %s  ·  %s\n  %s\n",
+		style(bold, versionLine, fancy), maker(fancy), Link(Repo, "★ Star us on GitHub", fancy),
+		Dim(Tagline, fancy))
 }
 
 // Footer is printed when the server stops: DeviceLab's own line, as in
