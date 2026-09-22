@@ -1,11 +1,20 @@
-.PHONY: build test lint lint-js quality cover-gaps hooks vet clean sidecar sidecar-test release release-signed stage sign package drivers
+.PHONY: build test lint lint-js quality cover-gaps hooks vet clean sidecar sidecar-test release release-signed release-all stage sign package drivers
 
 BINARY := devicedeck
 PKG := github.com/devicelab-dev/DeviceDeck
 VERSION ?= dev
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 LDFLAGS := -X $(PKG)/internal/version.Version=$(VERSION) -X $(PKG)/internal/version.Commit=$(COMMIT)
-DIST := dist/$(BINARY)-$(VERSION)-darwin-$(shell uname -m)
+# ARCH is the macOS architecture a release is built for: arm64 or x86_64 (the
+# names the install script uses). It defaults to this Mac's, and release-all
+# builds both on one machine.
+ARCH ?= $(shell uname -m)
+GOARCH := $(if $(filter x86_64,$(ARCH)),amd64,arm64)
+DIST := dist/$(BINARY)-$(VERSION)-darwin-$(ARCH)
+# RELEASE_DIR is the upload layout the install script downloads from:
+# devicedeck/<version>/<archive> with a <archive>.sha256 beside each.
+RELEASE_DIR := dist/$(BINARY)/$(VERSION)
+SIDECAR_BIN = $(shell swift build --package-path sidecar -c release --arch $(ARCH) --show-bin-path)
 
 # -trimpath strips filesystem paths (module-cache and repo paths under
 # /Users/…) from the binary, so panic stack traces and debug info carry
@@ -76,9 +85,10 @@ drivers:
 # bin/ (the server finds each sidecar next to its own executable), the
 # licence files beside it. The Android driver is embedded in the binary, so
 # nothing else ships. macOS only — the sidecars talk to CoreSimulator.
-stage: sidecar
-	go build -trimpath -ldflags "$(LDFLAGS) -s -w" -o $(DIST)/bin/$(BINARY) ./cmd/devicedeck
-	cp sidecar/.build/release/devicedeck-hid sidecar/.build/release/devicedeck-video $(DIST)/bin/
+stage:
+	swift build --package-path sidecar -c release --arch $(ARCH)
+	GOOS=darwin GOARCH=$(GOARCH) CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS) -s -w" -o $(DIST)/bin/$(BINARY) ./cmd/devicedeck
+	cp $(SIDECAR_BIN)/devicedeck-hid $(SIDECAR_BIN)/devicedeck-video $(DIST)/bin/
 	# Scrub any absolute local paths (embedded dep contents, Swift build paths)
 	# and fail the build if any survive. Runs before signing.
 	./scripts/redact-local-paths.sh $(DIST)/bin
@@ -92,10 +102,15 @@ stage: sidecar
 sign:
 	./scripts/macos-sign-notarize.sh $(DIST)/bin
 
-# package tars the staged (and possibly signed) dir for distribution.
+# package tars the staged (and possibly signed) dir for distribution, and
+# copies it into RELEASE_DIR with its checksum, which the install script
+# verifies ("<sha256>  <archive>", as shasum writes it).
 package:
 	cd dist && tar czf $(notdir $(DIST)).tar.gz $(notdir $(DIST))
-	@echo "packaged $(DIST).tar.gz"
+	mkdir -p $(RELEASE_DIR)
+	cp $(DIST).tar.gz $(RELEASE_DIR)/
+	cd $(RELEASE_DIR) && shasum -a 256 $(notdir $(DIST)).tar.gz > $(notdir $(DIST)).tar.gz.sha256
+	@echo "packaged $(RELEASE_DIR)/$(notdir $(DIST)).tar.gz (+ .sha256)"
 
 # release and release-signed both sign before tarring: with DEVELOPER_ID set
 # the binaries are signed and notarized (Gatekeeper-clean); without it they
@@ -103,6 +118,19 @@ package:
 # binary whose bytes no longer match its signature.
 release: stage sign package
 release-signed: release
+
+# release-all builds, signs, notarizes and packages both macOS architectures
+# on this Mac, into RELEASE_DIR, ready to upload — the maestro-runner release
+# shape. Signing uses scripts/macos-sign-notarize.sh, so it reads the
+# Developer ID and notarization credentials from the environment or the
+# keychain, never from this file; without them the archives are ad-hoc signed.
+#   make release-all VERSION=0.1.1
+release-all:
+	@if [ "$(VERSION)" = dev ]; then echo "set a version: make release-all VERSION=0.1.1"; exit 1; fi
+	rm -rf $(RELEASE_DIR)
+	$(MAKE) release VERSION=$(VERSION) ARCH=arm64
+	$(MAKE) release VERSION=$(VERSION) ARCH=x86_64
+	@echo; echo "ready to upload:"; ls -l $(RELEASE_DIR)
 
 clean:
 	rm -f $(BINARY) coverage.out
