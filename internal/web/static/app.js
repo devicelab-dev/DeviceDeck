@@ -86,6 +86,7 @@ function openDeviceView(next, name, shape) {
   videoReady = false;
   engineSettled = false;
   setEngineTools(false);
+  if (inspecting) toggleInspector(); // a new device starts with Inspect off
 }
 
 // connectDevice starts everything for the device on screen: video, input,
@@ -701,8 +702,9 @@ async function toggleInspector() {
     if ($("node-info").classList.contains("hint")) {
       $("node-info").textContent = "Hover an element on the device to see its id, role and text here.";
     }
-    await refreshTree();
+    followTree();
   } else {
+    treeLoop++; // stops the loop
     overlay.innerHTML = "";
     panelIdle();
   }
@@ -720,18 +722,48 @@ function panelIdle() {
 }
 panelIdle();
 
-async function refreshTree() {
+// treeLoop numbers the running follow loop; bumping it stops the loop.
+let treeLoop = 0;
+
+// IDLE_PAUSE_MS is the breather after a round in which the screen did not
+// change, so a still screen is not sampled back to back.
+const IDLE_PAUSE_MS = 400;
+
+// followTree keeps the Inspect overlay on the current screen. Each answer
+// carries the screen's interaction hash, and the next request hands it
+// back as ?after=, which the server holds until the screen has changed and
+// come to rest (or two seconds pass). So the overlay follows taps on the
+// video, typing, and the app changing by itself, not only overlay clicks.
+async function followTree() {
+  const gen = ++treeLoop;
+  const device = udid;
+  let after = null;
   status.textContent = "fetching tree…";
-  const app = $("app").value.trim();
-  const url = `/api/devices/${udid}/tree${app ? `?app=${encodeURIComponent(app)}` : ""}`;
-  const res = await fetch(url);
-  const body = await res.json();
-  if (!res.ok) {
-    status.textContent = `tree: ${body.error || res.status}`;
-    return;
+  while (inspecting && gen === treeLoop && udid === device) {
+    const app = $("app").value.trim();
+    const params = new URLSearchParams();
+    if (app) params.set("app", app);
+    if (after !== null) params.set("after", after);
+    const res = await fetch(`/api/devices/${encodeURIComponent(device)}/tree?${params}`).catch(() => null);
+    if (!inspecting || gen !== treeLoop || udid !== device) return;
+    const body = res ? await res.json().catch(() => ({})) : {};
+    if (!res || !res.ok) {
+      status.textContent = `tree: ${body.error || (res ? res.status : "server unreachable")}`;
+      await sleep(1500);
+      continue;
+    }
+    const changed = body.interaction !== after;
+    if (changed) {
+      renderOverlay(body.nodes);
+      status.textContent = `tree: ${body.nodes.length} nodes`;
+    }
+    after = body.interaction;
+    if (!changed) await sleep(IDLE_PAUSE_MS);
   }
-  renderOverlay(body.nodes);
-  status.textContent = `tree: ${body.nodes.length} nodes`;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function renderOverlay(nodes) {
@@ -778,8 +810,7 @@ async function tapNode(node, app) {
     method: "POST",
     body: JSON.stringify({ x, y }),
   });
-  // The tap likely changed the screen; refresh so the mirror tracks it.
-  setTimeout(refreshTree, 600);
+  // No refresh here: the follow loop picks up the change once it settles.
 }
 
 window.addEventListener("resize", positionOverlay);
