@@ -50,8 +50,8 @@ func TestNewClientTrimsSlash(t *testing.T) {
 
 func TestToolsRegistered(t *testing.T) {
 	tools, order := NewClient("http://x").Tools()
-	if len(tools) != 16 || len(order) != 16 {
-		t.Fatalf("want 16 tools, got %d/%d", len(tools), len(order))
+	if len(tools) != 17 || len(order) != 17 {
+		t.Fatalf("want 17 tools, got %d/%d", len(tools), len(order))
 	}
 	for _, name := range order {
 		if _, ok := tools[name]; !ok {
@@ -398,5 +398,34 @@ func TestScreenshot(t *testing.T) {
 	f.status = 502
 	if _, err := f.client().screenshot(raw(map[string]string{"udid": "u1"})); err == nil {
 		t.Error("want error when server fails")
+	}
+}
+
+// list_apps finds the user's app: every registered build machine-wide, or
+// the builds that suit one device with whether each is installed there.
+func TestListApps(t *testing.T) {
+	f := newFakeAPI()
+	defer f.close()
+	f.body = `{"apps":[{"id":"dev.devicelab.testhive"}],"skipped":[]}`
+	got, err := f.client().listApps(nil)
+	if err != nil || !strings.Contains(got, "dev.devicelab.testhive") || f.lastPath != "/api/apps" {
+		t.Fatalf("machine-wide: %q, %v, path %s", got, err, f.lastPath)
+	}
+	if _, err := f.client().listApps(raw(map[string]string{"udid": "A B"})); err != nil || f.lastPath != "/api/devices/A B/apps" {
+		t.Errorf("per device: %v, path %s", err, f.lastPath)
+	}
+	if _, err := f.client().listApps(json.RawMessage(`["bad"]`)); err == nil {
+		t.Error("want error on non-object args")
+	}
+	f.status = 502
+	if _, err := f.client().listApps(nil); err == nil {
+		t.Error("want error when the server fails")
+	}
+}
+
+func TestListAppsSchemaIsValid(t *testing.T) {
+	s := schemaOptionalDevice()
+	if req, ok := s["required"].([]string); !ok || req == nil {
+		t.Errorf("required must be an empty list, not null: %#v", s["required"])
 	}
 }

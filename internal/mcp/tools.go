@@ -39,6 +39,7 @@ func NewClient(baseURL string) *Client {
 func (c *Client) Tools() (map[string]Tool, []string) {
 	tools := map[string]Tool{
 		"list_devices":    {Description: descListDevices, InputSchema: schemaNone(), Call: c.listDevices},
+		"list_apps":       {Description: descListApps, InputSchema: schemaOptionalDevice(), Call: c.listApps},
 		"device_page_url": {Description: descPageURL, InputSchema: schemaDeviceApp(true), Call: c.devicePageURL},
 		"ui_tree":         {Description: descUITree, InputSchema: schemaDeviceApp(false), Call: c.uiTree},
 		"snapshot":        {Description: descSnapshot, InputSchema: schemaSnapshot(), Call: c.snapshot},
@@ -55,7 +56,7 @@ func (c *Client) Tools() (map[string]Tool, []string) {
 		"assert_visible":  {Description: descAssert, InputSchema: schemaAssert(), Call: c.assertVisible},
 		"screenshot":      {Description: descScreenshot, InputSchema: schemaDevice(), Raw: c.screenshot},
 	}
-	order := []string{"list_devices", "device_page_url", "ui_tree", "snapshot", "boot_device", "install_app", "launch_app", "tap", "long_press", "swipe", "press", "find_element", "app_skills", "open_url", "assert_visible", "screenshot"}
+	order := []string{"list_devices", "list_apps", "device_page_url", "ui_tree", "snapshot", "boot_device", "install_app", "launch_app", "tap", "long_press", "swipe", "press", "find_element", "app_skills", "open_url", "assert_visible", "screenshot"}
 	return tools, order
 }
 
@@ -101,6 +102,24 @@ func decodeArgs(raw json.RawMessage) (deviceArgs, error) {
 
 func (c *Client) listDevices(json.RawMessage) (string, error) {
 	body, err := c.get("/api/devices")
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+
+// listApps returns the registered builds: all of them, or those that suit
+// one device, marked installed or launched there.
+func (c *Client) listApps(raw json.RawMessage) (string, error) {
+	a, err := decodeArgs(raw)
+	if err != nil {
+		return "", err
+	}
+	path := "/api/apps"
+	if a.UDID != "" {
+		path = "/api/devices/" + url.PathEscape(a.UDID) + "/apps"
+	}
+	body, err := c.get(path)
 	if err != nil {
 		return "", err
 	}

@@ -53,8 +53,8 @@ claude mcp add playwright npx @playwright/mcp@latest
 claude plugin marketplace add devicelab-dev/DeviceDeck
 claude plugin install devicedeck@devicedeck-marketplace
 
-# 3. Ask Claude — it boots a simulator, launches your app, drives it, writes the test
-#    "Write a Playwright test that logs in to my app com.your.app"
+# 3. Ask Claude — it finds your app, boots a simulator, launches it, drives it, writes the test
+#    "Write a Playwright test that logs in to my app"
 
 # 4. Run it
 npx playwright test

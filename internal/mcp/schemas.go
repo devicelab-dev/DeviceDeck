@@ -5,6 +5,10 @@ package mcp
 const (
 	descListDevices = "List every simulator and emulator on the machine, running or not, with its " +
 		"udid (iOS) or serial (Android), name, platform, and boot state. Start here to find a device."
+	descListApps = "List the app builds the user registered with devicedeck --app — name, bundle id, " +
+		"platform, version and minimum OS — plus any it could not use and why. Given a udid, list the " +
+		"builds that suit that device, and whether each is installed or already launched there. Start " +
+		"here to find the user's app: launch_app on a registered build installs it first."
 	descPageURL = "Return the URL of a device's automation page. Open it with your own browser tools " +
 		"(Playwright, Puppeteer) to drive the device by selector: the native UI is mirrored as real DOM, " +
 		"so app accessibility identifiers are data-testid and roles/labels are ARIA."
@@ -57,6 +61,12 @@ const (
 // schemaNone is the input schema for a tool that takes no arguments.
 func schemaNone() map[string]any {
 	return map[string]any{"type": "object", "properties": map[string]any{}}
+}
+
+// schemaOptionalDevice is the schema for a tool that works machine-wide and
+// narrows to a device when given one.
+func schemaOptionalDevice() map[string]any {
+	return object(map[string]any{"udid": deviceProp()}, []string{})
 }
 
 // schemaDevice is the schema for a tool that takes only a device.

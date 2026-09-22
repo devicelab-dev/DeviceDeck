@@ -16,10 +16,12 @@ lifecycle a web test would not know.
 **Prerequisites**
 - `devicedeck` is running (default `http://127.0.0.1:8787`). The device page is
   `/device/{udid}?app={bundleId}` — use `booted` for the udid when one simulator is up.
+- **Find the app with `list_apps`** when the user says "my app" rather than a bundle id: it
+  lists the builds registered with `devicedeck --app` (name, bundle id, platform, minimum OS).
+  Pick the one that matches; ask only if several do.
 - **If no device is booted, boot one yourself** — do not send the user to the console. With
-  DeviceDeck's MCP tools: `list_devices`, then `boot_device` on a simulator (or emulator) that
-  fits the app, then `launch_app` with the bundle id (a build registered with `devicedeck --app`
-  is installed first). `device_page_url` gives the page to open. Only without those tools, ask the
+  DeviceDeck's MCP tools: `list_devices`, then `boot_device` on a simulator (or emulator) of the
+  app's platform, then `launch_app` with the bundle id (a registered build is installed first). `device_page_url` gives the page to open. Only without those tools, ask the
   user to open the console at the base URL and pick a device.
 - You drive with **Playwright MCP** (`@playwright/mcp`) — the browser tool you already use for
   the web. (Cypress and Puppeteer drive the same DOM too — see [`examples/`](../../examples/) —
@@ -81,7 +83,7 @@ matter here:
 ## Managing devices
 
 With DeviceDeck's MCP tools (the Claude plugin, the Gemini extension, or `devicedeck mcp` added by
-hand) the agent picks, boots, installs and launches itself: `list_devices`, `boot_device`, `install_app`
+hand) the agent picks, boots, installs and launches itself: `list_devices`, `list_apps`, `boot_device`, `install_app`
 (a `.app` for a Simulator or a `.apk` for an emulator — not a device `.ipa`), and `launch_app`
 (which also takes an `appFile` to install-then-launch in one call); `device_page_url` returns the
 page to hand to Playwright MCP. Without them, a device the user booted plus Playwright MCP is all you

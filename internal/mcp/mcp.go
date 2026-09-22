@@ -129,7 +129,8 @@ const serverInstructions = `DeviceDeck drives iOS simulators and Android emulato
 Each device is also a real-DOM web page at http://127.0.0.1:8787/device/{udid}?app={bundleId}
 ("booted" for the udid when one device is up): drive it with Playwright MCP by role, name or
 data-testid (the app's accessibility id), never by coordinates. Use these tools to list, boot
-and launch devices, read the UI tree and act on it. The devicedeck server must be running
+and launch devices, read the UI tree and act on it. When the user says "my app", call list_apps:
+it names the builds they registered, and launch_app installs one before launching it. The devicedeck server must be running
 (run devicedeck in a terminal). A device takes one driver at a time: if it is held by another
 client, pick another device. After typing, wait for the device to show the value before
 submitting.`
