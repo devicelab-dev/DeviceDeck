@@ -136,10 +136,20 @@ uninstall, delete that folder and the `# DeviceDeck` line from your shell profil
 
 ### With your tests
 
-Point Playwright, Cypress or Puppeteer at `/device/{udid}?app={bundleId}` — accessibility ids are
-`data-testid`, roles and labels are ARIA, so you drive it with ordinary selectors.
-[`examples/`](examples/) has runnable login and checkout projects for all three. **Guide:**
-[docs/testing.md](docs/testing.md).
+You don't need a mobile test suite to start — the device is a web page, so you get your first test
+the way you would for a website:
+
+- **Let your agent write it.** With the [agent setup](#with-an-ai-agent), ask it: *"Open
+  http://127.0.0.1:8787/device/booted?app=com.your.app and write a Playwright test that logs in."*
+  It drives the app and writes a spec that selects by the app's ids.
+- **Record it.** Playwright's [playwright-cli](https://github.com/microsoft/playwright-cli) records
+  what you do on the device page and writes ordinary locators — here is
+  [a recorded login](examples/playwright/tests/recorded/login-recorded.spec.ts).
+- **Start from an example.** [`examples/`](examples/) has runnable login and checkout projects for
+  Playwright, Cypress and Puppeteer — copy one and point it at your app.
+
+Tests point at `/device/{udid}?app={bundleId}`: accessibility ids are `data-testid`, roles and
+labels are ARIA, so every selector is an ordinary web one. **Guide:** [docs/testing.md](docs/testing.md).
 
 **One device, one worker.** A device takes one driver at a time: two clients tapping at once would
 interleave into nonsense, so a second one is refused and told who holds the device. Test runners go
