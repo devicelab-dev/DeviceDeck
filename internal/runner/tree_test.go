@@ -362,3 +362,70 @@ func TestEnginesStop(t *testing.T) {
 		t.Errorf("engines = %v, want only BBB left", s.engines)
 	}
 }
+
+// A backgrounded app is not read — the runner no longer brings it forward —
+// and answers with its state and no tree; a failed read of a frontmost app
+// is still an error.
+func TestSnapshotStateNotFrontmost(t *testing.T) {
+	tests := []struct {
+		name      string
+		reply     string
+		wantState string
+		wantErr   bool
+	}{
+		{"backgrounded", `{"ok": false, "error": {"code": "SNAPSHOT_FAILED", "message": "not in front"}, "data": {"appState": "runningBackground"}}`, "runningBackground", false},
+		{"frontmost but unreadable", `{"ok": false, "error": {"code": "SNAPSHOT_FAILED", "message": "timed out"}, "data": {"appState": "runningForeground"}}`, "", true},
+		{"no state", `{"ok": false, "error": {"code": "SNAPSHOT_FAILED", "message": "timed out"}, "data": {}}`, "", true},
+		{"no data", `{"ok": false, "error": {"code": "SNAPSHOT_FAILED", "message": "timed out"}}`, "", true},
+		{"another error", `{"ok": false, "error": {"code": "NO_TARGET_APP", "message": "none"}, "data": {"appState": "runningBackground"}}`, "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tree := stubRunner(t, func(map[string]any) string { return tt.reply })
+			snap, err := tree.SnapshotState(context.Background(), "com.example")
+			if (err != nil) != tt.wantErr || snap.AppState != tt.wantState || len(snap.Nodes) != 0 {
+				t.Errorf("snap = %+v, err = %v; want state %q, err %v", snap, err, tt.wantState, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestTreeClientIdle(t *testing.T) {
+	var got map[string]any
+	tree := stubRunner(t, func(cmd map[string]any) string {
+		got = cmd
+		return `{"ok": true, "data": {"idle": true, "waitedMs": 12, "appState": "runningForeground"}}`
+	})
+	if err := (&Engine{tree: tree}).Idle(context.Background(), "com.example"); err != nil {
+		t.Fatalf("Idle: %v", err)
+	}
+	if got["command"] != "idle" || got["appBundleId"] != "com.example" || got["timeoutMs"] != float64(idleCapMs) {
+		t.Errorf("command = %v", got)
+	}
+}
+
+// idlingFake is an engine that can wait for its app (iOS).
+type idlingFake struct {
+	fakeEngine
+	idled []string
+}
+
+func (f *idlingFake) Idle(_ context.Context, app string) error {
+	f.idled = append(f.idled, app)
+	return nil
+}
+
+func TestEnginesIdle(t *testing.T) {
+	ios := &idlingFake{}
+	s := &Engines{engines: map[string]engineAPI{"ios": ios, "android": &fakeEngine{}},
+		start: func(context.Context, string) (engineAPI, error) { return nil, errors.New("no device") }}
+	if err := s.Idle(context.Background(), "ios", "com.example"); err != nil || len(ios.idled) != 1 {
+		t.Errorf("ios idle: err %v, idled %v", err, ios.idled)
+	}
+	if err := s.Idle(context.Background(), "android", "com.example"); err != nil {
+		t.Errorf("an engine without idle returns at once: %v", err)
+	}
+	if err := s.Idle(context.Background(), "gone", "com.example"); err == nil {
+		t.Error("a start failure must surface")
+	}
+}

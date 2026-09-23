@@ -142,6 +142,7 @@ type fakeCapture struct {
 	assertErr error
 	asserted  [][2]float64
 	waited    [][2]float64
+	fills     []string
 }
 
 func (f *fakeCapture) Start(_ context.Context, udid, appID string) error {
@@ -192,6 +193,12 @@ func (f *fakeCapture) OnFrame(udid string, frame []byte) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.frames = append(f.frames, frame)
+}
+
+func (f *fakeCapture) OnFill(udid string, x, y float64, text string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.fills = append(f.fills, text)
 }
 
 func (f *fakeCapture) observedFrames() [][]byte {

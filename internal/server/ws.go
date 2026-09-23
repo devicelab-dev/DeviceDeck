@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"time"
 	"unicode/utf8"
@@ -157,14 +158,41 @@ func (s *Server) handleInputWS(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return
 		}
-		if kind != websocket.MessageBinary || !input.ValidFrame(raw) {
-			continue
-		}
-		held.observe(raw)
-		if err := s.sendFrame(ctx, udid, raw); err != nil {
+		if err := s.inputMessage(ctx, udid, kind, raw, &held); err != nil {
 			_ = conn.Close(websocket.StatusInternalError, "sidecar unavailable")
 			return
 		}
+	}
+}
+
+// inputMessage handles one message from the input socket: a valid binary
+// frame goes to the device; anything else is ignored. The device page acts
+// through POST /act instead; this socket carries the console's live input.
+func (s *Server) inputMessage(ctx context.Context, udid string, kind websocket.MessageType, raw []byte, held *heldTouch) error {
+	if kind != websocket.MessageBinary || !input.ValidFrame(raw) {
+		return nil
+	}
+	held.observe(raw)
+	return s.sendFrame(ctx, udid, raw)
+}
+
+// inputFlusher is a FrameSender that can hold input back — the Android
+// router batches typed characters into one driver call — and can be told
+// to send it now.
+type inputFlusher interface {
+	Flush(ctx context.Context, udid string) error
+}
+
+// flushInput pushes any input the frame sender is holding for udid to the
+// device. A failure is logged, not fatal: the mark is recorded anyway, and
+// the settle that follows reports what the device actually shows.
+func (s *Server) flushInput(ctx context.Context, udid string) {
+	f, ok := s.frames.(inputFlusher)
+	if !ok {
+		return
+	}
+	if err := f.Flush(ctx, udid); err != nil {
+		slog.Warn("input flush failed", "udid", udid, "err", err)
 	}
 }
 

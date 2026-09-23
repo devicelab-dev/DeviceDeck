@@ -78,8 +78,45 @@ func (c *Client) OpenURL(ctx context.Context, serial, rawURL string) error {
 // monkey is used rather than `am start` because it needs only the
 // package name, not the activity, which a caller naming an app by its
 // bundle id does not have.
+//
+// A launch is confirmed, not assumed: the app's window must take focus. A
+// force-stop — and pm clear, which force-stops — removes the app's task
+// asynchronously, and the removal's destroy timeout (~1s later, measured)
+// kills whatever process the app has by then, a freshly started one
+// included. That left the splash screen orphaned with no app behind it,
+// and no task list shows when the window has passed. So a start that does
+// not reach the front is started again.
 func (c *Client) LaunchApp(ctx context.Context, serial, appID string) error {
 	_, _ = c.run(ctx, "adb", "-s", serial, "shell", "am", "force-stop", appID)
+	for attempt := 1; ; attempt++ {
+		if err := c.startApp(ctx, serial, appID); err != nil {
+			return err
+		}
+		if c.awaitFocus(ctx, serial, appID) {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return fmt.Errorf("launch %s on %s: %w", appID, serial, ctx.Err())
+		}
+		if attempt == launchAttempts {
+			return c.slowOrDead(ctx, serial, appID)
+		}
+	}
+}
+
+// slowOrDead judges a launch whose window never took focus: an app whose
+// process is running is only slow to come forward — measured under load —
+// and counts as launched; one with no process was killed.
+func (c *Client) slowOrDead(ctx context.Context, serial, appID string) error {
+	out, err := c.run(ctx, "adb", "-s", serial, "shell", "pidof", appID)
+	if err == nil && strings.TrimSpace(string(out)) != "" {
+		return nil
+	}
+	return fmt.Errorf("launch %s on %s: the app did not start (its process is not running)", appID, serial)
+}
+
+// startApp asks the launcher intent to start appID.
+func (c *Client) startApp(ctx context.Context, serial, appID string) error {
 	out, err := c.run(ctx, "adb", "-s", serial, "shell", "monkey", "-p", appID,
 		"-c", "android.intent.category.LAUNCHER", "1")
 	if err != nil {
@@ -90,6 +127,46 @@ func (c *Client) LaunchApp(ctx context.Context, serial, appID string) error {
 		return fmt.Errorf("launch %s on %s: no launchable activity (is it installed?)", appID, serial)
 	}
 	return nil
+}
+
+// Bounds on a launch: how many starts, and how long each has to bring the
+// app's window to the front before it counts as lost.
+var (
+	launchAttempts  = 3
+	launchFocusCap  = 2 * time.Second
+	launchFocusPoll = 100 * time.Millisecond
+)
+
+// focused reports whether appID's own window has input focus.
+func (c *Client) focused(ctx context.Context, serial, appID string) bool {
+	out, err := c.run(ctx, "adb", "-s", serial, "shell", "dumpsys", "window")
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.Contains(line, "mCurrentFocus=") {
+			return strings.Contains(line, " "+appID+"/")
+		}
+	}
+	return false
+}
+
+// awaitFocus polls until appID's window has focus or the cap passes.
+func (c *Client) awaitFocus(ctx context.Context, serial, appID string) bool {
+	deadline := time.Now().Add(launchFocusCap)
+	for {
+		if c.focused(ctx, serial, appID) {
+			return true
+		}
+		if !time.Now().Before(deadline) {
+			return false
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(launchFocusPoll):
+		}
+	}
 }
 
 // Install adds an APK to the emulator. -r reinstalls over an existing copy

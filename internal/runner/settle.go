@@ -34,6 +34,12 @@ type SettleOptions struct {
 	// Cap bounds the whole wait. A tap on static text changes nothing,
 	// ever, and a caller must get an answer anyway.
 	Cap time.Duration
+	// Idle, when set, is asked once a screen looks quiet, before that is
+	// accepted: a screen can stop moving and still be mid-transition — iOS
+	// keeps a pushed-away screen in the tree ~430ms after the animation
+	// ends — and only the app knows it has not finished. Its errors are
+	// ignored: the tree remains the judge.
+	Idle func(ctx context.Context) error
 }
 
 // Defaults for SettleOptions. The cap is measured, not picked: every
@@ -80,7 +86,7 @@ func Settle(ctx context.Context, snap Snapshotter, after string, opts SettleOpti
 	opts = opts.withDefaults()
 	deadline := time.Now().Add(opts.Cap)
 	var last Snapshot
-	lastScreen, quiet := "", 0
+	lastScreen, quiet, idled := "", 0, false
 	for {
 		got, err := snap(ctx)
 		if err != nil {
@@ -88,9 +94,15 @@ func Settle(ctx context.Context, snap Snapshotter, after string, opts SettleOpti
 		}
 		last = got
 		quiet, lastScreen = countQuiet(got.Nodes, lastScreen, quiet)
+		idled = idled && quiet > 1 // a new screen must be idled afresh
 		changed := after == "" || InteractionHash(got.Nodes) != after
 		if changed && quiet >= opts.Quiet {
-			return last, nil
+			if idled || opts.Idle == nil {
+				return last, nil
+			}
+			_ = opts.Idle(ctx)
+			idled = true
+			continue // re-read at once: did finishing change the screen?
 		}
 		if !sleepUntil(ctx, opts.Interval, deadline) {
 			return last, nil

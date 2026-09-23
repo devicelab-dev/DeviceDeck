@@ -35,6 +35,11 @@
        events, and device.js turns each one into a finger drag and resets
        the offset. The native list moves; the mirror never does. */
     #mirror { position: absolute; overflow: hidden; }
+    /* The screen sits one gutter into the mirror's scrollable area, and the
+       mirror is scrolled back by the same amount (positionMirror): a scroll
+       box only scrolls right and down, and this is what lets an element past
+       the left or top edge be scrolled into view too. */
+    #mirror > [data-dd-node] { translate: var(--dd-gutter-x, 0) var(--dd-gutter-y, 0); }
     /* While an action's barrier is open — from the action until the
        settled tree has been rendered — the mirror is never still.
        Playwright refuses to click an element whose box moves between two

@@ -199,3 +199,34 @@ func TestLaunchDefaults(t *testing.T) {
 		t.Errorf("defaults not applied: %+v", got)
 	}
 }
+
+// A screen that has stopped moving is asked whether the app is idle before
+// it counts; if finishing its work changes the screen — iOS dropping a
+// pushed-away screen — the new screen is settled instead.
+func TestSettleAsksIdle(t *testing.T) {
+	both, cart := screen("products+cart"), screen("cart")
+	tests := []struct {
+		name      string
+		trees     [][]Node
+		idleErr   error
+		wantLabel string
+		wantIdles int
+	}{
+		{"quiet and idle: returns", [][]Node{both, both, both}, nil, "products+cart", 1},
+		{"idle finishes the transition", [][]Node{both, both, both, cart, cart, cart}, nil, "cart", 2},
+		{"an idle error does not fail the settle", [][]Node{both, both, both}, errors.New("runner busy"), "products+cart", 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			snap, _ := scripted(tt.trees...)
+			idles := 0
+			opts := fast
+			opts.Cap = time.Second
+			opts.Idle = func(context.Context) error { idles++; return tt.idleErr }
+			got, err := Settle(context.Background(), snap, "", opts)
+			if err != nil || got.Nodes[0].Label != tt.wantLabel || idles != tt.wantIdles {
+				t.Errorf("got %q after %d idles (err %v), want %q after %d", got.Nodes[0].Label, idles, err, tt.wantLabel, tt.wantIdles)
+			}
+		})
+	}
+}

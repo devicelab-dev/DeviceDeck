@@ -69,6 +69,7 @@ type CaptureService interface {
 	WaitVisible(udid string, x, y float64) error
 	Status(udid string) (recording bool, steps []capture.Step)
 	OnFrame(udid string, frame []byte)
+	OnFill(udid string, x, y float64, text string)
 }
 
 // Server routes the HTTP API onto the injected device backends.
@@ -86,6 +87,8 @@ type Server struct {
 	warm        *warmups
 	// inputs enforces one driver per device.
 	inputs *inputOwners
+	// acts remembers recent /act results, so a retried action is not done twice.
+	acts *recentActs
 	// ender ends a device's session and powers it off; nil disables it.
 	ender SessionEnder
 	// launched remembers the apps launched on each device, so opening a
@@ -111,6 +114,7 @@ func New(devices DeviceLister, boot DeviceBooter, launch AppLauncher, screenshot
 		video:       video,
 		capture:     cap,
 		inputs:      newInputOwners(),
+		acts:        newRecentActs(),
 		sleep:       time.Sleep,
 	}
 }
@@ -163,6 +167,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/devices/{udid}/tree", s.handleTree)
 	mux.HandleFunc("GET /api/devices/{udid}/video", s.handleVideoWS)
 	mux.HandleFunc("GET /api/devices/{udid}/input", s.handleInputWS)
+	mux.HandleFunc("POST /api/devices/{udid}/act", s.handleAct)
 	mux.HandleFunc("POST /api/devices/{udid}/tap", s.handleTap)
 	mux.HandleFunc("POST /api/devices/{udid}/swipe", s.handleSwipe)
 	mux.HandleFunc("POST /api/devices/{udid}/gesture", s.handleGesture)
@@ -342,6 +347,22 @@ func (s *Server) snapshotter(udid, app string) runner.Snapshotter {
 	}
 }
 
+// appIdler is a tree source that can wait for the app to finish its work.
+type appIdler interface {
+	Idle(ctx context.Context, udid, appBundleID string) error
+}
+
+// settleFor is the settle configuration for one device and app: the
+// server's timings, plus the app's own idle signal where the tree source
+// has one.
+func (s *Server) settleFor(udid, app string) runner.SettleOptions {
+	opts := s.settle
+	if i, ok := s.trees.(appIdler); ok {
+		opts.Idle = func(ctx context.Context) error { return i.Idle(ctx, udid, app) }
+	}
+	return opts
+}
+
 func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 	png, err := s.screenshots.Screenshot(r.Context(), r.PathValue("udid"))
 	if err != nil {
@@ -353,8 +374,8 @@ func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTree(w http.ResponseWriter, r *http.Request) {
-	udid := r.PathValue("udid")
-	snap := s.snapshotter(udid, r.URL.Query().Get("app"))
+	udid, app := r.PathValue("udid"), r.URL.Query().Get("app")
+	snap := s.snapshotter(udid, app)
 	var got runner.Snapshot
 	var err error
 	// ?after=<interaction hash> turns the poll into a barrier: the
@@ -364,7 +385,7 @@ func (s *Server) handleTree(w http.ResponseWriter, r *http.Request) {
 	// that waits on the page's own requests — playwright-mcp does —
 	// waits for the device without knowing it.
 	if after, held := r.URL.Query()["after"]; held {
-		got, err = runner.Settle(r.Context(), snap, after[0], s.settle)
+		got, err = runner.Settle(r.Context(), snap, after[0], s.settleFor(udid, app))
 	} else {
 		got, err = snap(r.Context())
 	}
@@ -411,7 +432,7 @@ func treePayload(snap runner.Snapshot) map[string]any {
 // waits for quiet alone — there is no earlier screen to have moved on
 // from — under the same cap as any other held tree.
 func (s *Server) FirstTree(ctx context.Context, udid, app string) ([]byte, error) {
-	got, err := runner.Settle(ctx, s.snapshotter(udid, app), "", s.settle)
+	got, err := runner.Settle(ctx, s.snapshotter(udid, app), "", s.settleFor(udid, app))
 	if err != nil {
 		return nil, err
 	}
@@ -433,13 +454,7 @@ func (s *Server) handleTap(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, fmt.Errorf("x and y must be normalized 0-1"))
 		return
 	}
-	udid := r.PathValue("udid")
-	if err := s.sendFrame(r.Context(), udid, input.Touch(input.TouchDown, req.X, req.Y, input.EdgeNone)); err != nil {
-		httpError(w, http.StatusBadGateway, err)
-		return
-	}
-	s.sleep(durationOrDefault(req.DurationMs, 60))
-	if err := s.sendFrame(r.Context(), udid, input.Touch(input.TouchUp, req.X, req.Y, input.EdgeNone)); err != nil {
+	if err := s.sendTap(r.Context(), r.PathValue("udid"), req.X, req.Y, req.DurationMs); err != nil {
 		httpError(w, http.StatusBadGateway, err)
 		return
 	}
@@ -465,24 +480,7 @@ func (s *Server) handleSwipe(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	udid := r.PathValue("udid")
-	const steps = 10
-	stepPause := durationOrDefault(req.DurationMs, 250) / steps
-	if err := s.sendFrame(r.Context(), udid, input.Touch(input.TouchDown, req.FromX, req.FromY, input.EdgeNone)); err != nil {
-		httpError(w, http.StatusBadGateway, err)
-		return
-	}
-	for i := 1; i <= steps; i++ {
-		s.sleep(stepPause)
-		t := float64(i) / steps
-		x := req.FromX + (req.ToX-req.FromX)*t
-		y := req.FromY + (req.ToY-req.FromY)*t
-		if err := s.sendFrame(r.Context(), udid, input.Touch(input.TouchMove, x, y, input.EdgeNone)); err != nil {
-			httpError(w, http.StatusBadGateway, err)
-			return
-		}
-	}
-	if err := s.sendFrame(r.Context(), udid, input.Touch(input.TouchUp, req.ToX, req.ToY, input.EdgeNone)); err != nil {
+	if err := s.sendSwipe(r.Context(), r.PathValue("udid"), req.FromX, req.FromY, req.ToX, req.ToY, req.DurationMs); err != nil {
 		httpError(w, http.StatusBadGateway, err)
 		return
 	}

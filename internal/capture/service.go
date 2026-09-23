@@ -141,6 +141,17 @@ func (s *Service) Status(udid string) (bool, []Step) {
 	return true, rec.Steps()
 }
 
+// OnFill observes a fill() of the field at x, y (normalized). A no-op
+// unless the device is recording.
+func (s *Service) OnFill(udid string, x, y float64, text string) {
+	s.mu.Lock()
+	rec, ok := s.recorders[udid]
+	s.mu.Unlock()
+	if ok {
+		rec.OnFill(x, y, text)
+	}
+}
+
 // OnFrame observes one raw input frame headed for udid's sidecar. A no-op
 // unless the device is recording.
 func (s *Service) OnFrame(udid string, frame []byte) {

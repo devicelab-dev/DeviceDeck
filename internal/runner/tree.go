@@ -68,10 +68,13 @@ func (t *TreeClient) Snapshot(ctx context.Context, appBundleID string) ([]Node, 
 // not activate the app first: AppState is its true frontmost/background
 // state, which the node tree cannot report reliably.
 func (t *TreeClient) SnapshotState(ctx context.Context, appBundleID string) (Snapshot, error) {
-	data, err := t.client.Call(ctx, dlios.Command{
+	data, err := t.client.Call(runnerContext(ctx), dlios.Command{
 		Command:     dlios.CmdSnapshot,
 		AppBundleID: appBundleID,
 	})
+	if snap, ok := notFrontmost(data, err); ok {
+		return snap, nil
+	}
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("runner snapshot: %w", err)
 	}
@@ -83,6 +86,51 @@ func (t *TreeClient) SnapshotState(ctx context.Context, appBundleID string) (Sna
 	// against a screen nobody can see is the failure that survives to
 	// real hardware.
 	return Snapshot{Nodes: OnScreen(convertNodes(data.Nodes)), AppState: data.AppState}, nil
+}
+
+// notFrontmost reads a snapshot the runner declined because the app is not
+// in front. The runner no longer brings an app forward to read it — that
+// hid the very "app left the screen" state DeviceDeck reports — so a
+// backgrounded app answers SNAPSHOT_FAILED with its state: no tree, and
+// the state says why.
+func notFrontmost(data *dlios.ResponseData, err error) (Snapshot, bool) {
+	var runnerErr *dlios.RunnerError
+	if !errors.As(err, &runnerErr) || runnerErr.Code != dlios.ErrSnapshotFailed || data == nil {
+		return Snapshot{}, false
+	}
+	if data.AppState == "" || data.AppState == appForeground {
+		return Snapshot{}, false
+	}
+	return Snapshot{AppState: data.AppState}, true
+}
+
+// appForeground is the runner's state for an app in front, taking input.
+const appForeground = "runningForeground"
+
+// idleCapMs bounds one idle wait. Measured: iOS keeps a pushed-away screen
+// in the tree ~430ms after the push animation stops; an app that never
+// idles (a spinner, a looping animation) costs at most this.
+const idleCapMs = 1000
+
+// Idle waits, up to idleCapMs, for the app to finish its work — run loop
+// idle and animations done, XCTest's own quiescence. The tree alone cannot
+// tell a finished transition from one that has stopped moving but not yet
+// removed the old screen.
+func (t *TreeClient) Idle(ctx context.Context, appBundleID string) error {
+	_, err := t.client.Idle(runnerContext(ctx), appBundleID, idleCapMs)
+	return err
+}
+
+// runnerContext keeps a caller's cancellation away from the runner. The
+// device page cancels its in-flight tree request whenever a new action
+// starts, and maestro-runner's client reports a cancelled request as a
+// transport failure — which its supervisor answers by killing the (healthy)
+// runner and relaunching it, taking down whatever command was running on it:
+// measured as every fill failing mid-command. A call started here runs to
+// completion; a result nobody waits for any more is simply dropped. The
+// client's own timeout still bounds it.
+func runnerContext(ctx context.Context) context.Context {
+	return context.WithoutCancel(ctx)
 }
 
 func convertNodes(in []dlios.SnapshotNode) []Node {
@@ -135,6 +183,9 @@ func StartEngine(ctx context.Context, udid string) (*Engine, error) {
 	client, handle, err := dlios.Setup(ctx, dlios.SetupOptions{
 		ArtifactsDir:  artifacts,
 		SimulatorUDID: udid,
+		// A failed start must never reboot the simulator: it is the user's,
+		// watched in the console, with the app state they are testing.
+		NoSimulatorReset: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("start devicelab-ios-runner: %w", err)
@@ -150,6 +201,11 @@ func (e *Engine) Snapshot(ctx context.Context, appBundleID string) ([]Node, erro
 // SnapshotState fetches the UI tree and the app's lifecycle state.
 func (e *Engine) SnapshotState(ctx context.Context, appBundleID string) (Snapshot, error) {
 	return e.tree.SnapshotState(ctx, appBundleID)
+}
+
+// Idle waits for the app to finish its work; see TreeClient.Idle.
+func (e *Engine) Idle(ctx context.Context, appBundleID string) error {
+	return e.tree.Idle(ctx, appBundleID)
 }
 
 // Stop shuts the runner down, gracefully first.
@@ -218,6 +274,24 @@ func (s *Engines) SnapshotState(ctx context.Context, udid, appBundleID string) (
 		return Snapshot{}, fmt.Errorf("restart tree engine: %w", err)
 	}
 	return e.SnapshotState(ctx, appBundleID)
+}
+
+// idler is an engine that can wait for its app to go idle (iOS).
+type idler interface {
+	Idle(ctx context.Context, appBundleID string) error
+}
+
+// Idle waits for the app on udid to finish its work, where the platform
+// can tell; elsewhere it returns at once.
+func (s *Engines) Idle(ctx context.Context, udid, appBundleID string) error {
+	e, err := s.engine(ctx, udid)
+	if err != nil {
+		return err
+	}
+	if i, ok := e.(idler); ok {
+		return i.Idle(ctx, appBundleID)
+	}
+	return nil
 }
 
 // evict drops failed from the cache and stops it — unless a concurrent

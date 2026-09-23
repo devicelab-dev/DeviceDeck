@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -28,6 +29,9 @@ type AndroidEngine struct {
 	mu      sync.Mutex
 	screenW int
 	screenH int
+	// systemIDs are the resource-id prefixes of windows that are not the
+	// app's: SystemUI and the current keyboard. Looked up once per session.
+	systemIDs []string
 }
 
 // StartAndroidEngine installs (if needed) and starts the devicelab Android
@@ -144,7 +148,7 @@ func (e *AndroidEngine) Snapshot(_ context.Context, _ string) ([]Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	xml, err := e.adapter.Source()
+	xml, err := androidSnapshotXML(e.client)
 	if err != nil {
 		return nil, fmt.Errorf("android page source: %w", err)
 	}
@@ -152,7 +156,108 @@ func (e *AndroidEngine) Snapshot(_ context.Context, _ string) ([]Node, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse android page source: %w", err)
 	}
-	return convertAndroidElements(elems, w, h), nil
+	return convertAndroidElements(withoutSystemWindows(elems, e.systemIDPrefixes()), w, h), nil
+}
+
+// systemUIIDPrefix marks the system's own chrome: the status bar and the
+// navigation bar are SystemUI windows, and every id in them carries it.
+const systemUIIDPrefix = "com.android.systemui:"
+
+// systemIDPrefixes returns the id prefixes of windows that are not the
+// app's: SystemUI, plus the current keyboard when it can be read. The
+// keyboard stays a window while any field holds focus — even with its keys
+// hidden — and its root spans the screen, so left in the mirror it sits
+// over the app and takes the clicks meant for it.
+func (e *AndroidEngine) systemIDPrefixes() []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.systemIDs != nil {
+		return e.systemIDs
+	}
+	e.systemIDs = []string{systemUIIDPrefix}
+	out, err := e.dev.Shell("settings get secure default_input_method")
+	if pkg := imePackage(out); err == nil && pkg != "" {
+		e.systemIDs = append(e.systemIDs, pkg+":")
+	} else {
+		slog.Warn("android driver: keyboard package unknown; its window may reach the mirror", "error", err)
+	}
+	return e.systemIDs
+}
+
+// imePackage is the package of an input method setting such as
+// "com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME".
+func imePackage(setting string) string {
+	pkg, _, found := strings.Cut(strings.TrimSpace(setting), "/")
+	if !found || pkg == "" {
+		return ""
+	}
+	return pkg
+}
+
+// withoutSystemWindows drops the windows that are not the app's from a
+// complete dump: any window carrying an id with one of prefixes. The
+// complete dump covers every window — which is why the app's own drawers
+// and dialogs are in it — so it also carries the status bar (a clock that
+// changes every minute, notification icons an agent reads as the app's
+// content) and the keyboard.
+func withoutSystemWindows(in []*dlandroid.ParsedElement, prefixes []string) []*dlandroid.ParsedElement {
+	system := make(map[*dlandroid.ParsedElement]bool)
+	for _, e := range in {
+		if hasAnyPrefix(e.ResourceID, prefixes) {
+			system[windowOf(e)] = true
+		}
+	}
+	if len(system) == 0 {
+		return in
+	}
+	out := make([]*dlandroid.ParsedElement, 0, len(in))
+	for _, e := range in {
+		if !system[windowOf(e)] {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// hasAnyPrefix reports whether s starts with one of prefixes.
+func hasAnyPrefix(s string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if strings.HasPrefix(s, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// windowOf is the root of the window e belongs to.
+func windowOf(e *dlandroid.ParsedElement) *dlandroid.ParsedElement {
+	for e.Parent != nil {
+		e = e.Parent
+	}
+	return e
+}
+
+// snapshotIdleMs caps the driver's wait-for-idle before a dump, for the
+// same reason tuneAndroidSession caps it for page source: the mirror polls
+// and settles itself, and a long idle wait blocks every poll during typing
+// or animation.
+const snapshotIdleMs = 50
+
+// androidSnapshotXML asks the driver for its complete dump (UI.snapshot)
+// rather than page source (UI.getSource). Only the complete dump carries a
+// field's hint: without it an empty field reports its placeholder as its
+// text, and the mirror showed an unfilled form as filled — an agent then
+// sat at a disabled "Next" with nothing left to type.
+func androidSnapshotXML(client *maestro.Client) (string, error) {
+	resp, err := client.Call("UI.snapshot", map[string]any{"waitForIdleMs": snapshotIdleMs})
+	if err != nil {
+		return "", err
+	}
+	var result maestro.SourceResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		return "", fmt.Errorf("parse snapshot result: %w", err)
+	}
+	return result.XML, nil
 }
 
 // SnapshotState satisfies engineAPI. Like the rest of AndroidEngine it runs
@@ -293,8 +398,8 @@ var androidTypes = map[string]string{
 // convertAndroidElements maps the flattened UIAutomator hierarchy into
 // DeviceDeck's Node shape. Field mapping follows the mirror's contract:
 // identifier = resource-id suffix (what Maestro id: matches and React
-// Native testID becomes), label = content-desc, value = text,
-// placeholder = hint.
+// Native testID becomes), label = content-desc unless it merely repeats
+// the identifier (see androidLabel), value = text, placeholder = hint.
 //
 // A synthetic full-screen root is prepended as the mirror's scale
 // reference: element bounds are screen-absolute, but the app's own root
@@ -306,7 +411,6 @@ func convertAndroidElements(in []*dlandroid.ParsedElement, screenW, screenH int)
 	for i, e := range in {
 		indexOf[e] = i + 1
 	}
-	root := 0
 	out := make([]Node, len(in)+1)
 	out[0] = Node{
 		Index:    0,
@@ -316,33 +420,70 @@ func convertAndroidElements(in []*dlandroid.ParsedElement, screenW, screenH int)
 		Hittable: true,
 	}
 	for i, e := range in {
-		n := Node{
-			Index:       i + 1,
-			Type:        buttonIfClickable(androidType(e.ClassName), e.Clickable),
-			ClassName:   e.ClassName,
-			Label:       e.ContentDesc,
-			Identifier:  resourceIDSuffix(e.ResourceID),
-			Value:       e.Text,
-			Placeholder: e.HintText,
-			Frame: Rect{
-				X: float64(e.Bounds.X), Y: float64(e.Bounds.Y),
-				Width: float64(e.Bounds.Width), Height: float64(e.Bounds.Height),
-			},
-			Enabled:     e.Enabled,
-			Focused:     e.Focused,
-			Selected:    e.Selected,
-			Hittable:    e.Displayed,
-			Depth:       e.Depth + 1,
-			ParentIndex: &root,
+		parent := 0
+		if pi, ok := indexOf[e.Parent]; ok {
+			parent = pi
 		}
-		if e.Parent != nil {
-			if pi, ok := indexOf[e.Parent]; ok {
-				n.ParentIndex = &pi
-			}
-		}
-		out[i+1] = n
+		out[i+1] = androidNode(e, i+1, parent)
 	}
 	return out
+}
+
+// fieldValue is what a field holds. An empty Android field reports its
+// hint as its text; text equal to the hint is that hint showing, not a
+// value. (A value typed to match the hint exactly reads as empty — the
+// dump has no showing-hint flag to tell the two apart.)
+func fieldValue(text, hint string) string {
+	if hint != "" && text == hint {
+		return ""
+	}
+	return text
+}
+
+// androidNode converts one parsed element into a Node at index, parented
+// to parent (0, the synthetic root, when the element has no parent in the
+// dump).
+func androidNode(e *dlandroid.ParsedElement, index, parent int) Node {
+	id := resourceIDSuffix(e.ResourceID)
+	return Node{
+		Index:       index,
+		Type:        buttonIfClickable(androidType(e.ClassName), e.Clickable),
+		ClassName:   e.ClassName,
+		Label:       androidLabel(e.ContentDesc, id),
+		Identifier:  id,
+		Value:       fieldValue(e.Text, e.HintText),
+		Placeholder: e.HintText,
+		Frame: Rect{
+			X: float64(e.Bounds.X), Y: float64(e.Bounds.Y),
+			Width: float64(e.Bounds.Width), Height: float64(e.Bounds.Height),
+		},
+		Enabled:     e.Enabled,
+		Focused:     e.Focused,
+		Selected:    e.Selected,
+		Hittable:    e.Displayed,
+		Depth:       e.Depth + 1,
+		ParentIndex: &parent,
+	}
+}
+
+// androidLabel is the node's label: its content-desc, unless that only
+// repeats the identifier.
+//
+// React Native on Android copies a view's testID into its content-desc as
+// well as its resource-id, so a <Text testID="cart-total-text">$8.10</Text>
+// arrives as label "cart-total-text", value "$8.10". Every consumer reads
+// label before value, so the test ID displaced the text a user actually
+// sees: the mirror printed "cart-total-text" as the element's text, an
+// agent could not read the total, and IDs polluted text matching. A label
+// equal to the identifier carries nothing the identifier does not, so it
+// is dropped and the node falls back to its own text. A control left with
+// no text still has a name — the device page names an otherwise nameless
+// control by its identifier.
+func androidLabel(contentDesc, identifier string) string {
+	if contentDesc == identifier {
+		return ""
+	}
+	return contentDesc
 }
 
 // buttonRoleKeeps names the types whose own role already conveys how they
@@ -387,11 +528,23 @@ func androidType(className string) string {
 	return simple
 }
 
+// frameworkIDPrefix marks ids Android itself assigns: a dialog's buttons
+// are android:id/button1..3 whatever they say, and every screen has an
+// android:id/content.
+const frameworkIDPrefix = "android:id/"
+
 // resourceIDSuffix strips the "package:id/" prefix so selectors read the
 // way developers wrote them ("username-input", not
 // "com.testhiveapp:id/username-input") — matching the iOS identifier
-// shape and Maestro's suffix matching.
+// shape and Maestro's suffix matching. Framework ids come back empty: the
+// app never chose them, so as test ids they name nothing — a generated
+// test read getByTestId('button1') for "LOGOUT", which is the positive
+// button of whichever dialog happens to be open. Without one, the control
+// is named by its text.
 func resourceIDSuffix(resourceID string) string {
+	if strings.HasPrefix(resourceID, frameworkIDPrefix) {
+		return ""
+	}
 	if idx := strings.Index(resourceID, ":id/"); idx >= 0 {
 		return resourceID[idx+len(":id/"):]
 	}

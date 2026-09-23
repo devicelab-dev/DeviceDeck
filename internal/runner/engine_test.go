@@ -32,6 +32,17 @@ type fakeDriver struct {
 	rejectWS bool
 	source   string
 	methods  []string
+	// badSnapshot answers UI.snapshot with a result that is not an object.
+	badSnapshot bool
+	// field is the text of the one field this fake holds; ignoreKeys makes
+	// Input.sendKeys drop the text, and mask reports it as bullets.
+	field      string
+	ignoreKeys bool
+	mask       bool
+	// failSecondFind fails every element lookup after the first — a field
+	// found and typed into that can no longer be read back.
+	failSecondFind bool
+	finds          int
 }
 
 func (f *fakeDriver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -53,15 +64,18 @@ func (f *fakeDriver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			ID     int64  `json:"id"`
 			Method string `json:"method"`
+			Params struct {
+				Text string `json:"text"`
+			} `json:"params"`
 		}
 		_ = json.Unmarshal(data, &req)
-		if err := c.Write(ctx, websocket.MessageText, f.reply(req.ID, req.Method)); err != nil {
+		if err := c.Write(ctx, websocket.MessageText, f.reply(req.ID, req.Method, req.Params.Text)); err != nil {
 			return
 		}
 	}
 }
 
-func (f *fakeDriver) reply(id int64, method string) []byte {
+func (f *fakeDriver) reply(id int64, method, text string) []byte {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.methods = append(f.methods, method)
@@ -70,11 +84,31 @@ func (f *fakeDriver) reply(id int64, method string) []byte {
 	}
 	result := `{}`
 	switch method {
-	case "UI.getSource":
+	case "UI.snapshot":
 		b, _ := json.Marshal(map[string]string{"xml": f.source})
 		result = string(b)
+		if f.badSnapshot {
+			result = `"not an object"`
+		}
 	case "Session.create":
 		result = `{"sessionId":"s1"}`
+	case "UI.findElement", "UI.activeElement":
+		if f.finds++; f.failSecondFind && f.finds > 1 {
+			return fmt.Appendf(nil, `{"id":%d,"error":{"code":"ERR","message":"gone"}}`, id)
+		}
+		shown := f.field
+		if f.mask {
+			shown = strings.Repeat("•", len([]rune(f.field)))
+		}
+		b, _ := json.Marshal(map[string]any{"elementId": "el1", "text": shown,
+			"bounds": map[string]int{"x": 10, "y": 20, "width": 100, "height": 40}})
+		result = string(b)
+	case "Input.clearElement":
+		f.field = ""
+	case "Input.sendKeys":
+		if !f.ignoreKeys {
+			f.field += text
+		}
 	}
 	return fmt.Appendf(nil, `{"id":%d,"result":%s}`, id, result)
 }
@@ -109,6 +143,7 @@ func healthyADB(tools string, overrides ...toolRule) []toolRule {
 		toolRule{"pm list packages", `printf 'package:dev.devicelab.driver.android\npackage:dev.devicelab.driver.android.test\n'`},
 		toolRule{"ps -A", "echo 'u0_a1 1 dev.devicelab.driver.android'"},
 		toolRule{"wm size", "echo 'Physical size: 1080x2340'"},
+		toolRule{"default_input_method", "echo com.example.keyboard/.Ime"},
 	)
 }
 
@@ -206,8 +241,9 @@ func TestAndroidEngineSnapshotErrors(t *testing.T) {
 	}{
 		{"wm size fails", &fakeDriver{source: androidPageXML}, []toolRule{{"wm size", "exit 1"}}, "wm size"},
 		{"wm size unreadable", &fakeDriver{source: androidPageXML}, []toolRule{{"wm size", "echo nothing"}}, "unparseable"},
-		{"source fails", &fakeDriver{failing: map[string]bool{"UI.getSource": true}}, nil, "android page source"},
+		{"source fails", &fakeDriver{failing: map[string]bool{"UI.snapshot": true}}, nil, "android page source"},
 		{"source unparseable", &fakeDriver{source: "<hierarchy"}, nil, "parse android page source"},
+		{"snapshot result not an object", &fakeDriver{badSnapshot: true}, nil, "parse snapshot result"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

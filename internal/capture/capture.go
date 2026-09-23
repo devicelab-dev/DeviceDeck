@@ -114,6 +114,10 @@ type Recorder struct {
 	secure    bool
 	secureVar string
 	refresh   int // refresh generation; stale async refreshes are dropped
+	// filled is the field the last fill() went to, until any other input
+	// arrives: a test typing key by key fills the same field once per key,
+	// and those fills are one tap and one inputText, not one per key.
+	filled *[2]float64
 }
 
 type pendingTouch struct {
@@ -141,10 +145,26 @@ func NewRecorder(ctx context.Context, appID string, snapshot SnapshotFunc) (*Rec
 	return r, nil
 }
 
+// OnFill records a browser fill() of the field at x, y (normalized): a
+// tap on the field — resolved to its selector like any tap — then its whole
+// value as text. The value replaces what was buffered, as fill() replaces
+// the field's contents.
+func (r *Recorder) OnFill(x, y float64, text string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.filled == nil || r.filled[0] != x || r.filled[1] != y {
+		r.onTouch(input.Event{Kind: input.EventTouch, Phase: input.TouchDown, X: x, Y: y})
+		r.onTouch(input.Event{Kind: input.EventTouch, Phase: input.TouchUp, X: x, Y: y})
+		r.filled = &[2]float64{x, y}
+	}
+	r.text = []rune(text)
+}
+
 // OnEvent feeds one decoded input event into the recording.
 func (r *Recorder) OnEvent(ev input.Event) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.filled = nil
 	switch ev.Kind {
 	case input.EventTouch:
 		r.onTouch(ev)

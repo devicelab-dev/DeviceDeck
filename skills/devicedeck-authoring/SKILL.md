@@ -63,9 +63,10 @@ matter here:
   — it blocks until the app is taking input, so the first action lands. It clears the app's data
   first; post to `/app/launch?reset=no` to resume where the app was left instead.
 - **Selectors:** `page.getByTestId('login-button')` / `getByRole`; Playwright auto-waits.
-- **Typing:** `page.keyboard.type(text, { delay: 150 })` — real HID pacing.
-- **Wait for the echo before submitting:** `page.waitForFunction` on the field's
-  `data-dd-device-value` (a secure field reports bullets — check its *length*).
+- **Typing:** `locator.fill(text)` — the same code Playwright MCP emits. It returns once the
+  device holds the value, so there is nothing to wait for before submitting. Avoid
+  `keyboard.type`: key by key it raises Android's soft keyboard, and the tap after it can be
+  spent closing the keyboard instead of pressing the button.
 - **First render** waits on the tree-engine warm-up — give the first selector ~30s.
 - **Gestures:** `await page.evaluate(() => devicedeck.gesture('home'))`.
 
@@ -92,3 +93,21 @@ need.
 **If the app is not installed** (a launch fails with *"is it installed?"*) **or you were not given
 its file, ask the user** for the `.app`/`.apk` path or the bundle id — do not guess a bundle id or
 fabricate a path.
+
+**If the device is stuck, restart it.** Relaunch the app first (`launch_app`). If the page stays empty
+or the app sits on its splash screen after that, the device itself is wedged: shut it down and boot
+it again, then launch the app. There is no MCP tool for the shutdown; use the HTTP API, which works
+from Playwright MCP too — the device page is served by the same server, so `browser_evaluate` can
+call it:
+
+```js
+// 1. Shut the device down (ends its session; whoever drives it is told so).
+await fetch('/api/devices/{udid}/shutdown', { method: 'POST' });
+// 2. Boot it again. A simulator boots by its UDID. An emulator loses its serial when it
+//    powers off, so boot it by its AVD — the "avd" field of GET /api/devices: `avd:{name}`.
+await fetch('/api/devices/{udid-or-avd:name}/boot', { method: 'POST' });
+// 3. Poll GET /api/devices until the device is listed booted (an emulator reappears with
+//    a serial, which may differ from before), then launch the app on it.
+```
+
+Restart only a device you were given or booted yourself — never one the user is working on.

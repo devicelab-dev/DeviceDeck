@@ -12,6 +12,9 @@
 
 let udid = decodeURIComponent(location.pathname.split("/")[2] || "booted");
 const appId = new URLSearchParams(location.search).get("app") || "";
+// pageSession prefixes this page's action IDs (see act), so a retried
+// action is recognised and never done twice.
+const pageSession = Math.random().toString(36).slice(2) + Date.now().toString(36);
 // Video is off by default on this page, which is the automation surface.
 // A driver reads the DOM mirror, not the pixels: clicks are normalised to
 // the device's own coordinates and mirror nodes are positioned as
@@ -147,7 +150,21 @@ function positionMirror() {
   mirror.style.top = `${rect.top - stage.top}px`;
   mirror.style.width = `${rect.width}px`;
   mirror.style.height = `${rect.height}px`;
+  gutter = { x: rect.width, y: rect.height };
+  mirror.style.setProperty("--dd-gutter-x", `${gutter.x}px`);
+  mirror.style.setProperty("--dd-gutter-y", `${gutter.y}px`);
+  resetScroll();
 }
+
+// gutter is how far the screen sits inside the mirror's scrollable area,
+// one screen each way. A scroll box cannot scroll to a negative offset, so
+// without it an element past the left or top edge — a filter chip a
+// horizontal row has scrolled away — could never be scrolled into view:
+// Playwright's click waited out its whole timeout on it. With the screen
+// shifted by the gutter (device.html) and the view scrolled back by the
+// same amount, nothing moves on screen, and there is room to scroll left
+// and up as well as right and down.
+let gutter = { x: 0, y: 0 };
 
 // Identity key for reconciliation: the identifier when present, else
 // type + placeholder (stable while a field's value changes) or label,
@@ -282,7 +299,12 @@ function setOrRemove(el, attr, value) {
 // syncNode positions el inside its rendered ancestor: node frames are
 // screen-absolute, so coordinates convert to percentages of the
 // ancestor's frame and stay proportional at any canvas size.
+// nodeFrames maps each mirrored element to its node's frame in the tree's
+// own units — what a fill tells the driver, which knows no page geometry.
+const nodeFrames = new WeakMap();
+
 function syncNode(el, node, anchorFrame, owners) {
+  nodeFrames.set(el, node.frame);
   placeNode(el, node.frame, anchorFrame);
   setOrRemove(el, "role", ROLES[node.type] || "");
   // Only the owner of a contested identifier carries it; see
@@ -352,14 +374,13 @@ function syncText(el, text) {
 // syncField mirrors the device's own contents into the input — except
 // while it holds focus. The tree lags a keystroke behind, so writing its
 // value back mid-edit would delete characters as fast as they are typed.
-// ddValue records what the device has already been told, and is the
-// baseline the next edit is diffed against.
+// ddValue records what the page last showed or was given.
 function syncField(el, node) {
   const value = node.value || "";
   // The device's own contents, kept even while the field holds focus (when
-  // the write below is suppressed) so the edit chain can read back what the
-  // device actually received and repair any drift. A secure field reports
-  // bullets, so its read-back is by length; mark it.
+  // the write below is suppressed): tests and agents read it to see what
+  // the device holds, and a fill sizes an empty-field clear by it. A secure
+  // field reports bullets, so it is compared by length; mark it.
   el.dataset.ddDeviceValue = value;
   el.dataset.ddSecure = node.type === "SecureTextField" ? "true" : "false";
   if (el !== document.activeElement && el.value !== value) el.value = value;
@@ -534,12 +555,27 @@ function renderNode(node, pass) {
   // Never the root: the mirror's own name is the screen fingerprint,
   // which belongs to no node and must survive every refresh.
   if (anchor !== pass.root) dropRepeatedName(anchor.el, baseName(node));
-  // Append-or-move keeps DOM order tracking native order; moving
-  // (including across parents) preserves element identity.
-  anchor.el.appendChild(el);
+  placeInOrder(anchor, el);
   const rendered = { el, frame: node.frame, key, lastChild: null };
   anchor.lastChild = rendered;
   pass.anchors.set(node.index, rendered);
+}
+
+// placeInOrder keeps DOM order tracking native order: el goes right after
+// the last element already placed under anchor. An element already there
+// is left alone, and one that must move is moved atomically where the
+// browser can: re-appending removes and reinserts, which blurs a focused
+// field — and a field that lost focus shows the device's value, a secure
+// field's bullets, instead of the text just filled into it.
+function placeInOrder(anchor, el) {
+  const prev = anchor.lastChild ? anchor.lastChild.el : null;
+  const next = prev ? prev.nextSibling : anchor.el.firstElementChild;
+  if (el === next) return;
+  if (el.isConnected && "moveBefore" in anchor.el) {
+    anchor.el.moveBefore(el, next);
+  } else {
+    anchor.el.insertBefore(el, next);
+  }
 }
 
 function renderMirror(nodes) {
@@ -707,15 +743,10 @@ function applyTree(payload, held) {
   lastInteraction = payload.interaction || "";
   if (lastTreeJSON !== before) lastActivity = Date.now();
   if (payload.hash !== lastHash) resetScroll();
-  // A held response is the settled screen by construction — the server
-  // verified it — so the barrier closes here rather than after three
-  // more polls, and whoever was waiting on it is released.
-  if (held) {
-    quietPolls = SETTLE_POLLS;
-    const waiters = settledWaiters;
-    settledWaiters = [];
-    for (const resolve of waiters) resolve();
-  }
+  // A held response — and every /act answer — is the settled screen by
+  // construction (the server verified it), so the barrier closes here
+  // rather than after three more polls.
+  if (held) quietPolls = SETTLE_POLLS;
   noteSettle(payload.hash);
 }
 
@@ -768,8 +799,8 @@ function normalized(event) {
 function contentPoint(clientX, clientY) {
   const rect = mirror.getBoundingClientRect();
   return {
-    x: (clientX - rect.left + mirror.scrollLeft) / rect.width,
-    y: (clientY - rect.top + mirror.scrollTop) / rect.height,
+    x: (clientX - rect.left + mirror.scrollLeft - gutter.x) / rect.width,
+    y: (clientY - rect.top + mirror.scrollTop - gutter.y) / rect.height,
   };
 }
 
@@ -777,74 +808,93 @@ function onDevice(p) {
   return p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1;
 }
 
-// Clicks land wherever the pointer is — the mirror node under it exists
-// for *finding*; the device receives the true coordinates, exactly like
-// a finger.
-let pointerDown = false;
-// A click on a row below the fold is taken over entirely: the device is
-// scrolled and the row tapped once it is on screen. The up that follows
-// belongs to that click and must not become a stray touch.
-let pointerDeferred = false;
-mirror.addEventListener("pointerdown", (e) => {
-  // Stamped on the way down, not up: focus lands on pointerdown, so the
-  // focus handler must already be able to see that a click caused it.
-  pointerAt = Date.now();
-  const at = contentPoint(e.clientX, e.clientY);
-  if (!onDevice(at)) {
-    pointerDeferred = true;
-    tapOffscreen(e.target, at);
-    return;
+// ---------- acting on the device ----------
+
+// act performs one action on the device and returns only when the device
+// has done it: a synchronous request to /act, which answers with the
+// settled tree after the action, applied here before returning.
+//
+// Blocking is the point. Chromium acknowledges an input event only after
+// the page's handlers for it have run, and a browser automation tool's
+// click(), fill() or press() resolves on that acknowledgement — so the
+// tool's action finishes when the device's does, and its next step and its
+// assertions read the device's real screen. Measured with Playwright: a
+// handler blocked 6s → click() 6008ms, fill() 6007ms. Handing the action
+// off asynchronously let the tool move on while the device was still
+// acting; the page then had to guess when the device caught up, and each
+// guess failed under some tool: text in the wrong field, a click ahead of
+// the text, a value typed twice. The console (app.js) is the page for
+// people and streams input live; this page is the automation surface.
+let actSeq = 0;
+function act(intent) {
+  // An older poll still in flight must not land on top of this answer.
+  syncSeq++;
+  if (inFlight) {
+    inFlight.abort();
+    inFlight = null;
+    fetchInFlight = false;
   }
-  pointerDown = true;
-  // Synthetic events (Cypress, jsdom) may carry no capturable pointerId;
-  // capture is an optimization for drags, never a precondition.
+  mirror.setAttribute("data-dd-settled", "false");
+  const xhr = new XMLHttpRequest();
+  xhr.open("POST", `/api/devices/${udid}/act`, false);
+  xhr.setRequestHeader("Content-Type", "application/json");
+  try {
+    xhr.send(JSON.stringify({ id: `${pageSession}-${++actSeq}`, app: appId, after: lastInteraction, ...intent }));
+  } catch {
+    noteActivity();
+    return null;
+  }
+  if (xhr.status !== 200) {
+    noteActivity();
+    return null;
+  }
+  const payload = JSON.parse(xhr.responseText);
+  applyTree(payload, true);
+  lastActivity = Date.now();
+  scheduleSync(FAST_MS);
+  return payload;
+}
+
+// A press and its release are one tap, or — past DRAG_SLOP_PX — one
+// swipe: the device gets the gesture whole, when the release says what it
+// was. The mirror node under the pointer is for finding; the device gets
+// the true coordinates, like a finger.
+const DRAG_SLOP_PX = 8;
+let press = null;
+mirror.addEventListener("pointerdown", (e) => {
+  press = { clientX: e.clientX, clientY: e.clientY, target: e.target, at: Date.now() };
+  // Synthetic events may carry no capturable pointerId; capture only keeps
+  // a drag's release on the mirror.
   try { mirror.setPointerCapture(e.pointerId); } catch {}
-  input.send(touchFrame(PHASE.down, at.x, at.y));
-  noteActivity();
-});
-mirror.addEventListener("pointermove", (e) => {
-  if (!pointerDown) return;
-  const { x, y } = normalized(e);
-  input.send(touchFrame(PHASE.move, x, y));
 });
 mirror.addEventListener("pointerup", (e) => {
-  if (pointerDeferred) {
-    pointerDeferred = false;
+  if (!press) return;
+  const p = press;
+  press = null;
+  if (Math.hypot(e.clientX - p.clientX, e.clientY - p.clientY) > DRAG_SLOP_PX) {
+    const from = normalized(p);
+    const to = normalized(e);
+    act({ kind: "swipe", x: from.x, y: from.y, toX: to.x, toY: to.y, durationMs: Date.now() - p.at });
     return;
   }
-  if (!pointerDown) return;
-  pointerDown = false;
-  pointerAt = Date.now();
-  // A click can focus a field (Cypress/Puppeteer click then type through
-  // the keyboard, never fill()), so this tap arms the typing settle too.
-  focusTapAt = Date.now();
-  const at = contentPoint(e.clientX, e.clientY);
-  const { x, y } = normalized(e);
-  // A drag that runs past the edge ends at the edge; a click's up lands
-  // where its down did.
-  input.send(touchFrame(PHASE.up, onDevice(at) ? at.x : x, onDevice(at) ? at.y : y));
-  noteActivity();
+  tapAt(p.target, contentPoint(e.clientX, e.clientY));
 });
+
+// tapAt taps the device where a mirrored element sits — revealing it first
+// when the mirror holds it past the device's edge.
+function tapAt(el, at) {
+  if (!onDevice(at)) {
+    revealAndTap(el, at);
+    return;
+  }
+  act({ kind: "tap", x: at.x, y: at.y });
+}
 
 // ---------- scrolling ----------
 
-// A wheel event becomes a finger drag. This is what page.mouse.wheel(),
-// Puppeteer's mouse.wheel(), Selenium's scroll actions and a trackpad
-// in the console all produce, and without it none of them did anything
-// — the mirror has no scrollable box, so the event fell on the page and
-// the device never heard of it. Tools that write scrollTop directly
-// (Cypress's scrollTo, scrollIntoView before a click) dispatch no event
-// and are a separate problem.
-//
-// A trackpad emits a burst of small deltas; they are coalesced over a
-// short window into one gesture rather than one drag per tick. The
-// drag is deliberately slow and ends with the finger held still: a
-// quick flick keeps scrolling after it lifts, and "scroll by 300 pixels"
-// would land somewhere different every run.
+// Scroll input — wheel, trackpad, Playwright's mouse.wheel — becomes one
+// swipe on the device once the burst ends.
 const WHEEL_COALESCE_MS = 40;
-const DRAG_STEPS = 12;
-const DRAG_STEP_MS = 16;
-const DRAG_HOLD_MS = 90;
 let wheelAccum = { x: 0, y: 0, clientX: 0, clientY: 0 };
 let wheelTimer = null;
 
@@ -858,109 +908,80 @@ document.addEventListener("wheel", (e) => {
   wheelTimer = setTimeout(flushWheel, WHEEL_COALESCE_MS);
 }, { passive: false });
 
-// flushWheel turns the accumulated delta into one drag under the
-// pointer — or from the device's centre when the pointer is off the
-// device, which is where a page-level scroll would act anyway.
+// flushWheel swipes by the accumulated delta, from the pointer when it is
+// over the device, else from the centre.
 function flushWheel() {
   const { x: dx, y: dy, clientX, clientY } = wheelAccum;
   wheelAccum = { x: 0, y: 0, clientX: 0, clientY: 0 };
   const rect = canvas.getBoundingClientRect();
   const inside =
     clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
-  const from = inside
-    ? { x: clientX, y: clientY }
-    : { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-  // Wheel down means the content moves up, which is a finger moving up.
-  dragGesture(from, { x: from.x - dx, y: from.y - dy });
+  const from = inside ? normalized({ clientX, clientY }) : { x: 0.5, y: 0.5 };
+  const to = {
+    x: clamp01(from.x - dx / rect.width),
+    y: clamp01(from.y - dy / rect.height),
+  };
+  act({ kind: "swipe", x: from.x, y: from.y, toX: to.x, toY: to.y, durationMs: 250 });
 }
 
-// The mirror's scroll offset is a view transform, never a gesture. It
-// is put back to zero when the screen changes, because the tree that
-// arrives then is laid out against the real screen, and a stale offset
-// would shift every click on it.
+function clamp01(v) {
+  return Math.min(1, Math.max(0, v));
+}
+
+// resetScroll puts the mirror's view back on the screen, one gutter in.
+// Tools scroll it to align an element before clicking; that offset belongs
+// to the screen it was taken on.
 function resetScroll() {
-  if (mirror.scrollTop || mirror.scrollLeft) mirror.scrollTo(0, 0);
+  if (mirror.scrollLeft !== gutter.x || mirror.scrollTop !== gutter.y) mirror.scrollTo(gutter.x, gutter.y);
 }
 
-// settledRender resolves the next time a held tree — the settled screen
-// after an action — has been rendered.
-let settledWaiters = [];
-function settledRender() {
-  return new Promise((resolve) => settledWaiters.push(resolve));
-}
-
-// How far down the screen a row is brought when the device has to be
-// scrolled to reach it: clear of the bottom edge, clear of any tab bar.
+// revealAndTap brings a row the mirror holds past the device's edge on
+// screen, then taps it. Each swipe returns the settled tree (act), so the
+// row is found again by key — the same row, though every frame on screen
+// has moved — before the next step. The swipe runs along the element's own
+// row or column: a horizontal list scrolls only under a finger on it, and
+// a drag through the screen's centre moved a different list (measured: a
+// filter chip past the right edge was "clicked" and nothing happened).
 const REVEAL_AT = 0.75;
 const REVEAL_TRIES = 4;
-
-// tapOffscreen taps a row the mirror holds below the device's edge. The
-// device is dragged until the row is on screen, then it is tapped where
-// the settled tree says it now is. Identity survives by key — that is
-// what the reconciliation keeps stable — so it is the same row even
-// though every frame on screen has changed. A tool's click returns
-// before any of this lands, which is already how typing works here:
-// fill() returns when the mirror has the text and the keystrokes follow.
-async function tapOffscreen(el, at) {
+const EDGE = 0.05;
+function revealAndTap(el, at) {
   const key = el.closest("[data-dd-key]")?.getAttribute("data-dd-key");
   if (!key) return;
-  for (let i = 0; i < REVEAL_TRIES; i++) {
-    const rect = canvas.getBoundingClientRect();
-    const from = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-    const dy = (at.y - REVEAL_AT) * rect.height;
-    const dx = (at.x > 1 ? at.x - 0.5 : at.x < 0 ? at.x - 0.5 : 0) * rect.width;
-    dragGesture(from, { x: from.x - dx, y: from.y - dy });
-    await settledRender();
+  for (let i = 0; i < REVEAL_TRIES && !onDevice(at); i++) {
+    act(revealSwipe(at));
     resetScroll();
     const found = mirror.querySelector(`[data-dd-key="${CSS.escape(key)}"]`);
     if (!found) return;
     at = centreOf(found);
-    if (onDevice(at)) break;
   }
-  if (!onDevice(at)) return;
-  input.send(touchFrame(PHASE.down, at.x, at.y));
-  input.send(touchFrame(PHASE.up, at.x, at.y));
-  noteActivity();
+  if (onDevice(at)) act({ kind: "tap", x: at.x, y: at.y });
 }
 
-// dragGesture moves a finger from one page point to another in timed
-// steps, then lets go. Points are clamped to the device, so a drag
-// that would run off the edge scrolls as far as the edge allows.
-function dragGesture(from, to) {
-  const at = (p) => normalized({ clientX: p.x, clientY: p.y });
-  const start = at(from);
-  const end = at(to);
-  // Opened here as well as on release: a click aimed at a row while the
-  // finger is still moving would land on bounds the screen has left.
-  noteActivity();
-  input.send(touchFrame(PHASE.down, start.x, start.y));
-  for (let i = 1; i <= DRAG_STEPS; i++) {
-    const t = i / DRAG_STEPS;
-    setTimeout(() => {
-      input.send(touchFrame(PHASE.move, start.x + (end.x - start.x) * t, start.y + (end.y - start.y) * t));
-    }, i * DRAG_STEP_MS);
-  }
-  setTimeout(() => {
-    input.send(touchFrame(PHASE.up, end.x, end.y));
-    noteActivity();
-  }, DRAG_STEPS * DRAG_STEP_MS + DRAG_HOLD_MS);
+// revealSwipe is the swipe that moves a point outside the screen toward
+// REVEAL_AT (vertically) or the middle (horizontally).
+function revealSwipe(at) {
+  const inset = (v) => Math.min(1 - EDGE, Math.max(EDGE, v));
+  const horizontal = at.x < 0 || at.x > 1;
+  const from = { x: 0.5, y: horizontal ? inset(at.y) : 0.5 };
+  const dx = horizontal ? at.x - 0.5 : 0;
+  const dy = at.y < 0 || at.y > 1 ? at.y - REVEAL_AT : 0;
+  return { kind: "swipe", x: from.x, y: from.y, toX: inset(from.x - dx), toY: inset(from.y - dy), durationMs: 300 };
 }
 
+// ---------- keys and fields ----------
+
+// Keys that do not edit a field's text — Enter, Tab, arrows — go to the
+// device as key presses. Keys that edit a field arrive as input events.
 document.addEventListener("keydown", (e) => {
-  // A focused mirror field types itself: the browser writes the character
-  // into the <input>, the input listener below diffs the value and sends
-  // the keystroke. Taking this path too would send it twice, and the
-  // preventDefault would stop the value ever changing in the first place.
-  // Keys that leave the value alone still belong here.
   if (editsAField(e)) return;
   const frame = keyEventFrame(e);
   if (!frame) return;
   e.preventDefault();
-  input.send(frame);
-  noteActivity();
+  const b = new Uint8Array(frame);
+  const usage = ((b[2] << 24) | (b[3] << 16) | (b[4] << 8) | b[5]) >>> 0;
+  act({ kind: "key", usage, modifiers: b[1] });
 });
-
-// ---------- typing into a mirrored field ----------
 
 // editsAField reports whether this keystroke will change a mirrored
 // input's value, and so will arrive as an input event instead.
@@ -973,251 +994,41 @@ function editsAField(e) {
   );
 }
 
-// tapField taps the device where el sits. Focus is not enough on its own:
-// fill() and browser_type focus the element and write the value without
-// ever clicking, so the device's own field would still be unfocused and
-// every keystroke would land on whatever was focused before.
-function tapField(el) {
+// Fields are set, not typed. fill() — and each keystroke of
+// keyboard.type(), which lands as an input event just the same — asks for
+// the field to hold a value, so the device's driver is asked for exactly
+// that, and confirms it: iOS reads the value back and repairs once; Android
+// re-reads the field. No keystrokes are replayed and no focus is guessed at.
+mirror.addEventListener("input", (e) => {
+  const el = e.target;
+  if (!(el instanceof HTMLInputElement)) return;
+  el.dataset.ddValue = el.value;
+  fillField(el);
+});
+
+// fillField asks the device to make el hold its current value. The field
+// is named by its identifier only when no other mirrored element shares
+// it — the driver matches the first it finds — and always by its centre.
+function fillField(el) {
+  const f = nodeFrames.get(el);
+  if (!f) return;
+  const id = el.getAttribute("data-testid") || "";
+  const unique = id && mirror.querySelectorAll(`[data-testid="${CSS.escape(id)}"]`).length === 1;
   const at = centreOf(el);
-  // The settle before typing is timed from here — the tap that focuses
-  // the field — whether it lands on-screen or is scrolled into view.
-  focusTapAt = Date.now();
-  if (!onDevice(at)) return tapOffscreen(el, at);
-  input.send(touchFrame(PHASE.down, at.x, at.y));
-  input.send(touchFrame(PHASE.up, at.x, at.y));
-  return Promise.resolve();
+  act({
+    kind: "fill",
+    field: unique ? id : "",
+    x: at.x, y: at.y,
+    px: f.x + f.width / 2, py: f.y + f.height / 2,
+    text: el.value,
+    prev: (el.dataset.ddDeviceValue ?? "").length,
+  });
 }
 
 // centreOf is an element's centre in content space.
 function centreOf(el) {
   const r = el.getBoundingClientRect();
   return contentPoint(r.left + r.width / 2, r.top + r.height / 2);
-}
-
-// After a focus tap the device raises its keyboard and moves the caret,
-// which takes from tens of ms to most of a second under load. A keystroke
-// sent inside that window lands on whatever was focused before — fill()
-// on one field then the next bled the second field's first character into
-// the first ("devicelab" then a password reached the device as
-// "devicelabr"). Wait it out, timed from the focus tap so the cost falls
-// once per field and not once per keystroke: browser_type's later
-// characters, already past the window, send immediately, and fill()'s one
-// event waits once.
-//
-// Where the platform reports which node holds focus (data-dd-focused),
-// that ends the wait the moment focus actually lands — load-independent.
-// iOS reports no focus state at all (measured: no focus flag, and no tree
-// change whatsoever when focus moves between two fields with the keyboard
-// already up), so there the cap is the whole wait, sized to cover a focus
-// switch on a loaded device. A field that never reports focus is sent to
-// after the cap rather than hanging the chain — the 5s cap that replaced
-// this stalled browser_type, whose every character then waited the full
-// timeout because iOS never set the flag.
-const FOCUS_SETTLE_MS = 750;
-function waitReady(el) {
-  return new Promise((/** @type {(value?: void) => void} */ resolve) => {
-    const tick = () => {
-      if (el.getAttribute("data-dd-focused") === "true" ||
-          Date.now() - focusTapAt >= FOCUS_SETTLE_MS) resolve();
-      else setTimeout(tick, 30);
-    };
-    tick();
-  });
-}
-// A click focuses the field on its way through, and the pointer handlers
-// have already tapped the device at that point. Tapping again on focus
-// would make it a double tap, which selects a word instead of placing a
-// caret — measured as scrambled text when a test clicked and then typed.
-const POINTER_FOCUS_MS = 600;
-let pointerAt = 0;
-// When the field last received a focus tap, on either path: fill()/
-// browser_type through the focusin handler's tapField, or a click through
-// the pointer handler. waitReady above times the settle from it.
-let focusTapAt = 0;
-
-// Edits run one at a time, in order. Each used to wait out the settle
-// window on its own timer, and because those delays differed, a later
-// keystroke could fire before an earlier one — "devicelab" reached the
-// device as "vxdicelab". A chain keeps the order the typist produced.
-//
-// The focus tap is on the same chain, for the same reason one step
-// further out: fill() on one field and then fill() on the next fires
-// two focus taps back to back while the first field's keystrokes are
-// still waiting out their settle window. Tapped immediately, the second
-// field had focus by the time the first field's text arrived, and both
-// values landed in it — eighteen bullets in the password field. A tap
-// that queues behind the pending edits lands after them, as typed.
-let editChain = Promise.resolve();
-
-mirror.addEventListener("focusin", (e) => {
-  if (!(e.target instanceof HTMLInputElement)) return;
-  if (Date.now() - pointerAt < POINTER_FOCUS_MS) return;
-  const el = e.target;
-  editChain = editChain.then(() => tapField(el));
-  noteActivity();
-});
-
-mirror.addEventListener("input", (e) => {
-  const el = e.target;
-  if (!(el instanceof HTMLInputElement)) return;
-  const before = el.dataset.ddValue ?? "";
-  const after = el.value;
-  el.dataset.ddValue = after;
-  // What the caller wants in this field, kept apart from ddValue because a
-  // poll overwrites ddValue with the device's contents once focus leaves.
-  // The reconcile below reads it back against the device to catch a bleed.
-  el.dataset.ddIntended = after;
-  // First edit of this field: the value shown is the device's own, which on
-  // Android is the field's hint, not its content — an empty EditText reports
-  // its hint as its value. Prefix-diffing the typed text against a hint drops
-  // any shared leading character ("1 Market St" against a hint starting "1"
-  // lost its "1", disabling the form), so the first edit types the whole
-  // value; later keystrokes, now against real content, diff as usual.
-  const firstEdit = !editedFields.has(el);
-  editedFields.add(el);
-  editChain = editChain.then(async () => {
-    await waitReady(el);
-    sendEdit(before, after, firstEdit);
-  });
-  scheduleReconcile();
-  noteActivity();
-});
-
-// Read-back reconcile. iOS reports no keyboard focus, so a keystroke sent
-// before a focus tap has landed bleeds into the previously focused field —
-// "devicelab" then a password reaching the device as "devicelabr" — and no
-// wall-clock prevents it on a loaded device (the guess is browser time, the
-// device runs on its own). So do not guess when to type; verify what
-// landed. After typing settles, check the device echoed each field's
-// intended value and retype any it did not — device truth, not a timer, so
-// it holds under any load. Bounded, so a field the device will never accept
-// does not spin forever.
-const editedFields = new Set();
-const RECONCILE_MS = 250;
-const MAX_REPAIRS = 4;
-let reconcileTimer = 0;
-
-// fieldMatches reports whether the device holds what the caller asked for.
-// A secure field only reports bullets, so it is matched by length.
-// isMasked reports whether a device value is a secure field's bullets and
-// nothing else, so it can only be compared by length. iOS marks the field
-// type SecureTextField (ddSecure); Android reports a password EditText as a
-// plain TextField but still masks the text, so the value itself is the only
-// signal there — without this the read-back compares bullets against the
-// plaintext, never matches, and "repairs" the password until it is empty.
-function isMasked(s) {
-  return s.length > 0 && [...s].every((c) => c === "•");
-}
-
-function fieldMatches(el) {
-  const intended = el.dataset.ddIntended ?? "";
-  const device = el.dataset.ddDeviceValue ?? "";
-  const secure = el.dataset.ddSecure === "true" || isMasked(device);
-  return secure ? device.length === intended.length : device === intended;
-}
-
-// scheduleReconcile queues one verify pass for after typing goes quiet, so
-// a burst of keystrokes reconciles once rather than once per key.
-function scheduleReconcile() {
-  clearTimeout(reconcileTimer);
-  reconcileTimer = setTimeout(() => {
-    editChain = editChain.then(reconcileFields);
-    noteActivity();
-  }, RECONCILE_MS);
-}
-
-// reconcileFields brings every edited field to the caller's value, re-
-// tapping and retyping any the device did not echo. It waits on a settled
-// tree so it reads fresh device contents, and gives up after MAX_REPAIRS.
-// fieldsSignature is the edited fields' device values joined by a space, so
-// one settled read can be compared against the next.
-function fieldsSignature() {
-  return [...editedFields].map((el) => el.dataset.ddDeviceValue ?? "").join(" ");
-}
-
-// settledFields waits for a settled screen whose edited-field values have
-// also stopped changing. Keystrokes are sent fire-and-forget and the device
-// applies them one ~100ms HID hold at a time, so the first settled tree
-// after a burst can arrive with the value still climbing — the last keys
-// still in the pipe. Judging drift then reads a half-typed field and
-// retypes onto keys not yet applied, doubling it ("robustest" as eighteen
-// bullets). Requiring the value to repeat across settled reads waits the
-// pipe out on device truth, not a wall-clock guess. Bounded: a value the
-// device keeps changing on its own does not wedge the loop.
-const STABLE_READS = 5;
-async function settledFields() {
-  let prev = null;
-  for (let i = 0; i < STABLE_READS; i++) {
-    // Trigger the held poll settledRender waits on, rather than relying on
-    // one already being in flight — a focus switch produces no tree change,
-    // so the scheduling poll can settle and drain before this runs, and the
-    // await would then hang, blocking the whole edit chain until the next
-    // unrelated action happened to note activity.
-    noteActivity();
-    await settledRender();
-    const sig = fieldsSignature();
-    if (sig === prev) return;
-    prev = sig;
-  }
-}
-
-async function reconcileFields() {
-  for (let attempt = 0; attempt < MAX_REPAIRS; attempt++) {
-    await settledFields();
-    const drifted = [...editedFields].filter((el) => el.isConnected && !fieldMatches(el));
-    for (const el of editedFields) {
-      if (!el.isConnected) editedFields.delete(el);
-    }
-    if (!drifted.length) return;
-    for (const el of drifted) {
-      await tapField(el);
-      await waitReady(el);
-      await repairField(el);
-    }
-  }
-}
-
-// repairField clears whatever the device currently holds in el and types
-// the caller's value fresh — a rewrite, not a diff, because a secure
-// field's device contents are bullets that cannot be diffed against. The
-// clear is confirmed against the device before anything is typed: a
-// backspace can bleed under load too, and a value typed on top of one the
-// clear failed to remove doubles the field ("devicelabdevicelab"). If the
-// clear did not take, this returns and the reconcile loop retries the tap.
-async function repairField(el) {
-  const deviceLen = (el.dataset.ddDeviceValue ?? "").length;
-  for (let n = 0; n < deviceLen + 2; n++) input.send(keyFrame(0, KEY_USAGE.Backspace));
-  noteActivity();
-  await settledRender();
-  if ((el.dataset.ddDeviceValue ?? "").length > 0) return;
-  for (const ch of el.dataset.ddIntended ?? "") {
-    const frame = keyFrameForChar(ch);
-    if (frame) input.send(frame);
-  }
-}
-
-// sendEdit turns a value change into the keystrokes that would produce
-// it: backspaces for what was removed, characters for what was added.
-// fill() replaces the whole value in a single event, so diffing is the
-// only way to know what the device actually has to be told.
-function sendEdit(before, after, firstEdit) {
-  // Shared leading characters are already on the device and are not retyped —
-  // except on a field's first edit, where `before` may be a placeholder hint
-  // rather than real content, so nothing is treated as shared.
-  let shared = 0;
-  if (!firstEdit) {
-    while (shared < before.length && shared < after.length &&
-           before[shared] === after[shared]) {
-      shared++;
-    }
-  }
-  for (let n = before.length - shared; n > 0; n--) {
-    input.send(keyFrame(0, KEY_USAGE.Backspace));
-  }
-  for (const ch of after.slice(shared)) {
-    const frame = keyFrameForChar(ch);
-    if (frame) input.send(frame);
-  }
 }
 
 // ---------- audit: what no agent can address ----------

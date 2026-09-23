@@ -2,6 +2,7 @@ package runner
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	dlandroid "github.com/devicelab-dev/maestro-runner/pkg/driver/devicelab"
@@ -134,6 +135,8 @@ func TestResourceIDSuffix(t *testing.T) {
 	tests := []struct{ in, want string }{
 		{"com.testhiveapp:id/username-input", "username-input"},
 		{"login-button", "login-button"},
+		{"android:id/button1", ""},
+		{"android:id/content", ""},
 		{"", ""},
 	}
 	for _, tt := range tests {
@@ -224,5 +227,175 @@ func TestRetryStart(t *testing.T) {
 				t.Errorf("resets = %d, want %d", resets, tt.wantResets)
 			}
 		})
+	}
+}
+
+// React Native on Android copies testID into content-desc as well as
+// resource-id. A TestHive-shaped dump covering every way the two can relate.
+const androidRNLabelXML = `<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>
+<hierarchy rotation="0">
+  <android.widget.FrameLayout bounds="[0,0][1080,2340]" enabled="true" displayed="true">
+    <android.widget.TextView resource-id="cart-total-text" content-desc="cart-total-text" text="$8.10"
+      bounds="[80,200][500,260]" enabled="true" displayed="true"/>
+    <android.view.ViewGroup resource-id="login-button" content-desc="login-button" clickable="true"
+      bounds="[80,1400][1000,1530]" enabled="true" displayed="true">
+      <android.widget.TextView text="Sign In" bounds="[400,1440][680,1490]" enabled="true" displayed="true"/>
+    </android.view.ViewGroup>
+    <android.widget.ImageButton resource-id="com.testhiveapp:id/menu-icon" content-desc="menu-icon"
+      clickable="true" bounds="[900,80][1000,180]" enabled="true" displayed="true"/>
+    <android.widget.ImageButton resource-id="cart-icon" content-desc="Open cart" clickable="true"
+      bounds="[780,80][880,180]" enabled="true" displayed="true"/>
+    <android.widget.EditText resource-id="username-input" content-desc="username-input" text="Username"
+      hint="Username" bounds="[80,900][1000,1030]" enabled="true" displayed="true"/>
+    <android.widget.EditText resource-id="password-input" content-desc="password-input" password="true"
+      text="&#8226;&#8226;&#8226;&#8226;" hint="Password" bounds="[80,1100][1000,1230]" enabled="true" displayed="true"/>
+    <android.widget.TextView content-desc="Close" bounds="[20,80][120,180]" enabled="true" displayed="true"/>
+  </android.widget.FrameLayout>
+</hierarchy>`
+
+// TestConvertAndroidElementsLabelEqualsID pins that a content-desc merely
+// repeating the identifier is dropped, so the node's own text (value) is
+// what the mirror shows, while a content-desc that says something else is
+// kept and hint/password text is untouched.
+func TestConvertAndroidElementsLabelEqualsID(t *testing.T) {
+	elems, err := dlandroid.ParsePageSource(androidRNLabelXML)
+	if err != nil {
+		t.Fatalf("ParsePageSource: %v", err)
+	}
+	nodes := convertAndroidElements(elems, 1080, 2340)
+	tests := []struct {
+		name                               string
+		index                              int
+		typ, id, label, value, placeholder string
+		parent                             int
+	}{
+		{"StaticText label==id shows its text", 2, "StaticText", "cart-total-text", "", "$8.10", "", 1},
+		{"RN button label==id keeps its id, no label", 3, "Button", "login-button", "", "", "", 1},
+		{"button's child text carries the visible name", 4, "StaticText", "", "", "Sign In", "", 3},
+		{"nameless icon button label==id suffix", 5, "Button", "menu-icon", "", "", "", 1},
+		{"content-desc that differs from id is kept", 6, "Button", "cart-icon", "Open cart", "", "", 1},
+		{"empty EditText showing its hint holds no value", 7, "TextField", "username-input", "", "", "Username", 1},
+		{"password field keeps its masked text", 8, "TextField", "password-input", "", "••••", "Password", 1},
+		{"content-desc without an id is kept", 9, "StaticText", "", "Close", "", "", 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			n := nodes[tt.index]
+			if n.Type != tt.typ || n.Identifier != tt.id || n.Label != tt.label ||
+				n.Value != tt.value || n.Placeholder != tt.placeholder {
+				t.Errorf("node = {Type:%q Identifier:%q Label:%q Value:%q Placeholder:%q}, want {%q %q %q %q %q}",
+					n.Type, n.Identifier, n.Label, n.Value, n.Placeholder,
+					tt.typ, tt.id, tt.label, tt.value, tt.placeholder)
+			}
+			if n.ParentIndex == nil || *n.ParentIndex != tt.parent {
+				t.Errorf("parent = %v, want %d", n.ParentIndex, tt.parent)
+			}
+		})
+	}
+}
+
+func TestAndroidLabel(t *testing.T) {
+	tests := []struct {
+		name, contentDesc, identifier, want string
+	}{
+		{"repeats the identifier", "cart-total-text", "cart-total-text", ""},
+		{"differs from the identifier", "Open cart", "cart-icon", "Open cart"},
+		{"no identifier", "Close", "", "Close"},
+		{"no content-desc", "", "login-button", ""},
+		{"neither", "", "", ""},
+		{"case differs is not a repeat", "Login-Button", "login-button", "Login-Button"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := androidLabel(tt.contentDesc, tt.identifier); got != tt.want {
+				t.Errorf("androidLabel(%q, %q) = %q, want %q", tt.contentDesc, tt.identifier, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFieldValue(t *testing.T) {
+	tests := []struct {
+		name, text, hint, want string
+	}{
+		{"hint showing in an empty field", "123 Main St", "123 Main St", ""},
+		{"typed value", "42 Elm St", "123 Main St", "42 Elm St"},
+		{"no hint", "devicelab", "", "devicelab"},
+		{"empty with a hint", "", "Username", ""},
+		{"neither", "", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := fieldValue(tt.text, tt.hint); got != tt.want {
+				t.Errorf("fieldValue(%q, %q) = %q, want %q", tt.text, tt.hint, got, tt.want)
+			}
+		})
+	}
+}
+
+// A complete dump carries the status bar as its own window; only the app's
+// windows — including its dialogs — reach the mirror.
+func TestWithoutSystemWindows(t *testing.T) {
+	const dump = `<hierarchy>
+  <node class="android.widget.FrameLayout" bounds="[0,0][1080,136]">
+    <node class="android.widget.TextView" resource-id="com.android.systemui:id/clock" text="4:47 AM" bounds="[0,0][90,106]"/>
+  </node>
+  <node class="android.widget.FrameLayout" bounds="[0,0][1080,2340]">
+    <node class="android.widget.TextView" text="TestHive" bounds="[0,200][500,300]"/>
+  </node>
+  <node class="android.widget.FrameLayout" bounds="[0,136][1080,2340]">
+    <node class="android.widget.FrameLayout" resource-id="com.google.android.inputmethod.latin:id/keyboard_holder" bounds="[0,2208][1080,2208]"/>
+    <node class="android.widget.ImageView" resource-id="android:id/input_method_nav_back" text="Back" bounds="[52,2208][244,2340]"/>
+  </node>
+  <node class="android.widget.FrameLayout" bounds="[100,800][980,1400]">
+    <node class="android.widget.Button" resource-id="android:id/button1" text="OK" bounds="[700,1300][900,1380]"/>
+  </node>
+</hierarchy>`
+	elems, err := dlandroid.ParsePageSource(dump)
+	if err != nil {
+		t.Fatalf("ParsePageSource: %v", err)
+	}
+	var kept []string
+	for _, e := range withoutSystemWindows(elems, []string{systemUIIDPrefix, "com.google.android.inputmethod.latin:"}) {
+		kept = append(kept, e.Text)
+	}
+	if got := fmt.Sprint(kept); got != "[ TestHive  OK]" {
+		t.Errorf("kept = %q, want the app window and its dialog only", got)
+	}
+	// Nothing from SystemUI: the dump passes through untouched.
+	appOnly := elems[2:4]
+	if got := withoutSystemWindows(appOnly, []string{systemUIIDPrefix}); len(got) != len(appOnly) {
+		t.Errorf("app-only dump lost elements: %d of %d", len(got), len(appOnly))
+	}
+}
+
+func TestIMEPackage(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME\n", "com.google.android.inputmethod.latin"},
+		{"null", ""},
+		{"", ""},
+		{"/NoPackage", ""},
+	}
+	for _, tt := range tests {
+		if got := imePackage(tt.in); got != tt.want {
+			t.Errorf("imePackage(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+// The keyboard's window is dropped when its package can be read; when it
+// cannot, only SystemUI is, and the lookup is not repeated.
+func TestAndroidEngineSystemIDPrefixes(t *testing.T) {
+	e, tools := newTestAndroidEngine(t, &fakeDriver{source: androidPageXML})
+	if got := fmt.Sprint(e.systemIDPrefixes()); got != "[com.android.systemui: com.example.keyboard:]" {
+		t.Errorf("prefixes = %s", got)
+	}
+	e.systemIDPrefixes()
+	if n := strings.Count(adbCalls(t, tools), "default_input_method"); n != 1 {
+		t.Errorf("keyboard looked up %d times, want 1", n)
+	}
+	e, _ = newTestAndroidEngine(t, &fakeDriver{source: androidPageXML}, toolRule{"default_input_method", "exit 1"})
+	if got := fmt.Sprint(e.systemIDPrefixes()); got != "[com.android.systemui:]" {
+		t.Errorf("prefixes without a keyboard = %s", got)
 	}
 }
