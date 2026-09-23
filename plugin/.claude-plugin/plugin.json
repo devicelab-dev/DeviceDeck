@@ -1,7 +1,7 @@
 {
   "name": "devicedeck",
   "description": "Drive iOS simulators and Android emulators as a real webpage. An agent lists, boots, launches, inspects, taps, and screenshots devices, and authors reviewable tests that run unchanged on real hardware.",
-  "version": "0.1.0",
+  "version": "1.0.1",
   "author": {
     "name": "DeviceLab",
     "url": "https://devicelab.dev"

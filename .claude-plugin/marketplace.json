@@ -12,9 +12,9 @@
   "plugins": [
     {
       "name": "devicedeck",
-      "source": "./",
+      "source": "./plugin",
       "description": "Drive iOS simulators and Android emulators as a real webpage; author reviewable, real-device-portable tests.",
-      "version": "0.1.0",
+      "version": "1.0.1",
       "author": { "name": "DeviceLab", "url": "https://devicelab.dev" },
       "homepage": "https://devicelab.dev",
       "repository": "https://github.com/devicelab-dev/DeviceDeck",
