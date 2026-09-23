@@ -70,12 +70,23 @@ Write it like any web spec, with the same `data-testid` selectors — follow
 matter here:
 
 - **Project:** if the folder has no Playwright setup, create one so `npx playwright test` runs:
-  `package.json` with `@playwright/test` as a dev dependency, and a `playwright.config.ts`.
+  `package.json` with `@playwright/test` as a dev dependency, and a `playwright.config.ts`; then
+  `npm install` and `npx playwright install chromium`. If it already has a Playwright setup for a
+  website, keep it: add the device tests as their own entry in `projects` (with the device
+  `baseURL`) rather than rewriting the config.
 - **Config:** `baseURL: 'http://127.0.0.1:8787'`, `workers: 1`, `fullyParallel: false` — a
   device serves one driver at a time.
 - **Launch fresh in a fixture:** `request.post('/api/devices/{udid}/app/launch', { data: { app } })`
   — it blocks until the app is taking input, so the first action lands. It clears the app's data
   first; post to `/app/launch?reset=no` to resume where the app was left instead.
+- **The device in the spec:** never hard-code the UDID or serial you authored on — it names a
+  simulator on this Mac only. Read `process.env.DEVICEDECK_UDID`; when it is unset, have the
+  fixture pick a booted device of the app's platform from `GET /api/devices` (`{"devices": [{udid,
+  name, os, booted}]}`, where `os` starts with `iOS` or `android`). The spec then runs unchanged
+  on a teammate's Mac and in CI.
+- **Credentials from the environment:** `process.env.TEST_USER` / `TEST_PASSWORD` (or the
+  names the project already uses) — never write a real password into the spec. If you do not
+  know the login, ask the user; do not invent one.
 - **Selectors:** `page.getByTestId('login-button')` / `getByRole`; Playwright auto-waits.
 - **Typing:** `locator.fill(text)` — the same code Playwright MCP emits. It returns once the
   device holds the value, so there is nothing to wait for before submitting. Avoid
@@ -83,6 +94,9 @@ matter here:
   spent closing the keyboard instead of pressing the button.
 - **First render** waits on the tree-engine warm-up — give the first selector ~30s.
 - **Gestures:** `await page.evaluate(() => devicedeck.gesture('home'))`.
+- **Run it before you hand back:** `npx playwright test`. If it fails, diagnose with
+  `devicedeck-triage`, fix, and run again until it passes; then report what it covers and that it
+  passed.
 
 ## Rules that keep a test durable
 
@@ -125,3 +139,7 @@ await fetch('/api/devices/{udid-or-avd:name}/boot', { method: 'POST' });
 ```
 
 Restart only a device you were given or booted yourself — never one the user is working on.
+
+**When you are done,** say which device you booted, if you booted one, and offer to shut it down
+(`POST /api/devices/{udid}/shutdown`): a simulator or emulator left running holds several GB of
+memory. Leave a device the user booted as it is.

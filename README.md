@@ -52,6 +52,7 @@ devicedeck --app path/to/MyApp.app
 claude mcp add playwright npx @playwright/mcp@latest
 claude plugin marketplace add devicelab-dev/DeviceDeck
 claude plugin install devicedeck@devicedeck-marketplace
+#    then start claude: /mcp should list both playwright and devicedeck
 
 # 3. Ask Claude — it finds your app, boots a simulator, launches it, drives it, writes the test
 #    "Write a Playwright test that logs in to my app"
@@ -203,11 +204,12 @@ uninstall, delete that folder and the `# DeviceDeck` line from your shell profil
 
 ## Status
 
-Early release. Both platforms drive end to end: **Playwright, Cypress and Puppeteer each log into and
-check out of TestHive through the same DOM**, and the console drives any device by hand. It is an
-ordinary web page, so any browser driver works with no mobile-specific code. Typing is checked
-against the device's own read-back, so a keystroke that does not land is retyped rather than lost —
-on iOS *and* on Android's masked password fields.
+Early release. Both platforms drive end to end: **Playwright logs into and checks out of TestHive on
+iOS and Android**, an agent writes those tests itself through Playwright MCP, and the console drives any
+device by hand. `click()` and `fill()` return only once the device has acted, and a filled value is
+read back from the device — on iOS *and* on Android's masked password fields. It is an ordinary web
+page, so other browser drivers (Cypress, Puppeteer) see the same DOM, but this release is tested with
+Playwright.
 
 It has run on a handful of Macs so far, so expect some first-contact problems — please
 [open an issue](https://github.com/devicelab-dev/DeviceDeck/issues) with the log folder it prints.
@@ -251,6 +253,12 @@ Every run writes a folder under `~/.devicedeck/logs` (the path is printed at sta
 driver, one log per sidecar and device, and `crash.log` if the process panics. The terminal shows
 only what needs attention; `DEVICEDECK_LOG=info` or `debug` shows more there too. The last 20 runs
 are kept — attach the folder to an issue.
+
+**Claude wrote a web test, or says the folder is empty.** It has no DeviceDeck tools: run `/mcp` in
+Claude. If `devicedeck` is missing, the plugin is not installed — run all three commands of step 2
+(`marketplace add` alone is not enough), then start Claude again. If it is listed but failing, the
+`devicedeck` binary is not on the `PATH` Claude was started from. Also check that `devicedeck` is
+running with your `--app` build in another terminal.
 
 ## Licence
 

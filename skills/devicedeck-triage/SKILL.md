@@ -22,15 +22,17 @@ inspect it with the same browser tools you drove it with — but the failure is 
    on. Absent → the app never reached that state; present → a timing or selector problem.
 3. **Classify — these are the device/app failures a web test never hits:**
    - *App never advanced* — a control was disabled, or a step's input did not land. Check the
-     field's `data-dd-device-value` in the snapshot: is it what the test typed? Keys are real
-     HID presses and can drop under host load; the mirror retypes, but a submit fired too early
-     races the last keystrokes onto the device.
+     field's `data-dd-device-value` in the snapshot (the device's read-back): is it what the test
+     filled? `fill()` returns only once the device holds the value, so a mismatch means the app
+     changed it — a length limit, an input mask, autocorrect — not a race. A test that uses
+     `keyboard.type` instead can lose its next tap to Android's soft keyboard: switch it to `fill()`.
    - *Element not found* — a selector that no longer resolves (identifier changed, or the wrong
      screen), or, on Android, an intermittent driver-start crash (retry the launch).
    - *Wrong screen* — the app resumed a logged-in session instead of a first-run screen;
      relaunch fresh (a fresh launch wipes app data by default).
-   - *Timing* — the value is right on the device but the test asserted too early; wait for the
-     device to echo it (`data-dd-device-value`).
+   - *Timing* — the device is right but the test checked once, too early (an app that updates on
+     a timer, such as a debounced search). Assert with `expect`, which retries, not a one-shot read
+     or a `waitForTimeout`.
 
 ## Report
 

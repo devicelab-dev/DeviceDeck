@@ -1,7 +1,7 @@
 # DeviceDeck skills — index
 
 DeviceDeck mirrors an iOS Simulator / Android emulator as a **real-DOM web page** at
-`http://127.0.0.1:8787/device/{udid}` (use `booted` for the udid when one device is up).
+`http://127.0.0.1:8787/device/{udid}` (the id from `list_devices` or `GET /api/devices`).
 Drive it with **Playwright MCP** (`@playwright/mcp`) — the same browser tool you already use
 for the web. Select native elements by `data-testid` (the app's accessibility id).
 
@@ -21,5 +21,5 @@ per-agent setup is in [docs/agents.md](../docs/agents.md#set-up-your-agent). An 
 support can still be pointed here with one line in your project rules:
 
 > For DeviceDeck mobile work, read `skills/INDEX.md` and follow the matching guide. The device
-> is a real-DOM web page at `http://127.0.0.1:8787/device/booted`; drive it with Playwright MCP,
-> select by `data-testid`, and wait for the device to echo a typed value before submitting.
+> is a real-DOM web page at `http://127.0.0.1:8787/device/{udid}`; drive it with Playwright MCP,
+> select by `data-testid`, and type with `fill()` — it returns once the device holds the value.

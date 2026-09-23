@@ -41,9 +41,12 @@ await page.getByTestId('login-button').click();
 await expect(page.getByTestId('cart-button')).toBeVisible();
 ```
 
-- **Typing:** `page.keyboard.type(text, { delay: 150 })` — keystrokes go in as real HID presses.
-- **Wait for the echo before submitting:** the device's own value is exposed on
-  `data-dd-device-value` (a secure field reports bullets — check length).
+- **Typing:** `locator.fill(text)`. It returns once the device holds the value, so there is nothing
+  to wait for before submitting. Avoid `keyboard.type`: key by key it raises Android's soft keyboard,
+  and the next tap can be spent closing it. The device's own read-back of a field is on
+  `data-dd-device-value` (a secure field reports bullets).
+- **The device in a spec:** read it from an environment variable (`DEVICEDECK_UDID`) rather than
+  hard-coding the UDID of your simulator, so the spec runs on a teammate's Mac and in CI.
 - **First render** waits on the tree-engine warm-up, so give the first selector ~30s.
 - **Native gestures** a DOM event can't express, on `window.devicedeck`:
   `page.evaluate(() => devicedeck.gesture('home'))` — also `swipe`, `button`, `key` and `screenshot()`;

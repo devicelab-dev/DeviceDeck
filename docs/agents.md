@@ -126,13 +126,13 @@ which this machine does not have, so that half is not exercised here.
 
 ## The one thing every agent needs to know
 
-A DeviceDeck field's `fill()` returns when the **mirror** has the text; the
-keystrokes are still travelling to the device behind it. Before an action that
-depends on the typed value having landed — clicking a submit button the app
-enables only when the field is filled — wait for the device to echo it. Agents
-that re-snapshot until the control is ready (the normal "ref not found, snapshot
-again" loop) get this for free; a script polls the device value. See
-[behaviors.md](behaviors.md).
+Every action waits for the device. `click()` and `fill()` (what `browser_click`
+and `browser_type` emit) return only once the device has acted and the screen has
+settled, so the next snapshot shows the result — no sleeps, no polling. Two
+things still need a second look: a button the app keeps disabled until a form is
+filled can appear only as text, with no ref, until then — fill the form and
+snapshot again; and an app that changes on a timer (a debounced search) is
+asserted with `expect`, which retries. See [behaviors.md](behaviors.md).
 
 ## Coordinate agents still get a selector
 
