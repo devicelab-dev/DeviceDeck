@@ -67,9 +67,20 @@ func (c *Client) Boot(ctx context.Context, udid string) error {
 	return nil
 }
 
-// Shutdown powers a simulator off. One that is already off — stopping its
-// engine can shut it down first, since killing xcodebuild tears the test
-// session down with it — counts as done.
+// WaitBooted blocks until the simulator has finished booting — its services
+// up, not merely listed as Booted, which simctl reports within a second of
+// the boot starting. Starting the UI agent before that fails, and a failed
+// first start makes the runner fall back to xcodebuild for that simulator
+// from then on. Returns at once for a simulator that is already up.
+func (c *Client) WaitBooted(ctx context.Context, udid string) error {
+	if _, err := c.run(ctx, "xcrun", "simctl", "bootstatus", udid, "-b"); err != nil {
+		return fmt.Errorf("wait for %s to finish booting: %w", udid, err)
+	}
+	return nil
+}
+
+// Shutdown powers a simulator off. One that is already off — shut down by
+// hand, or by an earlier session end — counts as done.
 func (c *Client) Shutdown(ctx context.Context, udid string) error {
 	_, err := c.run(ctx, "xcrun", "simctl", "shutdown", udid)
 	var exit *exec.ExitError

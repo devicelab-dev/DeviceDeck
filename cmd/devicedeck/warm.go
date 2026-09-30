@@ -2,41 +2,24 @@ package main
 
 import (
 	"context"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/devicelab-dev/DeviceDeck/internal/apps"
-	"github.com/devicelab-dev/DeviceDeck/internal/home"
 	"github.com/devicelab-dev/DeviceDeck/internal/server"
 )
 
-// runnerCacheDir is where the iOS runner's builds are kept, under the
-// DeviceDeck home; empty when the home cannot be resolved.
-func runnerCacheDir() string {
-	dir, err := home.Dir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(dir, "cache", "devicelab-ios-runner-builds")
-}
-
 // engineDetail describes an engine start for the console's loading screen.
-// The first start for an iOS version builds the runner, which takes about a
-// minute; saying so turns a long wait into an expected one.
-func engineDetail(cacheDir string, devices server.DeviceLister, android bootChecker) func(udid string) string {
+// On Android the wait is the emulator's boot and then the driver install;
+// the iOS agent ships prebuilt, so starting it is the whole wait.
+func engineDetail(android bootChecker) func(udid string) string {
 	return func(udid string) string {
-		if apps.PlatformOf(udid) == apps.Android {
-			if !android.BootCompleted(context.Background(), udid) {
-				return "Waiting for Android to finish booting"
-			}
-			return "Installing and starting the Android driver"
+		if apps.PlatformOf(udid) != apps.Android {
+			return "Starting the iOS agent"
 		}
-		ver := iosVersionOf(devices, udid)
-		if ver != "" && !runnerBuilt(cacheDir, ver) {
-			return "Building the iOS runner for iOS " + ver + " (first time only, about a minute)"
+		if !android.BootCompleted(context.Background(), udid) {
+			return "Waiting for Android to finish booting"
 		}
-		return "Starting the iOS runner"
+		return "Installing and starting the Android driver"
 	}
 }
 
@@ -71,22 +54,4 @@ func (b bootThenWarm) Warm(ctx context.Context, udid string) error {
 		}
 	}
 	return b.engines.Warm(ctx, udid)
-}
-
-// iosVersionOf is a simulator's iOS version ("26.2"), or "" if not listed.
-func iosVersionOf(devices server.DeviceLister, udid string) string {
-	all, _ := devices.All(context.Background())
-	for _, d := range all {
-		if d.UDID == udid {
-			return strings.TrimPrefix(d.OS, "iOS ")
-		}
-	}
-	return ""
-}
-
-// runnerBuilt reports whether a runner build for this iOS version is cached
-// (the runner keeps one per version, each with its .xctestrun).
-func runnerBuilt(cacheDir, ver string) bool {
-	found, _ := filepath.Glob(filepath.Join(cacheDir, "sim-ios"+ver+"-*", "Build", "Products", "*.xctestrun"))
-	return len(found) > 0
 }

@@ -3,55 +3,22 @@ package main
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/devicelab-dev/DeviceDeck/internal/home"
-	"github.com/devicelab-dev/DeviceDeck/internal/sim"
 )
 
 func TestEngineDetail(t *testing.T) {
-	cache := t.TempDir()
-	built := filepath.Join(cache, "sim-ios26.2-abc123", "Build", "Products")
-	if err := os.MkdirAll(built, 0o750); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(built, "Runner.xctestrun"), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	devices := &fakePlatform{devices: []sim.Device{
-		{UDID: "NEW", OS: "iOS 27.0"}, {UDID: "OLD", OS: "iOS 26.2"},
-	}}
-	detail := engineDetail(cache, devices, fakeBoot{booted: true})
+	detail := engineDetail(fakeBoot{booted: true})
 	for udid, want := range map[string]string{
-		"NEW":           "Building the iOS runner for iOS 27.0 (first time only",
-		"OLD":           "Starting the iOS runner",
-		"UNKNOWN":       "Starting the iOS runner",
-		"emulator-5554": "Installing and starting the Android driver",
+		"DD000000-0000-4000-8000-000000000001": "Starting the iOS agent",
+		"emulator-5554":                        "Installing and starting the Android driver",
 	} {
-		if got := detail(udid); !strings.HasPrefix(got, want) {
+		if got := detail(udid); got != want {
 			t.Errorf("detail(%s) = %q, want %q", udid, got, want)
 		}
 	}
-	if got := engineDetail(cache, devices, fakeBoot{})("emulator-5554"); got != "Waiting for Android to finish booting" {
+	if got := engineDetail(fakeBoot{})("emulator-5554"); got != "Waiting for Android to finish booting" {
 		t.Errorf("booting emulator: %q", got)
-	}
-	if got := engineDetail(cache, &fakePlatform{listErr: errors.New("simctl down")}, fakeBoot{})("OLD"); got != "Starting the iOS runner" {
-		t.Errorf("listing failure: %q", got)
-	}
-}
-
-func TestRunnerCacheDir(t *testing.T) {
-	t.Setenv(home.EnvHome, "/opt/dd")
-	if got := runnerCacheDir(); got != "/opt/dd/cache/devicelab-ios-runner-builds" {
-		t.Errorf("runnerCacheDir = %q", got)
-	}
-	t.Setenv(home.EnvHome, "")
-	t.Setenv("HOME", "")
-	if got := runnerCacheDir(); got != "" {
-		t.Errorf("no home: %q", got)
 	}
 }
 

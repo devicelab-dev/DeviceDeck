@@ -1,0 +1,182 @@
+---
+Name: XCTest
+Classes:
+- Name: XCTest
+  Methods:
+  - Selector: 'setUpWithCompletionHandler:'
+    MethodKind: Instance
+    SwiftName: 'setUp(completion:)'
+  - Selector: 'tearDownWithCompletionHandler:'
+    MethodKind: Instance
+    SwiftName: 'tearDown(completion:)'
+- Name: XCTestSuiteRun
+  Methods:
+  - Selector: 'addTestRun:'
+    MethodKind: Instance
+    SwiftName: 'addTestRun(_:)'
+- Name: XCUIElement
+  Methods:
+  - Selector: 'waitForExistenceWithTimeout:'
+    MethodKind: Instance
+    SwiftName: 'waitForExistence(timeout:)'
+  - Selector: 'waitForNonExistenceWithTimeout:'
+    MethodKind: Instance
+    SwiftName: 'waitForNonExistence(timeout:)'
+  - Selector: 'swipeLeftWithVelocity:'
+    MethodKind: Instance
+    SwiftName: 'swipeLeft(velocity:)'
+  - Selector: 'swipeRightWithVelocity:'
+    MethodKind: Instance
+    SwiftName: 'swipeRight(velocity:)'
+  - Selector: 'swipeUpWithVelocity:'
+    MethodKind: Instance
+    SwiftName: 'swipeUp(velocity:)'
+  - Selector: 'swipeDownWithVelocity:'
+    MethodKind: Instance
+    SwiftName: 'swipeDown(velocity:)'
+- Name: XCUICoordinate
+  Methods:
+  - Selector: 'swipeLeftWithVelocity:'
+    MethodKind: Instance
+    SwiftName: 'swipeLeft(velocity:)'
+  - Selector: 'swipeRightWithVelocity:'
+    MethodKind: Instance
+    SwiftName: 'swipeRight(velocity:)'
+  - Selector: 'swipeUpWithVelocity:'
+    MethodKind: Instance
+    SwiftName: 'swipeUp(velocity:)'
+  - Selector: 'swipeDownWithVelocity:'
+    MethodKind: Instance
+    SwiftName: 'swipeDown(velocity:)'
+- Name: XCUIElementQuery
+  Methods:
+  - Selector: 'matchingPredicate:'
+    MethodKind: Instance
+    SwiftName: 'matching(_:)'
+  - Selector: 'matchingType:identifier:'
+    MethodKind: Instance
+    SwiftName: 'matching(_:identifier:)'
+  - Selector: 'matchingIdentifier:'
+    MethodKind: Instance
+    SwiftName: 'matching(identifier:)'
+- Name: XCUIDevice
+  Methods:
+  - Selector: 'rotateDigitalCrownByDelta:'
+    MethodKind: Instance
+    SwiftName: 'rotateDigitalCrown(delta:)'
+  - Selector: 'rotateDigitalCrownByDelta:withVelocity:'
+    MethodKind: Instance
+    SwiftName: 'rotateDigitalCrown(delta:velocity:)'
+- Name: XCUISiriService
+  Methods:
+  - Selector: 'activateWithVoiceRecognitionText:'
+    MethodKind: Instance
+    SwiftName: 'activate(voiceRecognitionText:)'
+- Name: XCTestCase
+  SwiftObjCMembers: true
+  Methods:
+  - Selector: 'waitForExpectationsWithTimeout:handler:'
+    MethodKind: Instance
+    SwiftName: 'waitForExpectations(timeout:handler:)'
+  - Selector: 'expectationWithDescription:'
+    MethodKind: Instance
+    SwiftName: 'expectation(description:)'
+  - Selector: 'measureWithMetrics:options:block:'
+    MethodKind: Instance
+    SwiftName: 'measure(metrics:options:block:)'
+  - Selector: 'measureWithMetrics:block:'
+    MethodKind: Instance
+    SwiftName: 'measure(metrics:block:)'
+  - Selector: 'measureWithOptions:block:'
+    MethodKind: Instance
+    SwiftName: 'measure(options:block:)'
+  - Selector: 'addTeardownBlock:'
+    MethodKind: Instance
+    SwiftPrivate: true
+  - Selector: 'addAsyncTeardownBlock:'
+    MethodKind: Instance
+    SwiftPrivate: true
+- Name: XCUIApplication
+  Methods:
+  - Selector: 'new'
+    MethodKind: Class
+    Availability: nonswift
+    AvailabilityMsg: "use object initializers instead"
+- Name: XCTAttachment
+  Methods:
+  - Selector: 'attachmentWithContentsOfFileAtURL:'
+    MethodKind: Class
+    SwiftName: 'init(contentsOfFile:)'
+  - Selector: 'attachmentWithContentsOfFileAtURL:uniformTypeIdentifier:'
+    MethodKind: Class
+    SwiftName: 'init(contentsOfFile:uniformTypeIdentifier:)'
+  - Selector: 'attachmentWithCompressedContentsOfDirectoryAtURL:'
+    MethodKind: Class
+    SwiftName: 'init(compressedContentsOfDirectory:)'
+- Name: XCTIssue
+  SwiftName: XCTIssueReference
+  SwiftBridge: XCTest.XCTIssue
+- Name: XCTMutableIssue
+  Methods:
+  - Selector: 'addAttachment:'
+    MethodKind: Instance
+    SwiftName: 'add(_:)'
+- Name: XCTSourceCodeFrame
+  Methods:
+  - Selector: 'symbolInfoWithError:'
+    MethodKind: Instance
+    SwiftName: 'symbolInfo()'
+- Name: XCTExpectedFailureOptions
+  SwiftName: XCTExpectedFailure.Options
+Protocols:
+  - Name: XCTMetric
+    Methods:
+    - Selector: 'reportMeasurementsFromStartTime:toEndTime:error:'
+      MethodKind: Instance
+      SwiftName: 'reportMeasurements(from:to:)'
+Globals:
+- Name: XCTPerformanceMetric_WallClockTime
+  SwiftName: wallClockTime
+Tags:
+- Name: XCTestErrorCode
+  NSErrorDomain: XCTestErrorDomain
+- Name: XCTAttachmentLifetime
+  SwiftName: XCTAttachment.Lifetime
+- Name: XCTImageQuality
+  SwiftName: XCTAttachment.ImageQuality
+- Name: XCTWaiterResult
+  SwiftName: XCTWaiter.Result
+- Name: XCUIApplicationState
+  SwiftName: XCUIApplication.State
+- Name: XCUIElementType
+  SwiftName: XCUIElement.ElementType
+- Name: XCUIUserInterfaceSizeClass
+  SwiftName: XCUIElement.SizeClass
+- Name: XCUIKeyModifierFlags
+  SwiftName: XCUIElement.KeyModifierFlags
+- Name: XCUIDeviceButton
+  SwiftName: XCUIDevice.Button
+- Name: XCTMeasurementInvocationOptions
+  SwiftName: XCTMeasureOptions.InvocationOptions
+- Name: XCTIssueType
+  SwiftName: XCTIssue.IssueType
+- Name: XCTPerformanceMeasurementPolarity
+  SwiftName: XCTPerformanceMeasurement.Polarity
+- Name: XCUIDeviceAppearance
+  SwiftName: XCUIDevice.Appearance
+Typedefs:
+- Name: XCKeyValueObservingExpectationHandler
+  SwiftName: XCTKVOExpectation.Handler
+- Name: XCNotificationExpectationHandler
+  SwiftName: XCTNSNotificationExpectation.Handler
+- Name: XCPredicateExpectationHandler
+  SwiftName: XCTNSPredicateExpectation.Handler
+- Name: XCTDarwinNotificationExpectationHandler
+  SwiftName: XCTDarwinNotificationExpectation.Handler
+- Name: XCUIElementAttributeName
+  SwiftName: XCUIElement.AttributeName
+SwiftVersions:
+- Version: 4.2
+  Typedefs:
+  - Name: XCUIElementAttributeName
+    SwiftName: XCUIElementAttributeName

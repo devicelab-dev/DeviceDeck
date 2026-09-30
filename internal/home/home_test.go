@@ -2,6 +2,7 @@ package home
 
 import (
 	"bytes"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -73,6 +74,102 @@ func TestPrepareInstallsDriversAndPointsTheRunner(t *testing.T) {
 	}
 }
 
+// agentFile is where Prepare installs an embedded agent file.
+func agentFile(dir, embedded string) string {
+	return filepath.Join(dir, "drivers", filepath.FromSlash(embedded))
+}
+
+// agentFiles lists the embedded agent's files by embedded path.
+func agentFiles(t *testing.T) []string {
+	t.Helper()
+	var files []string
+	err := fs.WalkDir(iosAgent, agentRoot, func(p string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			files = append(files, p)
+		}
+		return err
+	})
+	if err != nil || len(files) == 0 {
+		t.Fatalf("embedded agent: %d files, %v", len(files), err)
+	}
+	return files
+}
+
+func TestPrepareInstallsIOSAgent(t *testing.T) {
+	dir := t.TempDir()
+	agent := filepath.Join(dir, "drivers", filepath.FromSlash(agentRoot))
+	stale := filepath.Join(agent, "simulator", "Old.app", "Old")
+	outside := filepath.Join(dir, "drivers", "ios", "notes.txt")
+	for _, path := range []string{stale, outside} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range 2 { // the second pass must be a no-op, not an error
+		if err := Prepare(dir); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, p := range agentFiles(t) {
+		want, _ := iosAgent.ReadFile(p)
+		got, err := os.ReadFile(agentFile(dir, p))
+		if err != nil || !bytes.Equal(got, want) {
+			t.Errorf("%s not installed byte-for-byte (err %v)", p, err)
+		}
+	}
+	runner := agentFile(dir, agentRoot+"/simulator/DevicelabIOSAgentUITests-Runner.app/DevicelabIOSAgentUITests-Runner")
+	if info, err := os.Stat(runner); err != nil || info.Mode().Perm()&0o100 == 0 {
+		t.Errorf("agent runner binary is not executable: %v, %v", info, err)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Errorf("stale agent file survived: %v", err)
+	}
+	if _, err := os.Stat(outside); err != nil {
+		t.Errorf("a file outside the agent folder was removed: %v", err)
+	}
+}
+
+func TestFileMode(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		data []byte
+		want os.FileMode
+	}{
+		{"thin 64-bit Mach-O", []byte{0xcf, 0xfa, 0xed, 0xfe, 0x0c}, 0o700},
+		{"universal Mach-O", []byte{0xca, 0xfe, 0xba, 0xbe, 0x00}, 0o700},
+		{"property list", []byte("<?xml"), 0o600},
+		{"empty", nil, 0o600},
+	} {
+		if got := fileMode(tc.data); got != tc.want {
+			t.Errorf("%s: mode %o, want %o", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestPruneAgentCannotRemove(t *testing.T) {
+	root := t.TempDir()
+	locked := filepath.Join(root, "locked")
+	if err := os.MkdirAll(locked, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(locked, "old"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o750) })
+	if err := pruneAgent(root, nil); err == nil || !strings.Contains(err.Error(), "remove stale agent file") {
+		t.Fatalf("err = %v", err)
+	}
+	if err := pruneAgent(filepath.Join(root, "missing"), nil); err == nil || !strings.Contains(err.Error(), "open agent folder") {
+		t.Fatalf("missing folder: %v", err)
+	}
+}
+
 // blockWith puts a non-empty directory at path, which a file write, rename or
 // remove cannot replace.
 func blockWith(t *testing.T, path string) {
@@ -102,6 +199,14 @@ func TestPrepareErrors(t *testing.T) {
 		{"stale driver cannot be removed", func(t *testing.T, dir string) {
 			blockWith(t, filepath.Join(driverDir(dir), "old.apk"))
 		}, "remove stale driver"},
+		{"agent folder cannot be created", func(t *testing.T, dir string) {
+			if err := os.MkdirAll(filepath.Join(dir, "drivers"), 0o750); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "drivers", "ios"), nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}, "create agent folder"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -142,6 +247,36 @@ func TestEmbeddedDriversMatchPinnedRunner(t *testing.T) {
 	}
 }
 
+// TestEmbeddedAgentMatchesPinnedRunner is the iOS agent's drift check: the
+// embedded copy must hold exactly the pinned runner's files, byte for byte.
+func TestEmbeddedAgentMatchesPinnedRunner(t *testing.T) {
+	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}",
+		"github.com/devicelab-dev/maestro-runner").Output()
+	if err != nil || strings.TrimSpace(string(out)) == "" {
+		t.Skipf("maestro-runner module not available: %v", err)
+	}
+	src := filepath.Join(strings.TrimSpace(string(out)), "drivers")
+	pinned := 0
+	err = filepath.WalkDir(filepath.Join(src, filepath.FromSlash(agentRoot), "simulator"), func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		pinned++
+		rel, _ := filepath.Rel(src, p)
+		want, _ := os.ReadFile(p)
+		if got, _ := iosAgent.ReadFile(filepath.ToSlash(rel)); !bytes.Equal(got, want) {
+			t.Errorf("%s differs from the pinned maestro-runner; run `make drivers`", rel)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("pinned runner ships no iOS agent: %v", err)
+	}
+	if embedded := len(agentFiles(t)); embedded != pinned {
+		t.Errorf("embedded agent has %d files, pinned runner %d; run `make drivers`", embedded, pinned)
+	}
+}
+
 // TestEmbeddedDriversCarryNoLocalPaths guards the release: the redaction
 // step blanks every /Users/ path in the shipped binary, and the APKs are
 // embedded in it raw, so a path inside one would be blanked too and break
@@ -151,6 +286,12 @@ func TestEmbeddedDriversCarryNoLocalPaths(t *testing.T) {
 		data, _ := androidDrivers.ReadFile("android/" + name)
 		if bytes.Contains(data, []byte("/Users/")) {
 			t.Errorf("%s contains a /Users/ path; release redaction would corrupt it", name)
+		}
+	}
+	for _, p := range agentFiles(t) {
+		data, _ := iosAgent.ReadFile(p)
+		if bytes.Contains(data, []byte("/Users/")) {
+			t.Errorf("%s contains a /Users/ path; release redaction would corrupt it", p)
 		}
 	}
 }

@@ -38,6 +38,18 @@ const runnerHomeEnv = "MAESTRO_RUNNER_HOME"
 //go:embed android/*.apk
 var androidDrivers embed.FS
 
+// iosAgent holds the prebuilt devicelab iOS agent (the XCUITest apps, their
+// xctestrun and manifest), copied from the pinned maestro-runner module by
+// `make drivers`. The runner looks for it under its home's
+// drivers/ios/devicelab-ios-agent/simulator; `all:` keeps the bundles'
+// underscore-prefixed folders (_CodeSignature, _Testing_Foundation).
+//
+//go:embed all:ios
+var iosAgent embed.FS
+
+// agentRoot is the agent's folder under the drivers folder, as embedded.
+const agentRoot = "ios/devicelab-ios-agent"
+
 // Dir resolves DeviceDeck's home folder: $DEVICEDECK_HOME if set, else
 // ~/.devicedeck. It does not create it.
 func Dir() (string, error) {
@@ -52,10 +64,15 @@ func Dir() (string, error) {
 }
 
 // Prepare writes the embedded Android driver APKs under dir/drivers/android
-// and points the runner packages at dir. It must run before any runner code
-// resolves its home, because the runner caches that answer for the process.
+// and the iOS agent under dir/drivers/ios, and points the runner packages at
+// dir. It must run before any runner code resolves its home, because the
+// runner caches that answer for the process.
 func Prepare(dir string) error {
-	if err := installDrivers(filepath.Join(dir, "drivers", "android")); err != nil {
+	drivers := filepath.Join(dir, "drivers")
+	if err := installDrivers(filepath.Join(drivers, "android")); err != nil {
+		return err
+	}
+	if err := installAgent(drivers); err != nil {
 		return err
 	}
 	return os.Setenv(runnerHomeEnv, dir)
@@ -73,21 +90,85 @@ func installDrivers(dst string) error {
 	for _, e := range embedded {
 		want[e.Name()] = true
 		data, _ := androidDrivers.ReadFile("android/" + e.Name())
-		if err := writeIfChanged(filepath.Join(dst, e.Name()), data); err != nil {
+		if err := writeIfChanged(filepath.Join(dst, e.Name()), data, 0o600); err != nil {
 			return err
 		}
 	}
 	return removeStale(dst, want)
 }
 
+// installAgent mirrors the embedded iOS agent under drivers: each file is
+// written only when its bytes differ, and files an older build shipped are
+// removed, so the agent's manifest and the files beside it always agree.
+func installAgent(drivers string) error {
+	want := map[string]bool{}
+	err := fs.WalkDir(iosAgent, agentRoot, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		data, _ := iosAgent.ReadFile(p) // compiled in: cannot fail
+		dst := filepath.Join(drivers, filepath.FromSlash(p))
+		want[strings.TrimPrefix(p, agentRoot+"/")] = true
+		if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
+			return fmt.Errorf("create agent folder: %w", err)
+		}
+		return writeIfChanged(dst, data, fileMode(data))
+	})
+	if err != nil {
+		return err
+	}
+	return pruneAgent(filepath.Join(drivers, filepath.FromSlash(agentRoot)), want)
+}
+
+// machOMagic are the first four bytes of a Mach-O executable or library,
+// thin (either byte order, 32 or 64 bit) or universal. An embedded file
+// loses its mode, and these are the files the simulator must be able to
+// execute.
+var machOMagic = [][]byte{
+	{0xfe, 0xed, 0xfa, 0xce}, {0xfe, 0xed, 0xfa, 0xcf}, {0xce, 0xfa, 0xed, 0xfe},
+	{0xcf, 0xfa, 0xed, 0xfe}, {0xca, 0xfe, 0xba, 0xbe}, {0xbe, 0xba, 0xfe, 0xca},
+}
+
+// fileMode is 0700 for a Mach-O binary and 0600 for anything else.
+func fileMode(data []byte) os.FileMode {
+	for _, m := range machOMagic {
+		if bytes.HasPrefix(data, m) {
+			return 0o700
+		}
+	}
+	return 0o600
+}
+
+// pruneAgent removes files under dir that this build does not ship; want
+// holds the shipped files' slash paths relative to dir. It works inside an
+// os.Root, so a symlink planted in the folder cannot redirect a removal
+// outside it.
+func pruneAgent(dir string, want map[string]bool) error {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return fmt.Errorf("open agent folder: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+	return fs.WalkDir(root.FS(), ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || want[p] {
+			return err
+		}
+		if err := root.Remove(p); err != nil {
+			return fmt.Errorf("remove stale agent file %s: %w", p, err)
+		}
+		return nil
+	})
+}
+
 // writeIfChanged writes data to path through a temporary file and a rename,
-// so a crash mid-write never leaves a truncated APK for adb to install.
-func writeIfChanged(path string, data []byte) error {
+// so a crash mid-write never leaves a truncated driver for adb or simctl to
+// install.
+func writeIfChanged(path string, data []byte, mode os.FileMode) error {
 	if cur, err := os.ReadFile(path); err == nil && bytes.Equal(cur, data) {
 		return nil
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	if err := os.WriteFile(tmp, data, mode); err != nil {
 		return fmt.Errorf("write driver %s: %w", filepath.Base(path), err)
 	}
 	if err := os.Rename(tmp, path); err != nil {

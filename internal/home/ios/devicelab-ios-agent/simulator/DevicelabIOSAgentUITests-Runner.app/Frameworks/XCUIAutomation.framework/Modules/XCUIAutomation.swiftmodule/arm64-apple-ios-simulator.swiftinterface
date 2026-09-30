@@ -1,0 +1,30 @@
+// swift-interface-format-version: 1.0
+// swift-compiler-version: Apple Swift version 6.4 effective-5.10 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)
+// swift-module-flags: -target arm64-apple-ios17.0-simulator -enable-objc-interop -enable-library-evolution -language-mode 5 -Osize -enable-upcoming-feature ConciseMagicFile -enable-upcoming-feature DeprecateApplicationMain -enable-upcoming-feature DisableOutwardActorInference -enable-upcoming-feature MemberImportVisibility -enable-upcoming-feature ExistentialAny -enable-experimental-feature DebugDescriptionMacro -enable-bare-slash-regex -user-module-version 25228 -module-name XCUIAutomation -package-name com.apple.dt.xctest
+// swift-module-flags-ignorable:  -formal-cxx-interoperability-mode=off -interface-compiler-version 6.4
+import Foundation
+import Swift
+@_exported import XCUIAutomation
+import _Concurrency
+import _StringProcessing
+import _SwiftConcurrencyShims
+import os
+extension XCUIAutomation::XCUIApplication {
+  @available(macOS 14.0, iOS 17.0, tvOS 17.0, watchOS 10.0, *)
+  @nonobjc @_Concurrency::MainActor @preconcurrency public func performAccessibilityAudit(for auditTypes: XCUIAutomation::XCUIAccessibilityAuditType = .all, _ issueHandler: ((XCUIAutomation::XCUIAccessibilityAuditIssue) throws -> Swift::Bool)? = nil) throws
+}
+@available(swift 4.0)
+extension XCUIAutomation::XCUIElement {
+  @nonobjc @_Concurrency::MainActor @preconcurrency public func typeKey(_ key: XCUIAutomation::XCUIKeyboardKey, modifierFlags: XCUIAutomation::XCUIElement.XCUIAutomation::KeyModifierFlags)
+}
+extension XCUIAutomation::XCUIElement {
+  @_Concurrency::MainActor @preconcurrency public func wait<V>(for keyPath: Swift::KeyPath<XCUIAutomation::XCUIElement, V>, toEqual expectedValue: V, timeout: Foundation::TimeInterval) -> Swift::Bool where V : Swift::Equatable
+}
+extension XCUIAutomation::XCUIGestureVelocity : Swift::ExpressibleByIntegerLiteral {
+  public init(integerLiteral value: Swift::Int)
+  public typealias IntegerLiteralType = Swift::Int
+}
+extension XCUIAutomation::XCUIGestureVelocity : Swift::ExpressibleByFloatLiteral {
+  public init(floatLiteral value: CoreFoundation::CGFloat.CoreFoundation::NativeType)
+  public typealias FloatLiteralType = CoreFoundation::CGFloat.CoreFoundation::NativeType
+}

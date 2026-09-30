@@ -1,0 +1,30 @@
+framework module XCTest [system] {
+    umbrella header "XCTest.h"
+    requires objc
+    export *
+
+    // Headers which have been relocated to the 'XCUIAutomation' framework module.
+    exclude header "XCUIAccessibilityAuditIssue.h"
+    exclude header "XCUIAccessibilityAuditTypes.h"
+    exclude header "XCUIApplication.h"
+    exclude header "XCUIAutomation.h"
+    exclude header "XCUIAutomationDefines.h"
+    exclude header "XCUICoordinate.h"
+    exclude header "XCUIDevice.h"
+    exclude header "XCUIDeviceButton.h"
+    exclude header "XCUIDeviceHandGesture.h"
+    exclude header "XCUIElement.h"
+    exclude header "XCUIElementAttributes.h"
+    exclude header "XCUIElementQuery.h"
+    exclude header "XCUIElementTypeQueryProvider.h"
+    exclude header "XCUIElementTypes.h"
+    exclude header "XCUIKeyboardKeys.h"
+    exclude header "XCUILocation.h"
+    exclude header "XCUIProtectedResource.h"
+    exclude header "XCUIRemote.h"
+    exclude header "XCUIScreen.h"
+    exclude header "XCUIScreenshot.h"
+    exclude header "XCUIScreenshotProviding.h"
+    exclude header "XCUISiriService.h"
+    exclude header "XCUISystem.h"
+}

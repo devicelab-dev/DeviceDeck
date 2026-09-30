@@ -2,103 +2,12 @@ package runner
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net"
-	"net/http"
-	"net/http/httptest"
-	"strconv"
 	"testing"
 
 	dlios "github.com/devicelab-dev/maestro-runner/pkg/driver/devicelab_ios"
 )
-
-// stubRunner mimics devicelab-ios-runner's /command endpoint.
-func stubRunner(t *testing.T, respond func(cmd map[string]any) string) *TreeClient {
-	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		var cmd map[string]any
-		_ = json.Unmarshal(body, &cmd)
-		_, _ = w.Write([]byte(respond(cmd)))
-	}))
-	t.Cleanup(server.Close)
-	host, portStr, err := net.SplitHostPort(server.Listener.Addr().String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	port, _ := strconv.Atoi(portStr)
-	return NewTreeClient(host, port)
-}
-
-func TestSnapshotConvertsNodes(t *testing.T) {
-	var gotCmd map[string]any
-	tree := stubRunner(t, func(cmd map[string]any) string {
-		gotCmd = cmd
-		return `{"ok": true, "data": {"nodes": [
-			{"index": 0, "type": "Application", "rect": {"x":0,"y":0,"width":402,"height":874},
-			 "enabled": true, "hittable": true, "depth": 0},
-			{"index": 1, "type": "Button", "label": "Log in", "identifier": "loginButton",
-			 "value": "v", "placeholderValue": "ph",
-			 "rect": {"x":10,"y":20,"width":100,"height":44},
-			 "enabled": true, "focused": true, "selected": true, "hittable": true,
-			 "depth": 1, "parentIndex": 0}
-		]}}`
-	})
-
-	nodes, err := tree.Snapshot(context.Background(), "com.example.app")
-	if err != nil {
-		t.Fatalf("Snapshot: %v", err)
-	}
-	if gotCmd["command"] != "snapshot" || gotCmd["appBundleId"] != "com.example.app" {
-		t.Errorf("runner received %v", gotCmd)
-	}
-	if len(nodes) != 2 {
-		t.Fatalf("got %d nodes, want 2", len(nodes))
-	}
-	btn := nodes[1]
-	if btn.Type != "Button" || btn.Label != "Log in" || btn.Identifier != "loginButton" ||
-		btn.Value != "v" || btn.Placeholder != "ph" || !btn.Focused || !btn.Selected {
-		t.Errorf("button = %+v", btn)
-	}
-	if btn.Frame != (Rect{X: 10, Y: 20, Width: 100, Height: 44}) {
-		t.Errorf("frame = %+v", btn.Frame)
-	}
-	if btn.ParentIndex == nil || *btn.ParentIndex != 0 {
-		t.Errorf("parentIndex = %v", btn.ParentIndex)
-	}
-}
-
-func TestSnapshotRunnerError(t *testing.T) {
-	tree := stubRunner(t, func(map[string]any) string {
-		return `{"ok": false, "error": {"code": "APP_NOT_RUNNING", "message": "nope"}}`
-	})
-	if _, err := tree.Snapshot(context.Background(), ""); err == nil {
-		t.Fatal("expected runner error")
-	}
-}
-
-func TestSnapshotEmptyData(t *testing.T) {
-	tree := stubRunner(t, func(map[string]any) string { return `{"ok": true}` })
-	if _, err := tree.Snapshot(context.Background(), ""); err == nil {
-		t.Fatal("expected empty-response error")
-	}
-}
-
-func TestSnapshotUnreachableRunner(t *testing.T) {
-	tree := NewTreeClient("127.0.0.1", 1) // nothing listens on port 1
-	if _, err := tree.Snapshot(context.Background(), ""); err == nil {
-		t.Fatal("expected connection error")
-	}
-}
-
-func TestConvertNodesEmpty(t *testing.T) {
-	if got := convertNodes(nil); len(got) != 0 {
-		t.Errorf("convertNodes(nil) = %v", got)
-	}
-}
 
 type fakeEngine struct {
 	stopErr error
@@ -197,7 +106,7 @@ func TestEnginesSnapshotRecovery(t *testing.T) {
 		{
 			name: "runner-level error does not trigger a restart",
 			engines: []engineAPI{&fakeEngine{
-				err: fmt.Errorf("runner snapshot: %w", &dlios.RunnerError{Code: "APP_NOT_RUNNING", Message: "nope"}),
+				err: fmt.Errorf("runner snapshot: %w", &dlios.AgentError{Code: "APP_NOT_RUNNING", Message: "nope"}),
 			}},
 			ctx:        context.Background,
 			wantErr:    true,
@@ -360,5 +269,55 @@ func TestEnginesStop(t *testing.T) {
 	}
 	if _, ok := s.engines["AAA"]; ok || len(s.engines) != 1 {
 		t.Errorf("engines = %v, want only BBB left", s.engines)
+	}
+}
+
+// idlingFake is an engine that can wait for its app (iOS).
+type idlingFake struct {
+	fakeEngine
+	idled []string
+}
+
+func (f *idlingFake) Idle(_ context.Context, app string) error {
+	f.idled = append(f.idled, app)
+	return nil
+}
+
+func TestEnginesIdle(t *testing.T) {
+	ios := &idlingFake{}
+	s := &Engines{engines: map[string]engineAPI{"ios": ios, "android": &fakeEngine{}},
+		start: func(context.Context, string) (engineAPI, error) { return nil, errors.New("no device") }}
+	if err := s.Idle(context.Background(), "ios", "com.example"); err != nil || len(ios.idled) != 1 {
+		t.Errorf("ios idle: err %v, idled %v", err, ios.idled)
+	}
+	if err := s.Idle(context.Background(), "android", "com.example"); err != nil {
+		t.Errorf("an engine without idle returns at once: %v", err)
+	}
+	if err := s.Idle(context.Background(), "gone", "com.example"); err == nil {
+		t.Error("a start failure must surface")
+	}
+}
+
+// releasingFake is an engine that can be released (the iOS agent).
+type releasingFake struct {
+	fakeEngine
+	released bool
+}
+
+func (f *releasingFake) Release(context.Context) { f.released = true }
+
+// On exit a releasable engine is released, not stopped; others are stopped.
+func TestStopAllReleasesWhereItCan(t *testing.T) {
+	ios, android := &releasingFake{}, &fakeEngine{}
+	s := &Engines{engines: map[string]engineAPI{"ios": ios, "android": android}}
+	s.StopAll(context.Background())
+	if !ios.released || ios.stopped {
+		t.Errorf("iOS engine: released=%v stopped=%v, want released only", ios.released, ios.stopped)
+	}
+	if !android.stopped {
+		t.Error("an engine that cannot be released must be stopped")
+	}
+	if len(s.engines) != 0 {
+		t.Errorf("cache not cleared: %v", s.engines)
 	}
 }

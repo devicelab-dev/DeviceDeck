@@ -1,0 +1,4 @@
+framework module XCUIAutomation [system] {
+    umbrella header "XCUIAutomation.h"
+    export *
+}
