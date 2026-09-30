@@ -6,7 +6,9 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // fakeTools is a minimal tool set for exercising the protocol without HTTP.
@@ -62,7 +64,7 @@ func TestServeInitializeAndList(t *testing.T) {
 	if res["protocolVersion"] != protocolVersion {
 		t.Errorf("protocolVersion = %v", res["protocolVersion"])
 	}
-	if hint, _ := res["instructions"].(string); !strings.Contains(hint, "/device/{udid}") || !strings.Contains(hint, "data-testid") {
+	if hint, _ := res["instructions"].(string); !strings.Contains(hint, "http://127.0.0.1:8787/device/{udid}") || !strings.Contains(hint, "data-testid") {
 		t.Errorf("instructions do not tell the agent how to drive a device: %q", hint)
 	}
 	list := decode(t, lines[1]).Result.(map[string]any)
@@ -214,5 +216,103 @@ func TestToolCallsAreLogged(t *testing.T) {
 		if line := buf.String(); !strings.Contains(line, tc.want) || !strings.Contains(line, "took=") {
 			t.Errorf("params %.40s: log = %q, want %q", tc.params, line, tc.want)
 		}
+	}
+}
+
+// The instructions name the server the tools actually drive, not the default.
+func TestInstructionsFollowBaseURL(t *testing.T) {
+	tools, order := fakeTools()
+	s := NewServer(tools, order).WithBaseURL("http://10.0.0.5:9000/")
+	if got := s.instructions(); !strings.Contains(got, "http://10.0.0.5:9000/device/{udid}") || strings.Contains(got, "8787") {
+		t.Errorf("instructions = %q", got)
+	}
+}
+
+// syncBuffer is a bytes.Buffer safe for Serve's concurrent writers.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// A slow tool call does not hold up the next one: "slow" waits until "fast"
+// has run, which could never happen if calls were served one at a time.
+func TestServeRunsToolCallsConcurrently(t *testing.T) {
+	fastDone := make(chan struct{})
+	tools := map[string]Tool{
+		"slow": {InputSchema: schemaNone(), Call: func(json.RawMessage) (string, error) {
+			select {
+			case <-fastDone:
+				return "slow done", nil
+			case <-time.After(5 * time.Second):
+				return "", errors.New("fast never ran: calls are serial")
+			}
+		}},
+		"fast": {InputSchema: schemaNone(), Call: func(json.RawMessage) (string, error) {
+			close(fastDone)
+			return "fast done", nil
+		}},
+	}
+	in := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"slow"}}` + "\n" +
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"fast"}}` + "\n"
+	var out syncBuffer
+	if err := NewServer(tools, []string{"slow", "fast"}).Serve(strings.NewReader(in), &out); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); !strings.Contains(got, "slow done") || !strings.Contains(got, "fast done") {
+		t.Errorf("replies = %s", got)
+	}
+}
+
+// A call that carries a progressToken gets progress notifications while it
+// runs; one without does not.
+func TestServeReportsProgress(t *testing.T) {
+	prev := progressEvery
+	progressEvery = 10 * time.Millisecond
+	t.Cleanup(func() { progressEvery = prev })
+	tools := map[string]Tool{"wait": {InputSchema: schemaNone(), Call: func(json.RawMessage) (string, error) {
+		time.Sleep(60 * time.Millisecond)
+		return "done", nil
+	}}}
+	s := NewServer(tools, []string{"wait"})
+	var out syncBuffer
+	in := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"wait","_meta":{"progressToken":"tok-1"}}}` + "\n"
+	if err := s.Serve(strings.NewReader(in), &out); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); !strings.Contains(got, `"method":"notifications/progress"`) || !strings.Contains(got, `"progressToken":"tok-1"`) {
+		t.Errorf("no progress notification: %s", got)
+	}
+	var quiet syncBuffer
+	in = `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"wait"}}` + "\n"
+	if err := s.Serve(strings.NewReader(in), &quiet); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(quiet.String(), "notifications/progress") {
+		t.Errorf("progress sent without a token: %s", quiet.String())
+	}
+}
+
+// Lines that are not tool calls are still answered in order: a parse error,
+// a notification (no reply), and a tools/call with no id (a notification).
+func TestServeRoutesNonCalls(t *testing.T) {
+	in := "{not json\n" + `{"jsonrpc":"2.0","method":"tools/call","params":{"name":"echo"}}` + "\n"
+	var out syncBuffer
+	if err := NewServer(fakeTools()).Serve(strings.NewReader(in), &out); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); strings.Count(got, "\n") != 1 || !strings.Contains(got, "-32700") {
+		t.Errorf("replies = %q", got)
 	}
 }

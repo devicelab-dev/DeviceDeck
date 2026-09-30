@@ -50,8 +50,8 @@ func TestNewClientTrimsSlash(t *testing.T) {
 
 func TestToolsRegistered(t *testing.T) {
 	tools, order := NewClient("http://x").Tools()
-	if len(tools) != 16 || len(order) != 16 {
-		t.Fatalf("want 16 tools, got %d/%d", len(tools), len(order))
+	if len(tools) != 20 || len(order) != 20 {
+		t.Fatalf("want 20 tools, got %d/%d", len(tools), len(order))
 	}
 	for _, name := range order {
 		if _, ok := tools[name]; !ok {
@@ -278,7 +278,10 @@ func TestTap(t *testing.T) {
 	}
 	// Missing args.
 	if _, err := f.client().tap(raw(map[string]string{"udid": "u1"})); err == nil {
-		t.Error("want error when testid missing")
+		t.Error("want error when no target is given")
+	}
+	if _, err := f.client().tap(raw(map[string]string{"testid": "username-input"})); err == nil {
+		t.Error("want error when udid missing")
 	}
 	// Element not on screen.
 	if _, err := f.client().tap(raw(map[string]string{"udid": "u1", "testid": "nope"})); err == nil {
@@ -314,13 +317,11 @@ func TestAssertVisible(t *testing.T) {
 	}
 }
 
-func TestTapPointEdges(t *testing.T) {
-	// No screen dimensions.
-	if _, _, err := tapPoint(nil, "x"); err == nil {
+func TestCentreEdges(t *testing.T) {
+	if _, _, err := centre(nil, treeNode{}); err == nil {
 		t.Error("want error on empty tree")
 	}
-	zero := []treeNode{{Type: "Application"}}
-	if _, _, err := tapPoint(zero, "x"); err == nil {
+	if _, _, err := centre([]treeNode{{Type: "Application"}}, treeNode{}); err == nil {
 		t.Error("want error on zero-size screen")
 	}
 	// Off-screen frame clamps into 0-1.
@@ -328,8 +329,7 @@ func TestTapPointEdges(t *testing.T) {
 	nodes[0].Frame.Width, nodes[0].Frame.Height = 100, 100
 	off := treeNode{Identifier: "e"}
 	off.Frame.X, off.Frame.Y, off.Frame.Width, off.Frame.Height = 500, -50, 10, 10
-	nodes = append(nodes, off)
-	x, y, err := tapPoint(nodes, "e")
+	x, y, err := centre(nodes, off)
 	if err != nil || x != 1 || y != 0 {
 		t.Errorf("clamp: x=%v y=%v err=%v", x, y, err)
 	}
@@ -345,8 +345,11 @@ func TestFetchTreeBadJSON(t *testing.T) {
 }
 
 func TestSchemaTapAssert(t *testing.T) {
-	if req, _ := schemaTap()["required"].([]string); len(req) != 2 {
-		t.Errorf("schemaTap required = %v", schemaTap()["required"])
+	if req, _ := schemaTarget()["required"].([]string); len(req) != 1 {
+		t.Errorf("schemaTarget required = %v", schemaTarget()["required"])
+	}
+	if req, _ := schemaFill()["required"].([]string); len(req) != 2 {
+		t.Errorf("schemaFill required = %v", schemaFill()["required"])
 	}
 	if req, _ := schemaAssert()["required"].([]string); len(req) != 1 {
 		t.Errorf("schemaAssert required = %v", schemaAssert()["required"])
@@ -377,26 +380,94 @@ func TestFetchTreeWithApp(t *testing.T) {
 func TestScreenshot(t *testing.T) {
 	f := newFakeAPI()
 	defer f.close()
-	f.body = "\x89PNGfakebytes" // stand-in PNG payload
+	f.body = string(testPNG(t, 1206, 2622))
 	content, err := f.client().screenshot(raw(map[string]string{"udid": "u1"}))
 	if err != nil || len(content) != 1 {
 		t.Fatalf("screenshot = %v, %v", content, err)
 	}
 	item := content[0].(map[string]any)
-	if item["type"] != "image" || item["mimeType"] != "image/png" {
+	if item["type"] != "image" || item["mimeType"] != "image/jpeg" {
 		t.Errorf("content item = %v", item)
 	}
-	if item["data"] != "iVBOTmZha2VieXRlcw==" && item["data"].(string) == "" {
-		t.Errorf("data not base64-encoded: %v", item["data"])
+	img := decodeB64Image(t, item["data"].(string))
+	if b := img.Bounds(); max(b.Dx(), b.Dy()) != agentImageMax {
+		t.Errorf("default screenshot is %dx%d, want long side %d", b.Dx(), b.Dy(), agentImageMax)
 	}
 	if f.lastMethod != "GET" || f.lastPath != "/api/devices/u1/screenshot" {
 		t.Errorf("called %s %s", f.lastMethod, f.lastPath)
 	}
+	full, err := f.client().screenshot(raw(map[string]any{"udid": "u1", "full": true}))
+	if err != nil || full[0].(map[string]any)["mimeType"] != "image/png" {
+		t.Errorf("full screenshot = %v, %v", full, err)
+	}
 	if _, err := f.client().screenshot(raw(map[string]string{})); err == nil {
 		t.Error("want error when udid missing")
+	}
+	f.body = "\x89PNGnot really"
+	if _, err := f.client().screenshot(raw(map[string]string{"udid": "u1"})); err == nil {
+		t.Error("want error when the screenshot is not a PNG")
 	}
 	f.status = 502
 	if _, err := f.client().screenshot(raw(map[string]string{"udid": "u1"})); err == nil {
 		t.Error("want error when server fails")
+	}
+}
+
+// list_apps finds the user's app: every registered build machine-wide, or
+// the builds that suit one device with whether each is installed there.
+func TestListApps(t *testing.T) {
+	f := newFakeAPI()
+	defer f.close()
+	f.body = `{"apps":[{"id":"dev.devicelab.testhive"}],"skipped":[]}`
+	got, err := f.client().listApps(nil)
+	if err != nil || !strings.Contains(got, "dev.devicelab.testhive") || f.lastPath != "/api/apps" {
+		t.Fatalf("machine-wide: %q, %v, path %s", got, err, f.lastPath)
+	}
+	if _, err := f.client().listApps(raw(map[string]string{"udid": "A B"})); err != nil || f.lastPath != "/api/devices/A B/apps" {
+		t.Errorf("per device: %v, path %s", err, f.lastPath)
+	}
+	if _, err := f.client().listApps(json.RawMessage(`["bad"]`)); err == nil {
+		t.Error("want error on non-object args")
+	}
+	f.status = 502
+	if _, err := f.client().listApps(nil); err == nil {
+		t.Error("want error when the server fails")
+	}
+}
+
+func TestListAppsSchemaIsValid(t *testing.T) {
+	s := schemaOptionalDevice()
+	if req, ok := s["required"].([]string); !ok || req == nil {
+		t.Errorf("required must be an empty list, not null: %#v", s["required"])
+	}
+}
+
+// With an access token the client authenticates every call, and the
+// device-page link it hands out carries the token so a browser gets in.
+func TestClientSendsToken(t *testing.T) {
+	var auth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth = r.Header.Get("Authorization")
+		_, _ = io.WriteString(w, `{"devices":[]}`)
+	}))
+	defer srv.Close()
+	c := NewClient(srv.URL)
+	c.Token = "s3cret"
+	if _, err := c.listDevices(nil); err != nil || auth != "Bearer s3cret" {
+		t.Errorf("auth = %q, err = %v", auth, err)
+	}
+	u, err := c.devicePageURL(raw(map[string]string{"udid": "U", "app": "com.x"}))
+	if err != nil || u != srv.URL+"/device/U?app=com.x&token=s3cret" {
+		t.Errorf("page url = %q, %v", u, err)
+	}
+	c.Token = ""
+	if _, err := c.listDevices(nil); err != nil || auth != "" {
+		t.Errorf("no token must send no header: %q %v", auth, err)
+	}
+}
+
+func TestClientBadBaseURL(t *testing.T) {
+	if _, err := NewClient("://bad").get("/api/devices"); err == nil {
+		t.Error("an unparseable base URL must error")
 	}
 }

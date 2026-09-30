@@ -13,6 +13,8 @@ import (
 
 // snapNode is the subset of a mirrored element the snapshot reads.
 type snapNode struct {
+	Index       int    `json:"index"`
+	ParentIndex *int   `json:"parentIndex"`
 	Identifier  string `json:"identifier"`
 	Type        string `json:"type"`
 	Label       string `json:"label"`
@@ -21,6 +23,9 @@ type snapNode struct {
 	Frame       struct {
 		X, Y, Width, Height float64
 	} `json:"frame"`
+	// childText names an unnamed control after the text inside it; see
+	// nameFromChildren.
+	childText string
 }
 
 // refRegistry keeps stable short refs across snapshots within one MCP
@@ -31,6 +36,9 @@ type snapNode struct {
 // Numbers are never reused within a session, mirroring Playwright's aria-ref
 // rule, so a stale ref fails loudly instead of silently pointing elsewhere.
 type refRegistry struct {
+	// mu guards the registry: a snapshot and an act tool resolving a ref
+	// can run at once.
+	mu   sync.Mutex
 	ids  map[string]string // identity key -> ref
 	last int               // highest ref number allocated
 	prev map[string]string // ref -> one-line signature, from the last snapshot
@@ -50,6 +58,15 @@ func (r *refRegistry) ref(identity string) (string, bool) {
 	id := fmt.Sprintf("e%d", r.last)
 	r.ids[identity] = id
 	return id, true
+}
+
+// issued reports whether ref is one this registry handed out. Callers hold mu.
+func (r *refRegistry) issued(ref string) bool {
+	var n int
+	if _, err := fmt.Sscanf(ref, "e%d", &n); err != nil || fmt.Sprintf("e%d", n) != ref {
+		return false
+	}
+	return n >= 1 && n <= r.last
 }
 
 // snapshotState holds one ref registry per device for the life of the MCP
@@ -113,13 +130,16 @@ func (c *Client) snapshot(raw json.RawMessage) (string, error) {
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return "", err
 	}
-	return c.renderSnapshot(a, payload.Nodes), nil
+	nameFromChildren(payload.Nodes)
+	return c.capLines("snapshot", c.renderSnapshot(a, payload.Nodes))
 }
 
 // renderSnapshot builds the text an agent reads, updating the device's ref
 // registry so refs stay stable across calls.
 func (c *Client) renderSnapshot(a snapshotArgs, nodes []snapNode) string {
 	reg := c.snaps.registry(a.UDID)
+	reg.mu.Lock()
+	defer reg.mu.Unlock()
 	lines, current, dialog := snapLines(reg, nodes, a.Mode == "full")
 	out := renderMode(a.Mode, lines, reg.prev, current)
 	reg.prev = current
@@ -158,7 +178,8 @@ func snapLines(reg *refRegistry, nodes []snapNode, full bool) (lines []string, c
 }
 
 // snapName is the accessible name a snapshot prints: a field is named by
-// what it asks for, everything else by its label then its value.
+// what it asks for, everything else by its label, its value, then the text
+// inside it.
 func snapName(n *snapNode) string {
 	if uisem.TextEntry(n.Type) && n.Placeholder != "" {
 		return n.Placeholder
@@ -166,7 +187,41 @@ func snapName(n *snapNode) string {
 	if n.Label != "" {
 		return n.Label
 	}
-	return n.Value
+	if n.Value != "" {
+		return n.Value
+	}
+	return n.childText
+}
+
+// nameFromChildren gives an interactive element with no label or value the
+// text of the first text element inside it. Android draws a button's words
+// as a child TextView and leaves the button itself unnamed, so an agent saw
+// `button ""`; a browser names it from its content the same way. Parents are
+// listed before their children, so one pass finds each text's control.
+func nameFromChildren(nodes []snapNode) {
+	at := make(map[int]int, len(nodes))
+	for i := range nodes {
+		at[nodes[i].Index] = i
+	}
+	for i := range nodes {
+		text := nodes[i].Label + nodes[i].Value
+		if nodes[i].Type != "StaticText" || text == "" {
+			continue
+		}
+		for p := nodes[i].ParentIndex; p != nil; {
+			j, ok := at[*p]
+			if !ok {
+				break
+			}
+			if parent := &nodes[j]; uisem.Interactive(parent.Type) {
+				if parent.Label == "" && parent.Value == "" && parent.childText == "" {
+					parent.childText = text
+				}
+				break
+			}
+			p = nodes[j].ParentIndex
+		}
+	}
 }
 
 // snapIncluded decides whether a node appears in this snapshot: interactive
@@ -181,13 +236,19 @@ func snapIncluded(n *snapNode, role, name string, full bool) bool {
 
 // snapIdentity keys a node for ref stability: its identifier when it has
 // one, else its role and name, disambiguated by ordinal when several share
-// the same role and name so six identical "Add" buttons keep six refs.
+// the key so six identical "Add" buttons keep six refs. Identifiers are not
+// unique either — Apple Maps names its Home, Work and Add tiles all
+// "PinnedTile" — so a repeated one is numbered too; the first keeps the
+// bare identifier, the key it has always had.
 func snapIdentity(n *snapNode, role, name string, counts map[string]int) string {
-	if n.Identifier != "" {
-		return "#" + n.Identifier
-	}
 	key := role + "\x00" + name
+	if n.Identifier != "" {
+		key = "#" + n.Identifier
+	}
 	counts[key]++
+	if n.Identifier != "" && counts[key] == 1 {
+		return key
+	}
 	return fmt.Sprintf("%s#%d", key, counts[key])
 }
 

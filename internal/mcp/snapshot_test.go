@@ -179,3 +179,51 @@ func TestSnapshotErrors(t *testing.T) {
 		t.Error("undecodable tree must error")
 	}
 }
+
+// Elements that share an identifier (Apple Maps' Home/Work/Add tiles are all
+// "PinnedTile") get a ref each, and each ref acts on its own element.
+func TestSnapshotRepeatedIdentifier(t *testing.T) {
+	f := newFakeAPI()
+	defer f.close()
+	c := f.client()
+	f.body = tree(`{"index":1,"type":"Button","identifier":"PinnedTile","label":"Home, Add","frame":{"x":0,"y":100,"width":100,"height":40}}`,
+		`{"index":2,"type":"Button","identifier":"PinnedTile","label":"Work, Add","frame":{"x":200,"y":100,"width":100,"height":40}}`)
+	out, _ := c.snapshot(raw(map[string]any{"udid": "U"}))
+	if !strings.Contains(out, `e1 button "Home, Add"`) || !strings.Contains(out, `e2 button "Work, Add"`) {
+		t.Fatalf("repeated identifier must get distinct refs:\n%s", out)
+	}
+	if _, err := c.tap(raw(map[string]any{"udid": "U", "ref": "e2"})); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(f.lastBody, `"x":0.625`) {
+		t.Errorf("e2 must tap the second tile, sent %s", f.lastBody)
+	}
+}
+
+// Android names a button through a child TextView: the snapshot names the
+// button after it, and the ref it prints still acts on the button.
+func TestSnapshotNamesButtonFromChildText(t *testing.T) {
+	f := newFakeAPI()
+	defer f.close()
+	c := f.client()
+	f.body = tree(
+		`{"index":1,"type":"Button","identifier":"login-button","frame":{"x":0,"y":700,"width":400,"height":60}}`,
+		`{"index":2,"parentIndex":1,"type":"Other","frame":{"x":100,"y":710,"width":200,"height":40}}`,
+		`{"index":3,"parentIndex":2,"type":"StaticText","value":"Sign In","frame":{"x":150,"y":715,"width":100,"height":30}}`,
+		`{"index":4,"type":"Button","frame":{"x":0,"y":100,"width":100,"height":40}}`,
+		`{"index":5,"parentIndex":4,"type":"StaticText","label":"Add","frame":{"x":10,"y":105,"width":50,"height":30}}`,
+		`{"index":6,"type":"Other","identifier":"screen","frame":{"x":0,"y":0,"width":400,"height":90}}`,
+		`{"index":7,"parentIndex":6,"type":"StaticText","value":"Welcome","frame":{"x":0,"y":0,"width":90,"height":20}}`,
+		`{"index":8,"parentIndex":99,"type":"StaticText","value":"Orphan","frame":{"x":0,"y":20,"width":90,"height":20}}`)
+	out, _ := c.snapshot(raw(map[string]any{"udid": "U"}))
+	if !strings.Contains(out, `button "Sign In" testid=login-button`) || !strings.Contains(out, `button "Add"`) {
+		t.Fatalf("buttons not named from their text:\n%s", out)
+	}
+	ref := strings.Fields(strings.TrimPrefix(strings.Split(out, "\n")[1], "* "))[0] // the "Add" button
+	if _, err := c.tap(raw(map[string]any{"udid": "U", "ref": ref})); err != nil {
+		t.Fatalf("tap %s: %v", ref, err)
+	}
+	if !strings.Contains(f.lastBody, `"x":0.125`) {
+		t.Errorf("%s must tap the Add button, sent %s", ref, f.lastBody)
+	}
+}

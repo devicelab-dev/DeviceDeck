@@ -42,7 +42,10 @@ func TestLongPress(t *testing.T) {
 	}
 	// Missing args and a missing element both error.
 	if _, err := f.client().longPress(raw(map[string]any{"udid": "U"})); err == nil {
-		t.Error("missing testid must error")
+		t.Error("missing target must error")
+	}
+	if _, err := f.client().longPress(raw(map[string]any{"testid": "row-1"})); err == nil {
+		t.Error("missing udid must error")
 	}
 	f.body = tree()
 	if _, err := f.client().longPress(raw(map[string]any{"udid": "U", "testid": "gone"})); err == nil {
@@ -222,26 +225,15 @@ func TestFindElementNoScreenSize(t *testing.T) {
 	}
 }
 
-// disabledOnScreen distinguishes a present-disabled element from a present-
-// enabled one and from an absent id.
-func TestDisabledOnScreen(t *testing.T) {
+// isDisabled distinguishes an explicitly disabled element from an enabled
+// one and from one whose enabled state the tree did not report.
+func TestIsDisabled(t *testing.T) {
 	tru, fls := true, false
-	nodes := []treeNode{
-		{Identifier: "off", Enabled: &fls},
-		{Identifier: "on", Enabled: &tru},
-		{Identifier: "unknown"}, // Enabled nil — treated as enabled
+	if !isDisabled(treeNode{Enabled: &fls}) {
+		t.Error("explicit false should read disabled")
 	}
-	if !disabledOnScreen(nodes, "off") {
-		t.Error("off should read disabled")
-	}
-	if disabledOnScreen(nodes, "on") {
-		t.Error("on should read enabled")
-	}
-	if disabledOnScreen(nodes, "unknown") {
-		t.Error("nil Enabled should not read disabled")
-	}
-	if disabledOnScreen(nodes, "absent") {
-		t.Error("an absent id is not disabled")
+	if isDisabled(treeNode{Enabled: &tru}) || isDisabled(treeNode{}) {
+		t.Error("enabled or unreported should not read disabled")
 	}
 }
 

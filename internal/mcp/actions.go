@@ -9,19 +9,14 @@ import (
 	"github.com/devicelab-dev/DeviceDeck/internal/uisem"
 )
 
-// longPress resolves a testid to its centre and holds a press there, for the
-// menus and reorder handles a quick tap does not trigger. Same deterministic
-// resolution as tap — the element's own frame, not a guessed coordinate.
+// longPress finds an element the way tap does and holds a press on its
+// centre, for the menus and reorder handles a quick tap does not trigger.
 func (c *Client) longPress(raw json.RawMessage) (string, error) {
 	a, err := decodeArgs(raw)
-	if err != nil || a.UDID == "" || a.Testid == "" {
-		return "", fmt.Errorf("udid and testid are required")
+	if err != nil || a.UDID == "" {
+		return "", fmt.Errorf("udid is required")
 	}
-	nodes, err := c.fetchTree(a.UDID, a.App)
-	if err != nil {
-		return "", err
-	}
-	x, y, err := tapPoint(nodes, a.Testid)
+	x, y, err := c.actionPoint(a)
 	if err != nil {
 		return "", err
 	}
@@ -29,7 +24,7 @@ func (c *Client) longPress(raw json.RawMessage) (string, error) {
 	if _, err := c.post("/api/devices/"+url.PathEscape(a.UDID)+"/tap", body); err != nil {
 		return "", err
 	}
-	return "long-pressed " + a.Testid, nil
+	return "long-pressed " + targetName(a), nil
 }
 
 const longPressMs = 700

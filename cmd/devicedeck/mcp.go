@@ -21,6 +21,8 @@ func runMCP(args []string) error {
 	flags := flag.NewFlagSet("mcp", flag.ContinueOnError)
 	server := flags.String("server", mcpServerURL(),
 		"base URL of the running `devicedeck serve` to drive")
+	token := flags.String("token", "",
+		"the server's access token, when it was started with one (also DEVICEDECK_TOKEN)")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -33,8 +35,12 @@ func runMCP(args []string) error {
 		}
 	}
 	client := mcp.NewClient(*server)
+	client.Token = *token
+	if client.Token == "" {
+		client.Token = os.Getenv("DEVICEDECK_TOKEN")
+	}
 	tools, order := client.Tools()
-	return mcp.NewServer(tools, order).Serve(os.Stdin, os.Stdout)
+	return mcp.NewServer(tools, order).WithBaseURL(*server).Serve(os.Stdin, os.Stdout)
 }
 
 // mcpServerURL defaults the target server to DEVICEDECK_URL, then to the
