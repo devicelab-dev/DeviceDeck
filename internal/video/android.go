@@ -38,6 +38,9 @@ type androidCapture struct {
 	startedAt    time.Time
 	closed       bool // stdin saw EOF: shut down instead of restarting
 	cancelStream func()
+	// encoder is the H.264 encoder on the h264 path; keyframe requests go
+	// to it instead of restarting a screenrecord.
+	encoder *frameEncoder
 }
 
 // RunAndroidCapture streams the emulator's screen as sidecar protocol
@@ -57,6 +60,15 @@ func RunAndroidCapture(serial string, in io.Reader, out io.Writer) error {
 	forced := os.Getenv("DEVICEDECK_ANDROID_CAPTURE")
 	if forced == "screenrecord" {
 		return c.runScreenrecordLoop()
+	}
+	// "h264": raw frames from gRPC into the H.264 encoder (see emuh264.go).
+	// No fallback, so a failure on a given emulator is visible.
+	if forced == "h264" {
+		ep, err := discoverEndpoint(serial)
+		if err != nil {
+			return err
+		}
+		return c.streamH264(ep)
 	}
 
 	// Preferred path: the emulator's host-side gRPC screenshot stream —
@@ -183,6 +195,13 @@ func (c *androidCapture) readCommands(in io.Reader) {
 }
 
 func (c *androidCapture) requestKeyframe() {
+	c.mu.Lock()
+	enc := c.encoder
+	c.mu.Unlock()
+	if enc != nil {
+		_ = enc.keyframe()
+		return
+	}
 	// The still always goes out: joining a static screen must show the
 	// current content even when the video restart below is debounced.
 	c.emitStill()

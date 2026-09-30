@@ -95,9 +95,22 @@ func (b bearerCreds) RequireTransportSecurity() bool { return false }
 // requests are inherently satisfied. Returns nil on deliberate shutdown,
 // an error if streaming cannot (re)start so the caller can fall back.
 func (c *androidCapture) streamViaGRPC(ep emulatorEndpoint) error {
+	return c.streamGRPC(ep, c.pumpScreenshotStream)
+}
+
+// maxFrameMessage is the largest screenshot message accepted from the
+// emulator. A raw RGB888 frame is width×height×3 bytes — 7.8 MB for a
+// 1080×2400 phone, twice gRPC's 4 MB default, which ends the stream on its
+// first frame; this leaves room for a 4K tablet.
+const maxFrameMessage = 64 << 20
+
+// streamGRPC dials the emulator and runs pump until shutdown, restarting a
+// stream that drops and giving up after three failures in a row.
+func (c *androidCapture) streamGRPC(ep emulatorEndpoint, pump func(emugrpc.EmulatorControllerClient) error) error {
 	conn, err := grpc.NewClient(ep.addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithPerRPCCredentials(bearerCreds(ep.token)))
+		grpc.WithPerRPCCredentials(bearerCreds(ep.token)),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxFrameMessage)))
 	if err != nil {
 		return fmt.Errorf("dial emulator grpc: %w", err)
 	}
@@ -106,7 +119,7 @@ func (c *androidCapture) streamViaGRPC(ep emulatorEndpoint) error {
 
 	failures := 0
 	for {
-		err := c.pumpScreenshotStream(client)
+		err := pump(client)
 		if c.isClosed() {
 			return nil
 		}

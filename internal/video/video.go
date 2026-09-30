@@ -340,7 +340,10 @@ func (m *Manager) captureCommand(udid string) (*exec.Cmd, error) {
 		if err != nil {
 			return nil, fmt.Errorf("resolve devicedeck binary: %w", err)
 		}
-		return exec.Command(exe, "_video-android", udid), nil
+		cmd := exec.Command(exe, "_video-android", udid)
+		// The h264 path pipes frames through the video sidecar's encoder.
+		cmd.Env = append(os.Environ(), EncoderEnv+"="+m.binPath, EncoderFPSEnv+"="+strconv.Itoa(m.fps))
+		return cmd, nil
 	}
 	return exec.Command(m.binPath, udid, strconv.Itoa(m.fps)), nil
 }

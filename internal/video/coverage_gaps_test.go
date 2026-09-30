@@ -93,6 +93,10 @@ func TestCaptureCommandRouting(t *testing.T) {
 	if strings.Join(android.Args, " ") != strings.Join(want, " ") {
 		t.Errorf("android argv = %v, want self-invocation %v", android.Args, want)
 	}
+	env := strings.Join(android.Env, "\n")
+	if !strings.Contains(env, EncoderEnv+"=/opt/devicedeck-video") || !strings.Contains(env, EncoderFPSEnv+"=30") {
+		t.Errorf("android capture env lacks the encoder: %v", android.Env)
+	}
 }
 
 func TestStartSessionCmdPipeErrors(t *testing.T) {
