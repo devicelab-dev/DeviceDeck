@@ -52,18 +52,27 @@ final class H264Encoder: @unchecked Sendable {
     }
 
     /// Zero-copy wrap the IOSurface into a CVPixelBuffer and submit it.
-    func encode(_ surface: IOSurface, forceKeyframe: Bool) {
+    /// Returns whether the encoder accepted the frame — see the pixel-buffer
+    /// overload.
+    @discardableResult
+    func encode(_ surface: IOSurface, forceKeyframe: Bool) -> Bool {
         var pb: Unmanaged<CVPixelBuffer>?
         let status = CVPixelBufferCreateWithIOSurface(
             kCFAllocatorDefault, surface,
             [kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA] as CFDictionary,
             &pb
         )
-        guard status == kCVReturnSuccess, let pixelBuffer = pb?.takeRetainedValue() else { return }
-        encode(pixelBuffer, forceKeyframe: forceKeyframe)
+        guard status == kCVReturnSuccess, let pixelBuffer = pb?.takeRetainedValue() else { return false }
+        return encode(pixelBuffer, forceKeyframe: forceKeyframe)
     }
 
-    private func encode(_ pixelBuffer: CVPixelBuffer, forceKeyframe: Bool) {
+    /// Submit a ready pixel buffer (BGRA) — the Android path, whose frames
+    /// arrive as raw pixels rather than a simulator IOSurface. Returns
+    /// whether the frame was submitted: `false` when there is no session or
+    /// the in-flight cap dropped it, so a caller can retry rather than
+    /// treat the frame (or a forced keyframe) as sent.
+    @discardableResult
+    func encode(_ pixelBuffer: CVPixelBuffer, forceKeyframe: Bool) -> Bool {
         let w = Int32(CVPixelBufferGetWidth(pixelBuffer))
         let h = Int32(CVPixelBufferGetHeight(pixelBuffer))
         if session == nil || w != width || h != height {
@@ -71,7 +80,7 @@ final class H264Encoder: @unchecked Sendable {
             height = h
             rebuildSession()
         }
-        guard let session else { return }
+        guard let session else { return false }
 
         // Drop rather than submit when the encoder is already behind, so a
         // slow encode can never accumulate an unbounded backlog of retained
@@ -79,7 +88,7 @@ final class H264Encoder: @unchecked Sendable {
         inFlightLock.lock()
         if inFlight >= maxInFlight {
             inFlightLock.unlock()
-            return
+            return false
         }
         inFlight += 1
         inFlightLock.unlock()
@@ -106,7 +115,9 @@ final class H264Encoder: @unchecked Sendable {
         // release the slot here or the count would leak the encoder shut.
         if status != noErr {
             completed()
+            return false
         }
+        return true
     }
 
     // completed releases one in-flight slot. Called from VT's callback

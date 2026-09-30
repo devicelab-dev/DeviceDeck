@@ -5,6 +5,9 @@ import SimCore
 /// Wraps a SimulatorKit `SimDeviceLegacyHIDClient` bound to one simulator.
 /// All Indigo messages — touch, button, key — go out through `send`.
 final class HIDClient {
+    /// The SimDevice this client is bound to; the DTUHID transport looks its
+    /// service up in the same device.
+    let device: NSObject
     private let client: NSObject
     private let sendFn: SendFn
     private let sendSel = NSSelectorFromString("sendWithMessage:freeWhenDone:completionQueue:completion:")
@@ -26,6 +29,7 @@ final class HIDClient {
             log("sendWithMessage: selector missing on SimDeviceLegacyHIDClient")
             return nil
         }
+        self.device = device
         self.client = client
         self.sendFn = unsafeBitCast(method_getImplementation(method), to: SendFn.self)
         warmServices(kit: kit)

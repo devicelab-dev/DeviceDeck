@@ -2,14 +2,19 @@ import Foundation
 import CoreGraphics
 import HIDProtocol
 import SimCore
+import DTUHID
 
-/// Maps decoded protocol frames onto the right dispatch path: digitizer
-/// for single-finger touch, the 9-arg mouse builder for two-finger, and
-/// the Indigo button/keyboard builders for everything else.
+/// Maps decoded protocol frames onto the right dispatch path. Touch, keys
+/// and hardware buttons go to `dtuhidd` once it is live (Xcode 27+, where
+/// the guest drops them on the legacy path); otherwise the legacy Indigo
+/// paths: digitizer for single-finger touch, the 9-arg mouse builder for
+/// two-finger, and the button/keyboard builders. Home and lock always use
+/// the legacy button service, which the daemon leaves working.
 final class Injector {
     private let kit: SimKit
     private let client: HIDClient
     private let digitizer: Digitizer
+    private let transport: InputTransport
 
     /// Identifier threading one touch sequence through the HID stack.
     /// Reset on `down`, reused until `up` — reusing across distinct
@@ -22,10 +27,21 @@ final class Injector {
         .down: (1, 1), .move: (6, 0), .up: (2, 2),
     ]
 
-    init(kit: SimKit, client: HIDClient) {
+    init(kit: SimKit, client: HIDClient, transport: InputTransport) {
         self.kit = kit
         self.client = client
         self.digitizer = Digitizer(kit: kit, client: client)
+        self.transport = transport
+    }
+
+    /// One touch point over the live transport.
+    private func touch(x: Double, y: Double, phase: TouchPhase, edge: HIDProtocol.Edge,
+                       identifier: UInt32) -> Bool {
+        if let dtu = transport.dtuhid {
+            dtu.send(DTUHIDWire.touch(x: x, y: y, phase: phase, edge: edge))
+            return true
+        }
+        return digitizer.send(x: x, y: y, phase: phase, edge: edge, identifier: identifier)
     }
 
     /// Execute one frame. Failures log and drop — the stream must survive
@@ -34,7 +50,7 @@ final class Injector {
         switch frame {
         case let .touch(phase, x, y, edge):
             if phase == .down { touchIdentifier &+= 1; if touchIdentifier == 0 { touchIdentifier = 1 } }
-            digitizer.send(x: x, y: y, phase: phase, edge: edge, identifier: max(touchIdentifier, 1))
+            _ = touch(x: x, y: y, phase: phase, edge: edge, identifier: max(touchIdentifier, 1))
         case let .twoFinger(phase, x1, y1, x2, y2):
             sendTwoFinger(phase: phase, x1: x1, y1: y1, x2: x2, y2: y2)
         case let .buttonPress(page, usage):
@@ -60,6 +76,10 @@ final class Injector {
     /// SimulatorKit settles multi-touch state — retry 12 × 5ms.
     private func sendTwoFinger(phase: TouchPhase, x1: Double, y1: Double,
                                x2: Double, y2: Double) {
+        if let dtu = transport.dtuhid {
+            dtu.send(DTUHIDWire.twoFinger(x1: x1, y1: y1, x2: x2, y2: y2, phase: phase))
+            return
+        }
         guard let fn = kit.mouseTwoFinger, let shape = Injector.twoFinger[phase] else {
             log("two-finger path unavailable")
             return
@@ -83,6 +103,10 @@ final class Injector {
 
     /// Volume / power / action / mute — any (page, usage) HID event.
     private func sendArbitrary(page: UInt32, usage: UInt32, op: UInt32) {
+        if let dtu = transport.dtuhid {
+            dtu.send(DTUHIDWire.button(page: page, usage: usage, down: op == Indigo.opDown))
+            return
+        }
         guard let fn = kit.hidArbitrary else {
             log("HIDArbitrary unavailable (page=\(page) usage=\(usage))")
             return
@@ -132,7 +156,9 @@ final class Injector {
     /// dropped on this stack, so it is only a fallback for Xcodes without
     /// HIDArbitrary.
     private func sendKeyEvent(usage: UInt32, op: UInt32) {
-        if let fn = kit.hidArbitrary {
+        if let dtu = transport.dtuhid {
+            dtu.send(DTUHIDWire.key(usage: usage, down: op == Indigo.opDown))
+        } else if let fn = kit.hidArbitrary {
             if let msg = fn(Indigo.targetDigitizer, 0x07, usage, op) { client.send(msg) }
         } else if let fn = kit.keyboard {
             if let msg = fn(usage, op) { client.send(msg) }
@@ -150,19 +176,22 @@ final class Injector {
     private func runGesture(_ kind: GestureKind) {
         touchIdentifier &+= 1
         let id = max(touchIdentifier, 1)
+        let sink: TouchSink = { [self] x, y, phase, edge, ident in
+            touch(x: x, y: y, phase: phase, edge: edge, identifier: ident)
+        }
         switch kind {
         case .swipeToHome:
-            digitizer.swipe(from: CGPoint(x: 0.5, y: 0.998), to: CGPoint(x: 0.5, y: 0.30),
-                            steps: 12, stepMs: 16, dwellMs: 0, edge: .bottom, identifier: id)
+            performSwipe(from: CGPoint(x: 0.5, y: 0.998), to: CGPoint(x: 0.5, y: 0.30),
+                            steps: 12, stepMs: 16, dwellMs: 0, edge: .bottom, identifier: id, sink: sink)
         case .appSwitcher:
-            digitizer.swipe(from: CGPoint(x: 0.5, y: 0.998), to: CGPoint(x: 0.5, y: 0.58),
-                            steps: 30, stepMs: 35, dwellMs: 900, edge: .bottom, identifier: id)
+            performSwipe(from: CGPoint(x: 0.5, y: 0.998), to: CGPoint(x: 0.5, y: 0.58),
+                            steps: 30, stepMs: 35, dwellMs: 900, edge: .bottom, identifier: id, sink: sink)
         case .notificationCenter:
-            digitizer.swipe(from: CGPoint(x: 0.75, y: 0.002), to: CGPoint(x: 0.75, y: 0.55),
-                            steps: 24, stepMs: 25, dwellMs: 0, edge: .top, identifier: id)
+            performSwipe(from: CGPoint(x: 0.75, y: 0.002), to: CGPoint(x: 0.75, y: 0.55),
+                            steps: 24, stepMs: 25, dwellMs: 0, edge: .top, identifier: id, sink: sink)
         case .lockScreen:
-            digitizer.swipe(from: CGPoint(x: 0.25, y: 0.002), to: CGPoint(x: 0.25, y: 0.55),
-                            steps: 24, stepMs: 25, dwellMs: 0, edge: .top, identifier: id)
+            performSwipe(from: CGPoint(x: 0.25, y: 0.002), to: CGPoint(x: 0.25, y: 0.55),
+                            steps: 24, stepMs: 25, dwellMs: 0, edge: .top, identifier: id, sink: sink)
         }
     }
 }

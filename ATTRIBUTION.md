@@ -2,6 +2,13 @@
 
 DeviceDeck is licensed under the Apache License 2.0 (see `LICENSE`), and
 includes work derived from the following open-source projects.
+
+The DeviceLab device agents DeviceDeck embeds and installs — the Android
+agent APKs (`internal/home/android/`) and the iOS agent
+(`internal/home/ios/devicelab-ios-agent/`), shipped with its maestro-runner
+dependency — are proprietary binaries, not covered by the Apache License:
+free to use, redistributed unmodified, under `LICENSE-BINARIES.md`, which
+ships with them.
 Their reverse-engineering of SimulatorKit's private HID pipeline is what
 makes host-side input injection possible; we gratefully build on it.
 
@@ -25,6 +32,13 @@ Derived material in `sidecar/Sources/devicedeck-hid/`:
   discovery recipe (`deviceIOPorts` → framebuffer display port →
   descriptor surface, with the one-shot `updateIOPorts` materialization) —
   `Sources/devicedeck-video/H264Encoder.swift`, `Framebuffer.swift`.
+- The frame-callback capture recipe (baguette commit 41648ad): registering
+  `registerScreenCallbacksWithUUID:callbackQueue:frameCallback:surfacesChangedCallback:propertiesChangedCallback:`
+  on the framebuffer display descriptor instead of polling
+  `framebufferSurface`, the `PendingCapture` coalescer that keeps at most one
+  capture queued, the idle-floor timer, and the per-capture autorelease-pool
+  drain — `Sources/devicedeck-video/ScreenCallbacks.swift`, `Capture.swift`,
+  `Sources/VideoCore/PendingCapture.swift`.
 
 ## tapflow — MIT License
 
@@ -38,6 +52,21 @@ Derived material in `sidecar/`:
 - SimulatorKit/CoreSimulator loading with Xcode-discovery fallback and the
   keyboard-service primary / HIDArbitrary-fallback key path —
   `SimKit.swift`, `Injector.swift`.
+
+## idb — MIT License
+
+https://github.com/facebook/idb — Copyright (c) Meta Platforms, Inc. and affiliates.
+
+Derived material in `sidecar/`:
+
+- The Xcode 27 `dtuhidd` input transport: the digitizer service name, the
+  `DTUHIDMessage` envelope and the `IndigoDigitizerEvent` /
+  `IndigoKeyboardButtonEvent` / `IndigoButtonEvent` payload shapes and value
+  types, the CoreSimulator 1155.4 version gate, the barrier liveness probe
+  and its timings, and the simulator-to-host XPC connection recipe
+  (`-[SimDevice lookup:error:]`, `xpc_endpoint_create_mach_port_4sim`,
+  `xpc_connection_enable_sim2host_4sim`) — `Sources/DTUHID/DTUHIDWire.swift`,
+  `Sources/devicedeck-hid/DTUHIDClient.swift`.
 
 ## Android Open Source Project — Apache License 2.0
 

@@ -71,34 +71,6 @@ struct Digitizer {
         return true
     }
 
-    /// Interpolated swipe with optional endpoint dwell. iOS discriminates
-    /// Home vs App Switcher on a bottom-edge swipe purely from velocity and
-    /// dwell, so the recipes below differ only in timing.
-    @discardableResult
-    func swipe(from start: CGPoint, to end: CGPoint, steps: Int, stepMs: UInt32,
-               dwellMs: UInt32, edge: HIDProtocol.Edge, identifier: UInt32) -> Bool {
-        guard send(x: start.x, y: start.y, phase: .down, edge: edge, identifier: identifier) else {
-            return false
-        }
-        var ok = 0
-        for i in 1...steps {
-            usleep(stepMs * 1000)
-            let t = Double(i) / Double(steps)
-            if send(x: start.x + (end.x - start.x) * t,
-                    y: start.y + (end.y - start.y) * t,
-                    phase: .move, edge: edge, identifier: identifier) { ok += 1 }
-        }
-        // Re-sending the endpoint keeps the touch alive through the
-        // recognizer's decision window even if a single move drops.
-        for _ in 0..<(dwellMs / 50) {
-            _ = send(x: end.x, y: end.y, phase: .move, edge: edge, identifier: identifier)
-            usleep(50_000)
-        }
-        usleep(stepMs * 1000)
-        let up = send(x: end.x, y: end.y, phase: .up, edge: edge, identifier: identifier)
-        return up && ok >= steps / 2
-    }
-
     private func patch(message msg: UnsafeMutableRawPointer, edge: HIDProtocol.Edge) {
         let size = malloc_size(msg)
         msg.storeBytes(of: Indigo.targetDigitizer, toByteOffset: 0x6c, as: UInt32.self)
@@ -114,4 +86,35 @@ struct Digitizer {
             msg.storeBytes(of: bit, toByteOffset: 0xdb, as: UInt8.self)
         }
     }
+}
+
+/// Sends one touch point; returns whether it went out. Both transports —
+/// the legacy digitizer and DTUHID — fit this shape.
+typealias TouchSink = (_ x: Double, _ y: Double, _ phase: TouchPhase,
+                       _ edge: HIDProtocol.Edge, _ identifier: UInt32) -> Bool
+
+/// Interpolated swipe with optional endpoint dwell, over whichever transport
+/// `sink` is. iOS discriminates Home vs App Switcher on a bottom-edge swipe
+/// purely from velocity and dwell, so the recipes differ only in timing.
+@discardableResult
+func performSwipe(from start: CGPoint, to end: CGPoint, steps: Int, stepMs: UInt32,
+                  dwellMs: UInt32, edge: HIDProtocol.Edge, identifier: UInt32,
+                  sink: TouchSink) -> Bool {
+    guard sink(start.x, start.y, .down, edge, identifier) else { return false }
+    var ok = 0
+    for i in 1...steps {
+        usleep(stepMs * 1000)
+        let t = Double(i) / Double(steps)
+        if sink(start.x + (end.x - start.x) * t, start.y + (end.y - start.y) * t,
+                .move, edge, identifier) { ok += 1 }
+    }
+    // Re-sending the endpoint keeps the touch alive through the
+    // recognizer's decision window even if a single move drops.
+    for _ in 0..<(dwellMs / 50) {
+        _ = sink(end.x, end.y, .move, edge, identifier)
+        usleep(50_000)
+    }
+    usleep(stepMs * 1000)
+    let up = sink(end.x, end.y, .up, edge, identifier)
+    return up && ok >= steps / 2
 }

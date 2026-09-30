@@ -5,6 +5,7 @@ import SimCore
 // devicedeck-video — DeviceDeck's screen capture sidecar.
 //
 // Usage: devicedeck-video <udid|booted> [fps]
+//        devicedeck-video --stdin-frames [fps]   (Android: see StdinFrames.swift)
 //
 // Captures the simulator's framebuffer IOSurface, encodes H.264 (AVCC),
 // and writes framed messages to stdout:
@@ -17,11 +18,16 @@ import SimCore
 // stdin accepts single-byte commands: 'K' forces the next frame to be a
 // keyframe (the server sends it when a new viewer joins so they can start
 // decoding without waiting out the keyframe interval). Exits 0 on stdin
-// EOF. Unchanged frames are skipped via IOSurface seed comparison.
+// EOF. Capture is driven by SimulatorKit frame callbacks when available,
+// else by polling (see Capture.swift); unchanged frames are skipped via
+// IOSurface seed comparison.
 
 let arguments = CommandLine.arguments
 guard arguments.count >= 2 else {
-    fatalStartup("usage: devicedeck-video <udid|booted> [fps]")
+    fatalStartup("usage: devicedeck-video <udid|booted> [fps]  |  devicedeck-video --stdin-frames [fps]")
+}
+if arguments[1] == StdinFrames.flag {
+    StdinFrames.run(fps: arguments.count > 2 ? max(1, min(60, Int(arguments[2]) ?? 30)) : 30)
 }
 let udid = arguments[1]
 let fps = arguments.count > 2 ? max(1, min(60, Int(arguments[2]) ?? 30)) : 30
@@ -64,27 +70,8 @@ encoder.onEncoded = { encoded in
     writer.write(type: encoded.isKeyframe ? 2 : 3, payload: encoded.avcc)
 }
 
-/// Set from the stdin reader; consumed (and cleared) by the capture loop.
-final class KeyframeRequest: @unchecked Sendable {
-    private let lock = NSLock()
-    private var pending = true // first frame is always a keyframe request
-
-    func request() {
-        lock.lock()
-        pending = true
-        lock.unlock()
-    }
-
-    func consume() -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        let was = pending
-        pending = false
-        return was
-    }
-}
-
-let keyframeRequest = KeyframeRequest()
+let capture = CaptureDriver(framebuffer: framebuffer, encoder: encoder,
+                            keyframes: KeyframeRequest(), fps: fps)
 
 // stdin command reader: 'K' → keyframe request; EOF → exit.
 DispatchQueue.global().async {
@@ -93,7 +80,7 @@ DispatchQueue.global().async {
             let data = FileHandle.standardInput.readData(ofLength: 1)
             guard !data.isEmpty else { exit(0) }
             if data[0] == UInt8(ascii: "K") {
-                keyframeRequest.request()
+                capture.requestKeyframe()
             }
         }
     }
@@ -102,49 +89,6 @@ DispatchQueue.global().async {
 OrphanWatch.start()
 
 log("capturing udid=\(udid) fps=\(fps)")
-
-// Capture loop: poll the surface at the target rate, encode when content
-// changed (seed moved) or a keyframe was requested.
-let interval = 1.0 / Double(fps)
-var lastSeed: UInt32 = 0
-var lastSurfaceID: IOSurfaceID = 0
-DispatchQueue.global(qos: .userInteractive).async {
-    while true {
-        // Each iteration drains its own autorelease pool. The loop never
-        // returns to a run loop, so without this every autoreleased
-        // object it touches — the IOSurface and CVPixelBuffer wrappers,
-        // the NSDictionary of frame properties, the framebuffer port
-        // lookups, the encoded NSData — piles up in the thread's pool
-        // and is never freed. That, not the encoder's input queue, is
-        // what grew the process to tens of GB: measured at ~70MB/s of
-        // autoreleasepool content under sustained encoding.
-        autoreleasepool {
-            let started = Date()
-            if let surface = framebuffer.currentSurface() {
-                let seed = IOSurfaceGetSeed(surface)
-                let surfaceID = IOSurfaceGetID(surface)
-                // Encode when the content changed (seed moved) or the
-                // surface was swapped — the simulator double-buffers, so a
-                // swap can carry new content under a seed that matches the
-                // other surface's. But only a keyframe *request* forces a
-                // keyframe: the swap alone must not, because the buffer
-                // ring rotates on nearly every poll even on a still screen,
-                // and forcing an IDR each time pins the encoder at max rate
-                // on static content. A delta on a static screen is a
-                // handful of bytes.
-                let force = keyframeRequest.consume()
-                if force || seed != lastSeed || surfaceID != lastSurfaceID {
-                    encoder.encode(surface, forceKeyframe: force)
-                    lastSeed = seed
-                    lastSurfaceID = surfaceID
-                }
-            }
-            let elapsed = Date().timeIntervalSince(started)
-            if elapsed < interval {
-                usleep(UInt32((interval - elapsed) * 1_000_000))
-            }
-        }
-    }
-}
+capture.start()
 
 RunLoop.main.run()

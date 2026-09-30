@@ -1,6 +1,7 @@
 import Foundation
 import HIDProtocol
 import SimCore
+import DTUHID
 
 // devicedeck-hid — DeviceDeck's input sidecar.
 //
@@ -25,11 +26,35 @@ guard kit.hasDigitizerPath else {
 guard let client = HIDClient(udid: udid, kit: kit) else {
     fatalStartup("could not attach to simulator \(udid)")
 }
-let injector = Injector(kit: kit, client: client)
+let transport = InputTransport()
+let injector = Injector(kit: kit, client: client, transport: transport)
 
-log("attached udid=\(udid) twoFinger=\(kit.mouseTwoFinger != nil) " +
-    "hidArb=\(kit.hidArbitrary != nil) legacyBtn=\(kit.legacyButton != nil) " +
-    "keyboard=\(kit.keyboard != nil)")
+// Xcode 27 (CoreSimulator 1155.4+) runs `dtuhidd` in the guest, and once it
+// is active the guest silently drops touch and keys sent the legacy way.
+// One probe here, inside the server's ready window; if the daemon is still
+// starting (it is demand-launched, and aborts on a boot that is not done),
+// keep trying in the background and switch over when it answers. Until then
+// the legacy path carries input.
+let coreSimVersion = InputTransport.loadedCoreSimulatorVersion
+if DTUHIDWire.ships(coreSimulatorVersion: coreSimVersion) {
+    if let dtu = DTUHIDClient.connect(device: client.device, attempts: 1) {
+        transport.adopt(dtu)
+    } else {
+        DispatchQueue.global(qos: .utility).async {
+            if let dtu = DTUHIDClient.connect(device: client.device, attempts: 4) {
+                transport.adopt(dtu)
+                log("input switched to dtuhidd")
+            } else {
+                log("dtuhidd unreachable — touch and keys stay on the legacy path and may be dropped")
+            }
+        }
+    }
+}
+
+log("attached udid=\(udid) coreSimulator=\(coreSimVersion ?? "?") " +
+    "transport=\(transport.dtuhid == nil ? "legacy" : "dtuhidd") " +
+    "twoFinger=\(kit.mouseTwoFinger != nil) hidArb=\(kit.hidArbitrary != nil) " +
+    "legacyBtn=\(kit.legacyButton != nil) keyboard=\(kit.keyboard != nil)")
 FileHandle.standardOutput.write(Data("ready\n".utf8))
 
 /// Blocking exact-length read; nil on EOF or short read.
