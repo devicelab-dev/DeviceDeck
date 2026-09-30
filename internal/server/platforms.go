@@ -104,6 +104,14 @@ func (r LaunchRouter) OpenURL(ctx context.Context, udid, rawURL string) error {
 	return r.IOS.OpenURL(ctx, udid, rawURL)
 }
 
+// WaitBooted implements AppLauncher with platform routing.
+func (r LaunchRouter) WaitBooted(ctx context.Context, udid string) error {
+	if platform.IsAndroidSerial(udid) {
+		return r.Android.WaitBooted(ctx, udid)
+	}
+	return r.IOS.WaitBooted(ctx, udid)
+}
+
 // appPresence reports whether an app is installed on one platform's device.
 type appPresence interface {
 	Installed(ctx context.Context, udid, appID string) bool

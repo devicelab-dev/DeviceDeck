@@ -124,11 +124,11 @@ func TestTruncateReasonKeepsRunesIntact(t *testing.T) {
 func TestInputOwnersTakeOver(t *testing.T) {
 	o := newInputOwners()
 	var kickedBy string
-	first, err := o.acquire("AAA", "tab-1", func(by string) { kickedBy = by }, false)
+	first, _, err := o.acquire("AAA", "tab-1", func(by string) { kickedBy = by }, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := o.acquire("AAA", "tab-2", nil, true)
+	second, _, err := o.acquire("AAA", "tab-2", nil, true)
 	if err != nil {
 		t.Fatalf("take over refused: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestInputOwnersTakeOver(t *testing.T) {
 		t.Error("the kicked holder's release evicted the one that took over")
 	}
 	// A holder that cannot be kicked is still replaced.
-	if _, err := o.acquire("AAA", "tab-3", nil, true); err != nil || o.heldBy("AAA") != "tab-3" {
+	if _, _, err := o.acquire("AAA", "tab-3", nil, true); err != nil || o.heldBy("AAA") != "tab-3" {
 		t.Errorf("take over from an unkickable holder: err=%v holder=%q", err, o.heldBy("AAA"))
 	}
 	second()

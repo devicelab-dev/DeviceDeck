@@ -97,8 +97,8 @@ func TestEndSessionTellsTheDriver(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = resp.Body.Close()
-	_, _, readErr := conn.Read(ctx)
-	if !strings.Contains(readErr.Error(), sessionEnded) {
+	readErr := readPastClaim(ctx, conn)
+	if readErr == nil || !strings.Contains(readErr.Error(), sessionEnded) {
 		t.Errorf("driver was not told the session ended: %v", readErr)
 	}
 	if got := s.inputs.heldBy("AAA"); got != "" {

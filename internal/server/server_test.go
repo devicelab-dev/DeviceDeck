@@ -20,24 +20,27 @@ import (
 )
 
 type fakeBackend struct {
-	opened     []string
-	openErr    error
-	devices    []sim.Device
-	devicesErr error
-	png        []byte
-	pngErr     error
-	nodes      []runner.Node
-	nodesErr   error
-	treeApp    string
-	framesErr  error
-	booted     []string
-	bootErr    error
-	launched   []string
-	launchErr  error
-	reset      []string
-	resetErr   error
-	installed  []string
-	installErr error
+	// bootWaitErr is what WaitBooted answers: a device that never finishes
+	// booting.
+	bootWaitErr error
+	opened      []string
+	openErr     error
+	devices     []sim.Device
+	devicesErr  error
+	png         []byte
+	pngErr      error
+	nodes       []runner.Node
+	nodesErr    error
+	treeApp     string
+	framesErr   error
+	booted      []string
+	bootErr     error
+	launched    []string
+	launchErr   error
+	reset       []string
+	resetErr    error
+	installed   []string
+	installErr  error
 	// failAfter, when > 0, makes SendFrame fail once that many frames
 	// have been accepted — exercises mid-gesture sidecar death.
 	failAfter int
@@ -95,6 +98,10 @@ func (f *fakeBackend) Install(_ context.Context, udid, appPath string) error {
 	return f.installErr
 }
 
+func (f *fakeBackend) WaitBooted(_ context.Context, udid string) error {
+	return f.bootWaitErr
+}
+
 func (f *fakeBackend) OpenURL(_ context.Context, udid, rawURL string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -142,6 +149,14 @@ type fakeCapture struct {
 	assertErr error
 	asserted  [][2]float64
 	waited    [][2]float64
+	fills     []string
+	locations []string
+}
+
+func (f *fakeCapture) OnLocation(udid string, lat, lon float64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.locations = append(f.locations, fmt.Sprintf("%s %g,%g", udid, lat, lon))
 }
 
 func (f *fakeCapture) Start(_ context.Context, udid, appID string) error {
@@ -192,6 +207,12 @@ func (f *fakeCapture) OnFrame(udid string, frame []byte) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.frames = append(f.frames, frame)
+}
+
+func (f *fakeCapture) OnFill(udid string, x, y float64, text string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.fills = append(f.fills, text)
 }
 
 func (f *fakeCapture) observedFrames() [][]byte {
@@ -871,6 +892,9 @@ func TestTreePayloadForeground(t *testing.T) {
 		p := treePayload(runner.Snapshot{AppState: state})
 		if p["foreground"] != wantFg {
 			t.Errorf("appState %q: foreground=%v, want %v", state, p["foreground"], wantFg)
+		}
+		if _, ok := p["chrome"]; !ok {
+			t.Error("payload must carry the chrome the device reports")
 		}
 		if p["appState"] != state {
 			t.Errorf("appState %q not echoed on payload: %v", state, p["appState"])

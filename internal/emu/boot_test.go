@@ -25,7 +25,7 @@ func TestBootLaunchesTheEmulator(t *testing.T) {
 		t.Fatalf("Boot: %v", err)
 	}
 	// The process is detached; wait for the stand-in to record its args.
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(20 * time.Second) // generous: the detached stand-in starts slowly when the whole suite runs in parallel
 	for {
 		got, _ := os.ReadFile(calls)
 		if strings.HasPrefix(string(got), "-avd Pixel_8 ") {

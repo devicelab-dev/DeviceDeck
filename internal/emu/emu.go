@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -62,7 +63,7 @@ func (c *Client) Booted(ctx context.Context) ([]sim.Device, error) {
 // jump straight to a deep-linked screen.
 func (c *Client) OpenURL(ctx context.Context, serial, rawURL string) error {
 	out, err := c.run(ctx, "adb", "-s", serial, "shell", "am", "start",
-		"-a", "android.intent.action.VIEW", "-d", rawURL)
+		"-a", "android.intent.action.VIEW", "-d", shellQuote(rawURL))
 	if err != nil {
 		return fmt.Errorf("open %s on %s: %w", rawURL, serial, err)
 	}
@@ -78,9 +79,52 @@ func (c *Client) OpenURL(ctx context.Context, serial, rawURL string) error {
 // monkey is used rather than `am start` because it needs only the
 // package name, not the activity, which a caller naming an app by its
 // bundle id does not have.
+//
+// A launch is confirmed, not assumed: the app's window must take focus. A
+// force-stop — and pm clear, which force-stops — removes the app's task
+// asynchronously, and the removal's destroy timeout (~1s later, measured)
+// kills whatever process the app has by then, a freshly started one
+// included. That left the splash screen orphaned with no app behind it,
+// and no task list shows when the window has passed. So a start that does
+// not reach the front is started again.
 func (c *Client) LaunchApp(ctx context.Context, serial, appID string) error {
+	if err := checkPackage(appID); err != nil {
+		return err
+	}
 	_, _ = c.run(ctx, "adb", "-s", serial, "shell", "am", "force-stop", appID)
-	out, err := c.run(ctx, "adb", "-s", serial, "shell", "monkey", "-p", appID,
+	for attempt := 1; ; attempt++ {
+		if err := c.startApp(ctx, serial, appID); err != nil {
+			return err
+		}
+		if c.awaitFocus(ctx, serial, appID) {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return fmt.Errorf("launch %s on %s: %w", appID, serial, ctx.Err())
+		}
+		if attempt == launchAttempts {
+			return c.slowOrDead(ctx, serial, appID)
+		}
+	}
+}
+
+// slowOrDead judges a launch whose window never took focus: an app whose
+// process is running is only slow to come forward — measured under load —
+// and counts as launched; one with no process was killed.
+func (c *Client) slowOrDead(ctx context.Context, serial, appID string) error {
+	out, err := c.run(ctx, "adb", "-s", serial, "shell", "pidof", appID)
+	if err == nil && strings.TrimSpace(string(out)) != "" {
+		return nil
+	}
+	return fmt.Errorf("launch %s on %s: the app did not start (its process is not running)", appID, serial)
+}
+
+// startApp asks the launcher intent to start appID. System keys are
+// weighted to zero: monkey's default gives them a share of its events and
+// aborts (exit 251) on a device with no hardware keys, such as a Google
+// APIs emulator image.
+func (c *Client) startApp(ctx context.Context, serial, appID string) error {
+	out, err := c.run(ctx, "adb", "-s", serial, "shell", "monkey", "--pct-syskeys", "0", "-p", appID,
 		"-c", "android.intent.category.LAUNCHER", "1")
 	if err != nil {
 		return fmt.Errorf("launch %s on %s: %w", appID, serial, err)
@@ -90,6 +134,46 @@ func (c *Client) LaunchApp(ctx context.Context, serial, appID string) error {
 		return fmt.Errorf("launch %s on %s: no launchable activity (is it installed?)", appID, serial)
 	}
 	return nil
+}
+
+// Bounds on a launch: how many starts, and how long each has to bring the
+// app's window to the front before it counts as lost.
+var (
+	launchAttempts  = 3
+	launchFocusCap  = 2 * time.Second
+	launchFocusPoll = 100 * time.Millisecond
+)
+
+// focused reports whether appID's own window has input focus.
+func (c *Client) focused(ctx context.Context, serial, appID string) bool {
+	out, err := c.run(ctx, "adb", "-s", serial, "shell", "dumpsys", "window")
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.Contains(line, "mCurrentFocus=") {
+			return strings.Contains(line, " "+appID+"/")
+		}
+	}
+	return false
+}
+
+// awaitFocus polls until appID's window has focus or the cap passes.
+func (c *Client) awaitFocus(ctx context.Context, serial, appID string) bool {
+	deadline := time.Now().Add(launchFocusCap)
+	for {
+		if c.focused(ctx, serial, appID) {
+			return true
+		}
+		if !time.Now().Before(deadline) {
+			return false
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(launchFocusPoll):
+		}
+	}
 }
 
 // Install adds an APK to the emulator. -r reinstalls over an existing copy
@@ -110,6 +194,9 @@ func (c *Client) Install(ctx context.Context, serial, apkPath string) error {
 // Installed reports whether package appID is installed on the emulator;
 // `pm path` prints its APK location only when it is.
 func (c *Client) Installed(ctx context.Context, serial, appID string) bool {
+	if checkPackage(appID) != nil {
+		return false
+	}
 	out, err := c.run(ctx, "adb", "-s", serial, "shell", "pm", "path", appID)
 	return err == nil && strings.Contains(string(out), "package:")
 }
@@ -156,6 +243,9 @@ func (c *Client) Kill(ctx context.Context, serial string) error {
 // wholesale, which is exactly the blank slate the login example specs
 // reach for today by uninstalling and reinstalling the apk.
 func (c *Client) ResetApp(ctx context.Context, serial, appID string) error {
+	if err := checkPackage(appID); err != nil {
+		return err
+	}
 	out, err := c.run(ctx, "adb", "-s", serial, "shell", "pm", "clear", appID)
 	if err != nil {
 		return fmt.Errorf("reset %s on %s: %w", appID, serial, err)
@@ -278,4 +368,27 @@ func (c *Client) prop(ctx context.Context, serial, name string) string {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// `adb shell` joins its arguments into one command line that the device's
+// shell runs, so a value that came from an API caller must never reach it
+// raw: a URL is quoted, and an app id must be a package name.
+
+// packageName is an Android application id: dot-separated segments, each
+// starting with a letter.
+var packageName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$`)
+
+// checkPackage refuses an app id that is not a package name — which also
+// keeps shell syntax out of the device's command line.
+func checkPackage(appID string) error {
+	if !packageName.MatchString(appID) {
+		return fmt.Errorf("%q is not an Android package name (e.g. com.example.app)", appID)
+	}
+	return nil
+}
+
+// shellQuote wraps s in single quotes for the device's shell, so it arrives
+// as one literal argument whatever it contains.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

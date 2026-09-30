@@ -38,6 +38,7 @@ import (
 // runServe reads as wiring.
 type serveFlags struct {
 	addr, hidPath, videoPath string
+	token                    string   // --token or DEVICEDECK_TOKEN; empty leaves the server open
 	apps                     []string // --app, repeatable
 	fps                      int
 	keepDevices, ready       bool
@@ -61,14 +62,21 @@ func parseServeFlags(args []string) (*serveFlags, error) {
 	flags.StringVar(&f.videoPath, "video-sidecar", "", "path to devicedeck-video (default: auto-discover)")
 	flags.IntVar(&f.fps, "fps", 30, "video capture frame rate")
 	flags.BoolVar(&f.keepDevices, "keep-devices", false,
-		"leave the Android emulators DeviceDeck started running on exit (iOS simulators are shut down by the test runner regardless)")
+		"leave the simulators and emulators DeviceDeck drove running on exit")
 	flags.BoolVar(&f.ready, "ready", false,
 		"resolve a device (prefer booted, else newest iOS runtime >= 26.2), bring it up, and print a machine-readable status object")
+	flags.StringVar(&f.token, "token", "",
+		"access token every request must carry (also DEVICEDECK_TOKEN); browsers open a link with ?token=… once")
 	flags.Func("app", "an app build (.app for iOS, .apk for Android) to install on a device the first "+
 		"time that app is launched there; repeat for both platforms. With --ready, a bundle id also works",
 		func(v string) error { f.apps = append(f.apps, v); return nil })
 	if err := flags.Parse(args); err != nil {
 		return nil, err
+	}
+	// From the environment rather than the flag default, so --help never
+	// prints a token that is set.
+	if f.token == "" {
+		f.token = os.Getenv("DEVICEDECK_TOKEN")
 	}
 	for _, a := range f.apps {
 		if !f.ready && !isAppFile(a) {
@@ -98,6 +106,7 @@ func runServe(args []string) error {
 	if err != nil {
 		return err
 	}
+	st.srv.SetAccessToken(opts.token)
 	httpServer := &http.Server{Addr: opts.addr, Handler: st.srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	errCh, err := listen(httpServer)
 	if err != nil {
@@ -173,10 +182,18 @@ func startRunLogs(dir, kind string, term io.Writer) (*logging.Run, error) {
 	return logging.Start(dir, kind, term, logging.Level(os.Getenv(logging.EnvLevel)))
 }
 
+// envNoUpdateCheck, set to anything, turns the update check off — the one
+// request DeviceDeck makes off this machine — for offline, CI and locked-down
+// networks.
+const envNoUpdateCheck = "DEVICEDECK_NO_UPDATE_CHECK"
+
 // announceUpdate tells the user when a newer DeviceDeck is released. It runs
 // in the background and says nothing when the check fails or the build is a
 // local one, so it never delays or clutters a start.
 func announceUpdate(ctx context.Context, client *http.Client, url, current string, w io.Writer) {
+	if os.Getenv(envNoUpdateCheck) != "" {
+		return
+	}
 	latest, err := brand.Latest(ctx, client, url)
 	if err != nil {
 		slog.Debug("update check skipped", "err", err)
@@ -215,17 +232,17 @@ func shutdown(st *stack, httpServer *http.Server, keep bool) {
 	_ = httpServer.Shutdown(ctx)
 	st.inputs.CloseAll()
 	st.videos.CloseAll()
-	// Capture the driven devices before StopAll clears them; the Android
-	// ones are DeviceDeck's to power off.
+	// Capture the driven devices before StopAll clears them; they are
+	// DeviceDeck's to power off.
 	driven := st.engines.ActiveUDIDs()
 	st.engines.StopAll(ctx)
 	if !keep {
-		// A deadline of its own: a slow engine stop (a runner relaunching
+		// A deadline of its own: a slow engine stop (an agent restarting
 		// after its simulator vanished) must not use up the time needed to
-		// power the emulators off, or they are left running.
+		// power the devices off, or they are left running.
 		offCtx, offCancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer offCancel()
-		powerOffAndroid(offCtx, driven, st.emu)
+		powerOff(offCtx, driven, st.sims, st.emu)
 	}
 	slog.Info("devicedeck stopped")
 }
@@ -274,6 +291,7 @@ type stack struct {
 	videos   *video.Manager
 	engines  *runner.Engines
 	emu      *emu.Client
+	sims     *sim.Client
 	devices  server.MultiLister
 	boots    server.BootRouter
 	launches server.LaunchRouter
@@ -320,6 +338,7 @@ func buildStack(hidBin, videoBin string, fps int, appArgs []string) (*stack, err
 		emu:     emu.NewClient(),
 	}
 	simClient := sim.NewClient()
+	st.sims = simClient
 	st.devices = server.MultiLister{simClient, st.emu}
 	st.boots = server.BootRouter{IOS: simClient, Android: st.emu}
 	st.launches = server.LaunchRouter{IOS: simClient, Android: st.emu}
@@ -330,9 +349,10 @@ func buildStack(hidBin, videoBin string, fps int, appArgs []string) (*stack, err
 		server.ScreenshotRouter{IOS: simClient, Android: st.emu},
 		frames, st.engines, st.videos, capture.NewService(st.engines))
 	st.srv.SetConsole(web.Handler(st.srv.FirstTree))
+	st.srv.SetSettings(server.SettingsRouter{IOS: simClient, Android: st.emu})
 	st.srv.SetSessionEnder(sessionEnder{engines: st.engines, videos: st.videos, inputs: st.inputs, ios: simClient, android: st.emu})
 	st.srv.SetEngineWarmer(bootThenWarm{android: st.emu, engines: st.engines},
-		engineDetail(runnerCacheDir(), st.devices, st.emu))
+		engineDetail(st.emu))
 	cat, err := apps.NewCatalog(appFiles(appArgs), appDevice{server.InstalledRouter{IOS: simClient, Android: st.emu}, st.launches})
 	if err != nil {
 		return nil, err
@@ -349,7 +369,9 @@ func greet(st *stack, env *serveEnv, opts *serveFlags, tools doctor.Env, updateU
 	ctx := context.Background()
 	local, network := localURL(opts.addr), networkURLs(opts.addr)
 	slog.Debug("devicedeck serving", "addr", opts.addr, "console", local, "network", network)
-	newWelcome(ctx, st.devices, tools, st.catalog, local, network, env.logs.Dir, env.hyper).write(out)
+	w := newWelcome(ctx, st.devices, tools, st.catalog, local, network, env.logs.Dir, env.hyper)
+	w.token = opts.token
+	w.write(out)
 	go announceUpdate(ctx, http.DefaultClient, updateURL, version.Version, out)
 	if opts.ready {
 		bringReady(ctx, st.devices, st.boots, st.launches, local, opts.readyApp(), os.Stdout)
@@ -392,11 +414,9 @@ type sessionEnder struct {
 	engines interface {
 		Stop(ctx context.Context, udid string)
 	}
-	videos interface{ Close(udid string) }
-	inputs interface{ Drop(udid string) }
-	ios    interface {
-		Shutdown(ctx context.Context, udid string) error
-	}
+	videos  interface{ Close(udid string) }
+	inputs  interface{ Drop(udid string) }
+	ios     simShutdowner
 	android androidKiller
 }
 
@@ -416,19 +436,26 @@ type androidKiller interface {
 	Kill(ctx context.Context, serial string) error
 }
 
-// powerOffAndroid kills the Android emulators among the driven devices.
-// Stopping an iOS engine shuts its simulator down — killing xcodebuild tears
-// the test session down with it — so the runner already cleans those up.
-// Android emulators are detached and outlive that, so they are the ones
-// DeviceDeck must power off itself. --keep-devices skips this; iOS is the
-// runner's either way.
-func powerOffAndroid(ctx context.Context, driven []string, emus androidKiller) {
+// simShutdowner powers off an iOS simulator.
+type simShutdowner interface {
+	Shutdown(ctx context.Context, udid string) error
+}
+
+// powerOff shuts down the devices DeviceDeck drove. Stopping an engine
+// leaves its device running on both platforms — the iOS agent is launched
+// through simctl, not an xcodebuild session whose end took the simulator
+// with it, and Android emulators are detached by design — so DeviceDeck
+// powers them off itself. --keep-devices skips this.
+func powerOff(ctx context.Context, driven []string, sims simShutdowner, emus androidKiller) {
 	for _, udid := range driven {
-		if !platform.IsAndroidSerial(udid) {
-			continue
+		var err error
+		if platform.IsAndroidSerial(udid) {
+			err = emus.Kill(ctx, udid)
+		} else {
+			err = sims.Shutdown(ctx, udid)
 		}
-		if err := emus.Kill(ctx, udid); err != nil {
-			slog.Warn("emulator shutdown on exit", "serial", udid, "err", err)
+		if err != nil {
+			slog.Warn("device shutdown on exit", "udid", udid, "err", err)
 		}
 	}
 }

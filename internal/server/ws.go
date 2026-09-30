@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"encoding/json"
+	"log/slog"
 	"net/http"
 	"time"
 	"unicode/utf8"
@@ -135,12 +137,17 @@ func (s *Server) handleInputWS(w http.ResponseWriter, r *http.Request) {
 	// One driver per device — see inputOwners. The refusal carries who
 	// holds it, because the failure it prevents is otherwise silent.
 	// ?takeover=1 disconnects the holder instead (the console's Take over).
-	release, err := s.inputs.acquire(udid, r.RemoteAddr, kicker(conn), r.URL.Query().Get("takeover") == "1")
+	release, token, err := s.inputs.acquire(udid, r.RemoteAddr, kicker(conn), r.URL.Query().Get("takeover") == "1")
 	if err != nil {
 		_ = conn.Close(websocket.StatusPolicyViolation, truncateReason(err.Error()))
 		return
 	}
 	defer release()
+	// The claim token goes to the holder, which sends it back with its
+	// HTTP actions (the device page's /act), so the server can tell them
+	// from another client's. A failed write means the socket is gone, which
+	// the read loop below finds and ends on.
+	_ = conn.Write(ctx, websocket.MessageText, claimMessage(token))
 
 	// Only after the claim: a refused connection has nothing to release,
 	// and pinging it would keep a doomed socket alive for no reason.
@@ -157,14 +164,47 @@ func (s *Server) handleInputWS(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return
 		}
-		if kind != websocket.MessageBinary || !input.ValidFrame(raw) {
-			continue
-		}
-		held.observe(raw)
-		if err := s.sendFrame(ctx, udid, raw); err != nil {
+		if err := s.inputMessage(ctx, udid, kind, raw, &held); err != nil {
 			_ = conn.Close(websocket.StatusInternalError, "sidecar unavailable")
 			return
 		}
+	}
+}
+
+// claimMessage is the text message that hands a holder its claim token.
+func claimMessage(token string) []byte {
+	b, _ := json.Marshal(map[string]string{"claim": token})
+	return b
+}
+
+// inputMessage handles one message from the input socket: a valid binary
+// frame goes to the device; anything else is ignored. The device page acts
+// through POST /act instead; this socket carries the console's live input.
+func (s *Server) inputMessage(ctx context.Context, udid string, kind websocket.MessageType, raw []byte, held *heldTouch) error {
+	if kind != websocket.MessageBinary || !input.ValidFrame(raw) {
+		return nil
+	}
+	held.observe(raw)
+	return s.sendFrame(ctx, udid, raw)
+}
+
+// inputFlusher is a FrameSender that can hold input back — the Android
+// router batches typed characters into one driver call — and can be told
+// to send it now.
+type inputFlusher interface {
+	Flush(ctx context.Context, udid string) error
+}
+
+// flushInput pushes any input the frame sender is holding for udid to the
+// device. A failure is logged, not fatal: the mark is recorded anyway, and
+// the settle that follows reports what the device actually shows.
+func (s *Server) flushInput(ctx context.Context, udid string) {
+	f, ok := s.frames.(inputFlusher)
+	if !ok {
+		return
+	}
+	if err := f.Flush(ctx, udid); err != nil {
+		slog.Warn("input flush failed", "udid", udid, "err", err)
 	}
 }
 

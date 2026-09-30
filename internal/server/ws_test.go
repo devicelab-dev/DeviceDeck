@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -143,7 +144,7 @@ func TestInputWSClosesOnSidecarFailure(t *testing.T) {
 	if err := conn.Write(ctx, websocket.MessageBinary, frame); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := conn.Read(ctx); err == nil {
+	if err := readPastClaim(ctx, conn); err == nil {
 		t.Error("expected close after sidecar failure")
 	}
 }
@@ -558,7 +559,7 @@ func TestInputWSTakeOverKicksHolder(t *testing.T) {
 		t.Fatalf("take-over dial: %v", err)
 	}
 	defer second.CloseNow()
-	_, _, readErr := first.Read(ctx)
+	readErr := readPastClaim(ctx, first)
 	if status := websocket.CloseStatus(readErr); status != websocket.StatusPolicyViolation {
 		t.Fatalf("holder close status = %v, want policy violation: %v", status, readErr)
 	}
@@ -571,5 +572,90 @@ func TestInputWSTakeOverKicksHolder(t *testing.T) {
 	}
 	for len(backend.sentFrames()) <= sent {
 		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// readPastClaim reads an input socket past the claim message the server
+// sends a new holder, returning the first error — the close a test waits for.
+func readPastClaim(ctx context.Context, conn *websocket.Conn) error {
+	for {
+		kind, msg, err := conn.Read(ctx)
+		if err != nil {
+			return err
+		}
+		if kind != websocket.MessageText || !strings.Contains(string(msg), `"claim"`) {
+			return nil
+		}
+	}
+}
+
+// A new holder is handed its claim token; an action carrying it is the
+// holder's own, and one without it (or with another) is let through but
+// flagged to the caller.
+func TestClaimTokenFlagsForeignActions(t *testing.T) {
+	srv := wsServer(t, &fakeBackend{}, &fakeVideo{frames: make(chan []byte)})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	tap := func(token string) *http.Response {
+		t.Helper()
+		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, srv.URL+"/api/devices/AAA/tap",
+			strings.NewReader(`{"x":0.5,"y":0.5}`))
+		if token != "" {
+			req.Header.Set(ClaimHeader, token)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		return resp
+	}
+	if resp := tap(""); resp.Header.Get(WarningHeader) != "" || resp.StatusCode != http.StatusOK {
+		t.Errorf("free device: status %d, warning %q", resp.StatusCode, resp.Header.Get(WarningHeader))
+	}
+
+	conn, _, err := websocket.Dial(ctx, wsAddr(srv, "/api/devices/AAA/input"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseNow()
+	kind, msg, err := conn.Read(ctx)
+	if err != nil || kind != websocket.MessageText {
+		t.Fatalf("claim message: %v %v", kind, err)
+	}
+	var claim struct {
+		Claim string `json:"claim"`
+	}
+	if err := json.Unmarshal(msg, &claim); err != nil || len(claim.Claim) != 24 {
+		t.Fatalf("claim = %s (%v)", msg, err)
+	}
+
+	if resp := tap(claim.Claim); resp.Header.Get(WarningHeader) != "" {
+		t.Errorf("holder's own action flagged: %q", resp.Header.Get(WarningHeader))
+	}
+	for _, other := range []string{"", "not-the-token"} {
+		resp := tap(other)
+		if w := resp.Header.Get(WarningHeader); resp.StatusCode != http.StatusOK || !strings.Contains(w, "held by") {
+			t.Errorf("foreign action (token %q): status %d, warning %q", other, resp.StatusCode, w)
+		}
+	}
+}
+
+func TestForeignOnFreeAndHeldDevices(t *testing.T) {
+	o := newInputOwners()
+	if o.foreign("AAA", "") != "" {
+		t.Error("a free device has no holder to warn about")
+	}
+	release, token, err := o.acquire("AAA", "tab-1", nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.foreign("AAA", token) != "" || o.foreign("AAA", "x") != "tab-1" {
+		t.Error("token match or mismatch misread")
+	}
+	release()
+	if o.foreign("AAA", "x") != "" {
+		t.Error("released device still reported held")
 	}
 }

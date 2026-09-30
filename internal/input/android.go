@@ -59,6 +59,29 @@ func (r *Router) SendFrame(ctx context.Context, udid string, frame []byte) error
 	return tr.handle(inj, frame)
 }
 
+// Flush sends any typed text still buffered for udid to the device now,
+// rather than when the idle timer fires. The server calls it when a page
+// marks the end of an action, so "delivered" means on the device, not
+// waiting in the batch. iOS frames are never buffered.
+func (r *Router) Flush(ctx context.Context, udid string) error {
+	if !platform.IsAndroidSerial(udid) {
+		return nil
+	}
+	r.mu.Lock()
+	tr := r.translators[udid]
+	r.mu.Unlock()
+	if tr == nil {
+		return nil
+	}
+	inj, err := r.resolve(ctx, udid)
+	if err != nil {
+		return err
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	return tr.flushTextLocked(inj)
+}
+
 // tapSlopPx is the maximum down→up travel that still counts as a tap;
 // anything farther becomes a swipe. Matches Android's own touch slop
 // ballpark at typical densities.

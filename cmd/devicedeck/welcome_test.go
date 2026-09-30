@@ -277,3 +277,28 @@ func TestWelcomeEndsWithWhereToOpen(t *testing.T) {
 		t.Errorf("OPEN should come after the other sections and before Logs:\n%s", text)
 	}
 }
+
+// With an access token set, the links a person clicks carry it, and the
+// tests section says how a test passes it.
+func TestWelcomeLinksCarryTheToken(t *testing.T) {
+	w := welcome{local: "http://127.0.0.1:8787", network: []string{"http://10.0.4.21:8787"}, token: "a b",
+		booted: []sim.Device{{UDID: "SIM", Name: "iPhone", OS: "iOS 26.2", Booted: true}}, total: 1}
+	var out strings.Builder
+	w.write(&out)
+	for _, want := range []string{
+		"Console    http://127.0.0.1:8787?token=a+b",
+		"http://10.0.4.21:8787?token=a+b",
+		"http://127.0.0.1:8787/device/SIM?token=a+b",
+		"Token      add ?token=",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("missing %q:\n%s", want, out.String())
+		}
+	}
+	if got := w.withToken("http://x/device/S?app=com.x"); got != "http://x/device/S?app=com.x&token=a+b" {
+		t.Errorf("withToken with a query = %q", got)
+	}
+	if got := (welcome{}).withToken("http://x"); got != "http://x" {
+		t.Errorf("no token = %q", got)
+	}
+}

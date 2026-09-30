@@ -100,6 +100,12 @@ func TestLaunchRouter(t *testing.T) {
 	if len(android.opens) != 1 || len(ios.opens) != 1 {
 		t.Errorf("openurl routing wrong: ios=%v android=%v", ios.opens, android.opens)
 	}
+	// WaitBooted routes by the same rule.
+	_ = r.WaitBooted(context.Background(), "emulator-5554")
+	_ = r.WaitBooted(context.Background(), "EB69B42A-4763")
+	if len(android.waits) != 1 || len(ios.waits) != 1 {
+		t.Errorf("boot-wait routing wrong: ios=%v android=%v", ios.waits, android.waits)
+	}
 }
 
 func TestValidateAppFile(t *testing.T) {
@@ -127,6 +133,12 @@ type recordingLauncher struct {
 	resets   []string
 	installs []string
 	opens    []string
+	waits    []string
+}
+
+func (l *recordingLauncher) WaitBooted(_ context.Context, udid string) error {
+	l.waits = append(l.waits, udid)
+	return nil
 }
 
 func (l *recordingLauncher) LaunchApp(_ context.Context, udid, appID string) error {

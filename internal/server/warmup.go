@@ -40,7 +40,7 @@ type warmups struct {
 }
 
 // SetEngineWarmer lets opening a device start its engine in the background.
-// detail describes the start for a person, such as a first-time runner build.
+// detail describes the start for a person, such as an emulator still booting.
 func (s *Server) SetEngineWarmer(w EngineWarmer, detail func(udid string) string) {
 	s.warm = &warmups{status: map[string]EngineStatus{}, warmer: w, detail: detail, now: time.Now}
 }

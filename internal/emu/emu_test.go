@@ -101,11 +101,93 @@ func TestBootArgsRunHeadless(t *testing.T) {
 
 func TestLaunchApp(t *testing.T) {
 	c := &Client{run: fixture(map[string]string{
-		"adb -s emulator-5554 shell am force-stop com.example":                                   "",
-		"adb -s emulator-5554 shell monkey -p com.example -c android.intent.category.LAUNCHER 1": "Events injected: 1\n",
+		"adb -s emulator-5554 shell am force-stop com.example":                                                   "",
+		"adb -s emulator-5554 shell monkey --pct-syskeys 0 -p com.example -c android.intent.category.LAUNCHER 1": "Events injected: 1\n",
+		"adb -s emulator-5554 shell dumpsys window":                                                              "  mCurrentFocus=Window{1 u0 com.example/com.example.MainActivity}\n",
 	})}
 	if err := c.LaunchApp(context.Background(), "emulator-5554", "com.example"); err != nil {
 		t.Fatalf("LaunchApp: %v", err)
+	}
+}
+
+// A start killed by the old task's removal never reaches the front, so it
+// is started again; one that never does fails after the last attempt.
+func TestLaunchAppConfirmsFocus(t *testing.T) {
+	defer func(n int, cp, p time.Duration) { launchAttempts, launchFocusCap, launchFocusPoll = n, cp, p }(launchAttempts, launchFocusCap, launchFocusPoll)
+	launchAttempts, launchFocusCap, launchFocusPoll = 3, 5*time.Millisecond, time.Millisecond
+	tests := []struct {
+		name       string
+		focusAfter int // starts before the window comes to the front; 0 = never
+		dumpFails  bool
+		alive      bool // the app's process runs even without focus
+		wantStarts int
+		wantErr    bool
+	}{
+		{"first start comes to the front", 1, false, false, 1, false},
+		{"killed once, second start holds", 2, false, false, 2, false},
+		{"never comes to the front, process dead", 0, false, false, 3, true},
+		{"never comes to the front, process alive: slow, not dead", 0, false, true, 3, false},
+		{"window state unreadable", 0, true, false, 3, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			starts := 0
+			c := &Client{run: func(_ context.Context, _ string, args ...string) ([]byte, error) {
+				switch cmd := strings.Join(args, " "); {
+				case strings.Contains(cmd, "monkey"):
+					starts++
+					return []byte("Events injected: 1\n"), nil
+				case strings.Contains(cmd, "pidof"):
+					if tt.alive {
+						return []byte("4242\n"), nil
+					}
+					return nil, errors.New("exit status 1")
+				case strings.HasSuffix(cmd, "dumpsys window"):
+					if tt.dumpFails {
+						return nil, errors.New("adb gone")
+					}
+					if tt.focusAfter > 0 && starts >= tt.focusAfter {
+						return []byte("mCurrentFocus=Window{1 u0 com.example/.Main}\n"), nil
+					}
+					return []byte("mCurrentFocus=null\nmFocusedApp=x com.example/.Main\n"), nil
+				}
+				return nil, nil
+			}}
+			err := c.LaunchApp(context.Background(), "emulator-5554", "com.example")
+			if (err != nil) != tt.wantErr || starts != tt.wantStarts {
+				t.Errorf("err = %v, starts = %d; want err %v, starts %d", err, starts, tt.wantErr, tt.wantStarts)
+			}
+		})
+	}
+}
+
+// A cancelled launch stops at once instead of retrying.
+func TestLaunchAppCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	starts := 0
+	c := &Client{run: func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if strings.Contains(strings.Join(args, " "), "monkey") {
+			starts++
+			cancel()
+		}
+		return []byte("mCurrentFocus=null\n"), nil
+	}}
+	if err := c.LaunchApp(ctx, "emulator-5554", "com.example"); err == nil || starts != 1 {
+		t.Errorf("err = %v, starts = %d; want an error after one start", err, starts)
+	}
+}
+
+// Another app's window holding focus is not this app coming to the front.
+func TestFocusedMatchesOnlyTheApp(t *testing.T) {
+	c := &Client{run: fixture(map[string]string{
+		"adb -s emulator-5554 shell dumpsys window": "  mCurrentFocus=Window{1 u0 com.example.other/.Main}\n",
+	})}
+	if c.focused(context.Background(), "emulator-5554", "com.example") {
+		t.Error("a package sharing the prefix must not count")
+	}
+	c = &Client{run: fixture(map[string]string{"adb -s emulator-5554 shell dumpsys window": "no focus line\n"})}
+	if c.focused(context.Background(), "emulator-5554", "com.example") {
+		t.Error("no focus line means not focused")
 	}
 }
 
@@ -113,8 +195,8 @@ func TestLaunchApp(t *testing.T) {
 // error has to be read out of the output rather than the exit code.
 func TestLaunchAppDetectsMissingActivity(t *testing.T) {
 	c := &Client{run: fixture(map[string]string{
-		"adb -s emulator-5554 shell am force-stop com.nope":                                   "",
-		"adb -s emulator-5554 shell monkey -p com.nope -c android.intent.category.LAUNCHER 1": "** No activities found to run, monkey aborted.",
+		"adb -s emulator-5554 shell am force-stop com.nope":                                                   "",
+		"adb -s emulator-5554 shell monkey --pct-syskeys 0 -p com.nope -c android.intent.category.LAUNCHER 1": "** No activities found to run, monkey aborted.",
 	})}
 	err := c.LaunchApp(context.Background(), "emulator-5554", "com.nope")
 	if err == nil || !strings.Contains(err.Error(), "no launchable activity") {
@@ -125,7 +207,8 @@ func TestLaunchAppDetectsMissingActivity(t *testing.T) {
 // A force-stop failure means it was not running; only the launch matters.
 func TestLaunchAppIgnoresForceStopFailure(t *testing.T) {
 	c := &Client{run: fixture(map[string]string{
-		"adb -s emulator-5554 shell monkey -p com.example -c android.intent.category.LAUNCHER 1": "Events injected: 1\n",
+		"adb -s emulator-5554 shell monkey --pct-syskeys 0 -p com.example -c android.intent.category.LAUNCHER 1": "Events injected: 1\n",
+		"adb -s emulator-5554 shell dumpsys window":                                                              "mCurrentFocus=Window{1 u0 com.example/.Main}\n",
 	})}
 	if err := c.LaunchApp(context.Background(), "emulator-5554", "com.example"); err != nil {
 		t.Errorf("force-stop failure should not fail the launch: %v", err)
@@ -363,5 +446,45 @@ func TestWaitBooted(t *testing.T) {
 	}
 	if never.BootCompleted(context.Background(), "emulator-5554") {
 		t.Error("0 is not booted")
+	}
+}
+
+// Values from API callers reach the device's shell only as one literal
+// argument: a URL is single-quoted, and an app id must be a package name.
+func TestShellInjectionGuards(t *testing.T) {
+	var got []string
+	c := &Client{run: func(_ context.Context, name string, args ...string) ([]byte, error) {
+		got = append([]string{name}, args...)
+		return nil, nil
+	}}
+	if err := c.OpenURL(context.Background(), "emulator-5554", "https://x.test/a?b=1;reboot 'x'"); err != nil {
+		t.Fatal(err)
+	}
+	if last := got[len(got)-1]; last != `'https://x.test/a?b=1;reboot '\''x'\'''` {
+		t.Errorf("url argument = %s", last)
+	}
+	ran := false
+	guarded := &Client{run: func(context.Context, string, ...string) ([]byte, error) {
+		ran = true
+		return nil, nil
+	}}
+	for _, bad := range []string{"com.x;reboot", "com.x && rm -rf /", "$(id)", "nodots", "1com.x", "com..x", ""} {
+		if err := guarded.LaunchApp(context.Background(), "emulator-5554", bad); err == nil || !strings.Contains(err.Error(), "package name") {
+			t.Errorf("LaunchApp(%q) = %v", bad, err)
+		}
+		if err := guarded.ResetApp(context.Background(), "emulator-5554", bad); err == nil {
+			t.Errorf("ResetApp(%q) accepted", bad)
+		}
+		if guarded.Installed(context.Background(), "emulator-5554", bad) {
+			t.Errorf("Installed(%q) = true", bad)
+		}
+	}
+	if ran {
+		t.Error("adb ran for an invalid app id")
+	}
+	for _, good := range []string{"com.testhiveapp", "org.reactnavigation.playground", "a.b_c.D9"} {
+		if err := checkPackage(good); err != nil {
+			t.Errorf("checkPackage(%q) = %v", good, err)
+		}
 	}
 }

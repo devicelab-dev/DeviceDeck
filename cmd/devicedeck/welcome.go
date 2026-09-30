@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -38,6 +39,9 @@ type welcome struct {
 	tools   []doctor.Result
 	logs    string
 	fancy   bool
+	// token is the access token, when one is set: the links carry it so a
+	// browser opening one gets in.
+	token string
 }
 
 // newWelcome gathers the device picture and checks the tools, side by side
@@ -73,11 +77,27 @@ func (w welcome) write(out io.Writer) {
 	w.claude(&b)
 	w.section(&b, "USE WITH TESTS")
 	fmt.Fprintf(&b, "    %-10s %s\n", "baseURL", w.link(w.local+"/device/<udid>"))
+	if w.token != "" {
+		fmt.Fprintf(&b, "    %-10s %s\n", "Token", brand.Dim("add ?token=… to the first page a test opens, "+
+			"or send Authorization: Bearer … — the links below carry it", w.fancy))
+	}
 	// Last, so the address to open is what is left on screen.
 	w.open(&b)
 	fmt.Fprintf(&b, "\n  %s  %s\n  %s  %s\n\n", brand.Dim("Logs", w.fancy), tildeHome(w.logs),
 		brand.Dim("Stop", w.fancy), "Ctrl-C")
 	_, _ = io.WriteString(out, b.String())
+}
+
+// withToken adds the access token to a link when one is set.
+func (w welcome) withToken(u string) string {
+	if w.token == "" {
+		return u
+	}
+	sep := "?"
+	if strings.Contains(u, "?") {
+		sep = "&"
+	}
+	return u + sep + "token=" + url.QueryEscape(w.token)
 }
 
 // section starts a block with a blank line and a bold heading.
@@ -87,13 +107,13 @@ func (w welcome) section(b *strings.Builder, title string) {
 
 func (w welcome) open(b *strings.Builder) {
 	w.section(b, "OPEN")
-	fmt.Fprintf(b, "    %-10s %s\n", "Console", w.link(w.local))
+	fmt.Fprintf(b, "    %-10s %s\n", "Console", w.link(w.withToken(w.local)))
 	for i, u := range w.network {
 		label := ""
 		if i == 0 {
 			label = "Network"
 		}
-		fmt.Fprintf(b, "    %-10s %s\n", label, w.link(u))
+		fmt.Fprintf(b, "    %-10s %s\n", label, w.link(w.withToken(u)))
 	}
 }
 
@@ -111,10 +131,10 @@ func (w welcome) devices(b *strings.Builder) {
 	for _, d := range w.booted {
 		// Pad before styling: colour codes are invisible but counted.
 		page := w.local + "/device/" + d.UDID
-		fmt.Fprintf(b, "    %-*s  %s %s\n", width, d.Name, brand.Dim(fmt.Sprintf("%-9s", d.OS), w.fancy), w.link(page))
+		fmt.Fprintf(b, "    %-*s  %s %s\n", width, d.Name, brand.Dim(fmt.Sprintf("%-9s", d.OS), w.fancy), w.link(w.withToken(page)))
 		for _, a := range w.appsFor(d.UDID) {
 			fmt.Fprintf(b, "    %-*s  %s %s\n", width, "", brand.Dim(fmt.Sprintf("%-9s", "with app"), w.fancy),
-				w.link(page+"?app="+a.ID+"&reset=yes"))
+				w.link(w.withToken(page+"?app="+a.ID+"&reset=yes")))
 		}
 	}
 	fmt.Fprintf(b, "    %s\n", brand.Dim(fmt.Sprintf("%d of %d booted · /device/booted opens the only one", len(w.booted), w.total), w.fancy))

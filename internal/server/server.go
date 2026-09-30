@@ -43,6 +43,10 @@ type AppLauncher interface {
 	ResetApp(ctx context.Context, udid, appID string) error
 	Install(ctx context.Context, udid, appPath string) error
 	OpenURL(ctx context.Context, udid, rawURL string) error
+	// WaitBooted returns once the device has finished booting: both
+	// platforms list a device as booted seconds before an install or a
+	// launch can succeed on it.
+	WaitBooted(ctx context.Context, udid string) error
 }
 
 // Screenshotter captures a device's screen as PNG bytes.
@@ -69,6 +73,8 @@ type CaptureService interface {
 	WaitVisible(udid string, x, y float64) error
 	Status(udid string) (recording bool, steps []capture.Step)
 	OnFrame(udid string, frame []byte)
+	OnFill(udid string, x, y float64, text string)
+	OnLocation(udid string, lat, lon float64)
 }
 
 // Server routes the HTTP API onto the injected device backends.
@@ -82,10 +88,16 @@ type Server struct {
 	video       VideoSource
 	capture     CaptureService
 	console     http.Handler
-	apps        AppProvider
-	warm        *warmups
+	// token, when set, is the access token every request must carry.
+	token string
+	apps  AppProvider
+	// settings sets appearance, location and permissions; nil answers 501.
+	settings DeviceSettings
+	warm     *warmups
 	// inputs enforces one driver per device.
 	inputs *inputOwners
+	// acts remembers recent /act results, so a retried action is not done twice.
+	acts *recentActs
 	// ender ends a device's session and powers it off; nil disables it.
 	ender SessionEnder
 	// launched remembers the apps launched on each device, so opening a
@@ -111,6 +123,7 @@ func New(devices DeviceLister, boot DeviceBooter, launch AppLauncher, screenshot
 		video:       video,
 		capture:     cap,
 		inputs:      newInputOwners(),
+		acts:        newRecentActs(),
 		sleep:       time.Sleep,
 	}
 }
@@ -159,15 +172,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/devices/{udid}/shutdown", s.handleEndSession)
 	mux.HandleFunc("GET /api/devices/{udid}/engine", s.handleEngineStatus)
 	mux.HandleFunc("POST /api/devices/{udid}/openurl", s.handleOpenURL)
+	mux.HandleFunc("POST /api/devices/{udid}/settings", s.watchForeign(s.handleSettings))
 	mux.HandleFunc("GET /api/devices/{udid}/screenshot", s.handleScreenshot)
 	mux.HandleFunc("GET /api/devices/{udid}/tree", s.handleTree)
 	mux.HandleFunc("GET /api/devices/{udid}/video", s.handleVideoWS)
 	mux.HandleFunc("GET /api/devices/{udid}/input", s.handleInputWS)
-	mux.HandleFunc("POST /api/devices/{udid}/tap", s.handleTap)
-	mux.HandleFunc("POST /api/devices/{udid}/swipe", s.handleSwipe)
-	mux.HandleFunc("POST /api/devices/{udid}/gesture", s.handleGesture)
-	mux.HandleFunc("POST /api/devices/{udid}/key", s.handleKey)
-	mux.HandleFunc("POST /api/devices/{udid}/button", s.handleButton)
+	mux.HandleFunc("POST /api/devices/{udid}/act", s.watchForeign(s.handleAct))
+	mux.HandleFunc("POST /api/devices/{udid}/tap", s.watchForeign(s.handleTap))
+	mux.HandleFunc("POST /api/devices/{udid}/swipe", s.watchForeign(s.handleSwipe))
+	mux.HandleFunc("POST /api/devices/{udid}/gesture", s.watchForeign(s.handleGesture))
+	mux.HandleFunc("POST /api/devices/{udid}/key", s.watchForeign(s.handleKey))
+	mux.HandleFunc("POST /api/devices/{udid}/button", s.watchForeign(s.handleButton))
 	mux.HandleFunc("POST /api/devices/{udid}/capture/start", s.handleCaptureStart)
 	mux.HandleFunc("POST /api/devices/{udid}/capture/stop", s.handleCaptureStop)
 	mux.HandleFunc("POST /api/devices/{udid}/capture/assert", s.handleCaptureAssert)
@@ -175,7 +190,7 @@ func (s *Server) Handler() http.Handler {
 	if s.console != nil {
 		mux.Handle("GET /", s.console)
 	}
-	return logRequests(rejectBadDeviceIDs(mux))
+	return logRequests(requireToken(s.token, rejectBadDeviceIDs(mux)))
 }
 
 // rejectBadDeviceIDs answers an /api/devices/<id>/… request whose id no
@@ -207,8 +222,23 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"devices": devices})
 }
 
+// deviceOpTimeout bounds a command that changes a device once it has started.
+const deviceOpTimeout = 5 * time.Minute
+
+// deviceOp is the context for a command that changes the device — boot,
+// install, reset, launch, a setting, a link. It outlives the request: a
+// client that goes away mid-command (a test that ended, a closed tab) must
+// not kill simctl or adb halfway and leave a half-installed app or a
+// half-applied setting. Waits and reads keep the request's context, so they
+// stop with the client.
+func deviceOp(r *http.Request) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(r.Context()), deviceOpTimeout)
+}
+
 func (s *Server) handleBoot(w http.ResponseWriter, r *http.Request) {
-	if err := s.boot.Boot(r.Context(), r.PathValue("udid")); err != nil {
+	ctx, cancel := deviceOp(r)
+	defer cancel()
+	if err := s.boot.Boot(ctx, r.PathValue("udid")); err != nil {
 		httpError(w, http.StatusBadGateway, err)
 		return
 	}
@@ -267,6 +297,24 @@ func (s *Server) prepareApp(ctx context.Context, udid string, req launchRequest)
 	return http.StatusBadGateway, s.launch.Install(ctx, udid, req.AppFile)
 }
 
+// readyToLaunch installs the app where needed and has the device's UI engine
+// running before the launch. On iOS the engine's agent starts as an app of
+// its own, so starting it after the launch — on the first tree read — would
+// push the app just launched into the background, and the launch would wait
+// in vain for its screen. A running engine costs one quick read here.
+func (s *Server) readyToLaunch(ctx context.Context, udid string, req launchRequest) (int, error) {
+	if err := s.launch.WaitBooted(ctx, udid); err != nil {
+		return http.StatusBadGateway, err
+	}
+	if status, err := s.prepareApp(ctx, udid, req); err != nil {
+		return status, err
+	}
+	if _, err := s.trees.Snapshot(ctx, udid, ""); err != nil {
+		return http.StatusBadGateway, fmt.Errorf("start the device's UI engine: %w", err)
+	}
+	return 0, nil
+}
+
 // handleLaunchApp starts an app at a first-run screen by default — data
 // wiped, logged out — so a caller begins from the clean slate a new
 // automation session expects. ?reset=no resumes the app as it was left.
@@ -280,7 +328,9 @@ func (s *Server) handleLaunchApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	udid := r.PathValue("udid")
-	if status, err := s.prepareApp(r.Context(), udid, req); err != nil {
+	ctx, cancel := deviceOp(r)
+	defer cancel()
+	if status, err := s.readyToLaunch(ctx, udid, req); err != nil {
 		httpError(w, status, err)
 		return
 	}
@@ -292,12 +342,12 @@ func (s *Server) handleLaunchApp(w http.ResponseWriter, r *http.Request) {
 	// ?reset=no to resume instead, launching onto whatever the last session
 	// left — for continuing a flow or inspecting current state.
 	if r.URL.Query().Get("reset") != "no" {
-		if err := s.launch.ResetApp(r.Context(), udid, req.App); err != nil {
+		if err := s.launch.ResetApp(ctx, udid, req.App); err != nil {
 			httpError(w, http.StatusBadGateway, err)
 			return
 		}
 	}
-	if err := s.launch.LaunchApp(r.Context(), udid, req.App); err != nil {
+	if err := s.launch.LaunchApp(ctx, udid, req.App); err != nil {
 		httpError(w, http.StatusBadGateway, err)
 		return
 	}
@@ -327,7 +377,13 @@ func (s *Server) handleInstallApp(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, err)
 		return
 	}
-	if err := s.launch.Install(r.Context(), udid, req.AppFile); err != nil {
+	ctx, cancel := deviceOp(r)
+	defer cancel()
+	if err := s.launch.WaitBooted(ctx, udid); err != nil {
+		httpError(w, http.StatusBadGateway, err)
+		return
+	}
+	if err := s.launch.Install(ctx, udid, req.AppFile); err != nil {
 		httpError(w, http.StatusBadGateway, err)
 		return
 	}
@@ -342,6 +398,22 @@ func (s *Server) snapshotter(udid, app string) runner.Snapshotter {
 	}
 }
 
+// appIdler is a tree source that can wait for the app to finish its work.
+type appIdler interface {
+	Idle(ctx context.Context, udid, appBundleID string) error
+}
+
+// settleFor is the settle configuration for one device and app: the
+// server's timings, plus the app's own idle signal where the tree source
+// has one.
+func (s *Server) settleFor(udid, app string) runner.SettleOptions {
+	opts := s.settle
+	if i, ok := s.trees.(appIdler); ok {
+		opts.Idle = func(ctx context.Context) error { return i.Idle(ctx, udid, app) }
+	}
+	return opts
+}
+
 func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 	png, err := s.screenshots.Screenshot(r.Context(), r.PathValue("udid"))
 	if err != nil {
@@ -353,8 +425,8 @@ func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTree(w http.ResponseWriter, r *http.Request) {
-	udid := r.PathValue("udid")
-	snap := s.snapshotter(udid, r.URL.Query().Get("app"))
+	udid, app := r.PathValue("udid"), r.URL.Query().Get("app")
+	snap := s.snapshotter(udid, app)
 	var got runner.Snapshot
 	var err error
 	// ?after=<interaction hash> turns the poll into a barrier: the
@@ -364,7 +436,7 @@ func (s *Server) handleTree(w http.ResponseWriter, r *http.Request) {
 	// that waits on the page's own requests — playwright-mcp does —
 	// waits for the device without knowing it.
 	if after, held := r.URL.Query()["after"]; held {
-		got, err = runner.Settle(r.Context(), snap, after[0], s.settle)
+		got, err = runner.Settle(r.Context(), snap, after[0], s.settleFor(udid, app))
 	} else {
 		got, err = snap(r.Context())
 	}
@@ -404,6 +476,10 @@ func treePayload(snap runner.Snapshot) map[string]any {
 		// signal must not read as "backgrounded" and block nothing.
 		"foreground": snap.AppState == "" || snap.AppState == "runningForeground",
 		"appState":   snap.AppState,
+		// Where the system draws over the app (Android's status bar and
+		// keyboard, left out of its tree), so a client can tell a target it
+		// cannot tap from one it can.
+		"chrome": snap.Chrome,
 	}
 }
 
@@ -411,7 +487,7 @@ func treePayload(snap runner.Snapshot) map[string]any {
 // waits for quiet alone — there is no earlier screen to have moved on
 // from — under the same cap as any other held tree.
 func (s *Server) FirstTree(ctx context.Context, udid, app string) ([]byte, error) {
-	got, err := runner.Settle(ctx, s.snapshotter(udid, app), "", s.settle)
+	got, err := runner.Settle(ctx, s.snapshotter(udid, app), "", s.settleFor(udid, app))
 	if err != nil {
 		return nil, err
 	}
@@ -433,13 +509,7 @@ func (s *Server) handleTap(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, fmt.Errorf("x and y must be normalized 0-1"))
 		return
 	}
-	udid := r.PathValue("udid")
-	if err := s.sendFrame(r.Context(), udid, input.Touch(input.TouchDown, req.X, req.Y, input.EdgeNone)); err != nil {
-		httpError(w, http.StatusBadGateway, err)
-		return
-	}
-	s.sleep(durationOrDefault(req.DurationMs, 60))
-	if err := s.sendFrame(r.Context(), udid, input.Touch(input.TouchUp, req.X, req.Y, input.EdgeNone)); err != nil {
+	if err := s.sendTap(r.Context(), r.PathValue("udid"), req.X, req.Y, req.DurationMs); err != nil {
 		httpError(w, http.StatusBadGateway, err)
 		return
 	}
@@ -465,24 +535,7 @@ func (s *Server) handleSwipe(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	udid := r.PathValue("udid")
-	const steps = 10
-	stepPause := durationOrDefault(req.DurationMs, 250) / steps
-	if err := s.sendFrame(r.Context(), udid, input.Touch(input.TouchDown, req.FromX, req.FromY, input.EdgeNone)); err != nil {
-		httpError(w, http.StatusBadGateway, err)
-		return
-	}
-	for i := 1; i <= steps; i++ {
-		s.sleep(stepPause)
-		t := float64(i) / steps
-		x := req.FromX + (req.ToX-req.FromX)*t
-		y := req.FromY + (req.ToY-req.FromY)*t
-		if err := s.sendFrame(r.Context(), udid, input.Touch(input.TouchMove, x, y, input.EdgeNone)); err != nil {
-			httpError(w, http.StatusBadGateway, err)
-			return
-		}
-	}
-	if err := s.sendFrame(r.Context(), udid, input.Touch(input.TouchUp, req.ToX, req.ToY, input.EdgeNone)); err != nil {
+	if err := s.sendSwipe(r.Context(), r.PathValue("udid"), req.FromX, req.FromY, req.ToX, req.ToY, req.DurationMs); err != nil {
 		httpError(w, http.StatusBadGateway, err)
 		return
 	}
@@ -578,7 +631,9 @@ func (s *Server) handleOpenURL(w http.ResponseWriter, r *http.Request) {
 	if !decodeRequired(w, r, &req, func() string { return req.URL }, "url") {
 		return
 	}
-	if err := s.launch.OpenURL(r.Context(), r.PathValue("udid"), req.URL); err != nil {
+	ctx, cancel := deviceOp(r)
+	defer cancel()
+	if err := s.launch.OpenURL(ctx, r.PathValue("udid"), req.URL); err != nil {
 		httpError(w, http.StatusBadGateway, err)
 		return
 	}

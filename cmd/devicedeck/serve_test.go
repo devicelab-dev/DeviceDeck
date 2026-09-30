@@ -361,6 +361,8 @@ func (f *fakePlatform) Install(_ context.Context, udid, path string) error {
 	return f.installErr
 }
 
+func (f *fakePlatform) WaitBooted(context.Context, string) error { return nil }
+
 func (f *fakePlatform) OpenURL(_ context.Context, udid, u string) error {
 	f.calls = append(f.calls, "open "+udid+" "+u)
 	return nil
@@ -484,6 +486,7 @@ func TestIsAppFileAndReadyAppID(t *testing.T) {
 }
 
 func TestParseServeFlags(t *testing.T) {
+	t.Setenv("DEVICEDECK_TOKEN", "")
 	got, err := parseServeFlags([]string{"--addr", ":9999", "--ready", "--app", "com.x", "--fps", "15", "--keep-devices"})
 	if err != nil {
 		t.Fatal(err)
@@ -517,11 +520,25 @@ func (k *fakeKiller) Kill(_ context.Context, serial string) error {
 	return k.err
 }
 
-func TestPowerOffAndroid(t *testing.T) {
+type fakeShutdowner struct {
+	shut []string
+	err  error
+}
+
+func (s *fakeShutdowner) Shutdown(_ context.Context, udid string) error {
+	s.shut = append(s.shut, udid)
+	return s.err
+}
+
+func TestPowerOff(t *testing.T) {
 	k := &fakeKiller{err: errors.New("console gone")}
-	powerOffAndroid(context.Background(), []string{"IOS-UDID", "emulator-5554", "emulator-5556"}, k)
+	s := &fakeShutdowner{err: errors.New("simctl gone")}
+	powerOff(context.Background(), []string{"IOS-UDID", "emulator-5554", "emulator-5556"}, s, k)
 	if want := []string{"emulator-5554", "emulator-5556"}; !reflect.DeepEqual(k.killed, want) {
 		t.Errorf("killed = %q, want %q", k.killed, want)
+	}
+	if want := []string{"IOS-UDID"}; !reflect.DeepEqual(s.shut, want) {
+		t.Errorf("shut down = %q, want %q", s.shut, want)
 	}
 }
 
@@ -589,6 +606,21 @@ func TestAnnounceUpdate(t *testing.T) {
 				t.Errorf("notice shown = %v, want %v (%q)", got, tc.wantNotice, out.String())
 			}
 		})
+	}
+}
+
+func TestAnnounceUpdateOptOut(t *testing.T) {
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		_, _ = w.Write([]byte(`{"latest_version": "9.9.9"}`))
+	}))
+	defer srv.Close()
+	t.Setenv(envNoUpdateCheck, "1")
+	var out bytes.Buffer
+	announceUpdate(context.Background(), srv.Client(), srv.URL, "0.1.0", &out)
+	if hits != 0 || out.Len() != 0 {
+		t.Errorf("opted out, yet %d requests and output %q", hits, out.String())
 	}
 }
 
@@ -662,5 +694,16 @@ func TestSessionEnder(t *testing.T) {
 		if killed := len(k.killed) == 1; killed != (tc.last == "") {
 			t.Errorf("%s: killed %q", tc.udid, k.killed)
 		}
+	}
+}
+
+// The access token comes from --token, else DEVICEDECK_TOKEN.
+func TestParseServeFlagsToken(t *testing.T) {
+	t.Setenv("DEVICEDECK_TOKEN", "from-env")
+	if f, err := parseServeFlags(nil); err != nil || f.token != "from-env" {
+		t.Errorf("env token = %+v, %v", f, err)
+	}
+	if f, err := parseServeFlags([]string{"--token", "from-flag"}); err != nil || f.token != "from-flag" {
+		t.Errorf("flag token = %+v, %v", f, err)
 	}
 }

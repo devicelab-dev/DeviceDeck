@@ -58,6 +58,11 @@ linters:
         # simctl / adb / xcodebuild / the Swift sidecars with device- and
         # operator-derived args, never attacker-controlled input.
         - G204
+        # G702: command injection via taint. Same class as G204 — the tainted
+        # command is the video sidecar path DeviceDeck's own video manager
+        # passes its Android capture process (from --video-sidecar or
+        # DEVICEDECK_VIDEO), operator-derived, not attacker input.
+        - G702
         # G304: file path from a variable. Inherent — DeviceDeck reads app
         # bundles (install), sidecar binaries, and simulator container paths by
         # design, from the operator running the server.
@@ -81,6 +86,14 @@ linters:
       # npm packages for the JS lint tooling; some ship stray Go sources
       - node_modules
     rules:
+      # G124 wants Secure on every cookie. The access-token cookie sets it
+      # when the request came over TLS; the server itself speaks plain HTTP,
+      # where a browser would never send a Secure cookie back and the token
+      # would stop working. HttpOnly and SameSite=Lax are always set.
+      - path: internal/server/auth\.go
+        linters:
+          - gosec
+        text: "G124"
       # Tests may ignore errors and use weaker constructs deliberately: quick
       # substring slicing, == on sentinel errors, unclosed one-shot response
       # bodies, redundant var types.
