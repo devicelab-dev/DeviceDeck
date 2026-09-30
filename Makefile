@@ -1,4 +1,4 @@
-.PHONY: build test lint lint-js quality cover-gaps hooks vet clean sidecar sidecar-test release release-signed release-all stage sign package drivers
+.PHONY: build test lint lint-js quality cover-gaps hooks vet clean sidecar sidecar-test release release-signed release-all npm stage sign package drivers
 
 BINARY := devicedeck
 PKG := github.com/devicelab-dev/DeviceDeck
@@ -11,9 +11,10 @@ LDFLAGS := -X $(PKG)/internal/version.Version=$(VERSION) -X $(PKG)/internal/vers
 ARCH ?= $(shell uname -m)
 GOARCH := $(if $(filter x86_64,$(ARCH)),amd64,arm64)
 DIST := dist/$(BINARY)-$(VERSION)-darwin-$(ARCH)
-# RELEASE_DIR is the upload layout the install script downloads from:
-# devicedeck/<version>/<archive> with a <archive>.sha256 beside each.
-RELEASE_DIR := dist/$(BINARY)/$(VERSION)
+# RELEASE_DIR holds one release, ready to upload to devicedeck/<version>/ —
+# the path the install script downloads from: each archive with an
+# <archive>.sha256 beside it.
+RELEASE_DIR := dist/$(VERSION)
 SIDECAR_BIN = $(shell swift build --package-path sidecar -c release --arch $(ARCH) --show-bin-path)
 
 # -trimpath strips filesystem paths (module-cache and repo paths under
@@ -71,15 +72,22 @@ hooks:
 vet:
 	go vet ./...
 
-# drivers re-copies the Android driver APKs from the pinned maestro-runner
-# module into the binary's embed folder. Run it after every maestro-runner
-# bump; a test fails until the two match.
+# drivers re-copies the Android driver APKs and the prebuilt iOS agent from
+# the pinned maestro-runner module into the binary's embed folders. Run it
+# after every maestro-runner bump; a test fails until the two match.
 RUNNER_MOD := github.com/devicelab-dev/maestro-runner
 drivers:
 	@src="$$(go list -m -f '{{.Dir}}' $(RUNNER_MOD))/drivers/android"; \
 	for apk in devicelab-android-driver.apk devicelab-android-driver-test.apk; do \
 		install -m 0644 "$$src/$$apk" internal/home/android/$$apk; \
 	done; echo "synced driver APKs from $$src"
+	@src="$$(go list -m -f '{{.Dir}}' $(RUNNER_MOD))/drivers/ios/devicelab-ios-agent/simulator"; \
+	dst=internal/home/ios/devicelab-ios-agent/simulator; \
+	mkdir -p $$dst && rsync -r --delete "$$src/" $$dst/ && chmod -R u+w $$dst; \
+	echo "synced iOS agent from $$src"
+	@# The agents are proprietary binaries whose licence must travel with them.
+	@install -m 0644 "$$(go list -m -f '{{.Dir}}' $(RUNNER_MOD))/drivers/LICENSE-BINARIES.md" internal/home/LICENSE-BINARIES.md; \
+	echo "synced driver binary licence"
 
 # stage lays the archive out the way it is installed: the three binaries in
 # bin/ (the server finds each sidecar next to its own executable), the
@@ -95,7 +103,7 @@ stage:
 	# The archive is a distribution, so it carries the terms with it:
 	# Apache-2.0 asks that recipients get the licence, and the upstream
 	# notices travel with the sidecars they describe.
-	cp LICENSE ATTRIBUTION.md README.md $(DIST)/
+	cp LICENSE ATTRIBUTION.md README.md internal/home/LICENSE-BINARIES.md $(DIST)/
 
 # sign signs and notarizes the staged binaries in place (a no-op without
 # DEVELOPER_ID, so it is safe to call on a dev machine).
@@ -131,6 +139,14 @@ release-all:
 	$(MAKE) release VERSION=$(VERSION) ARCH=arm64
 	$(MAKE) release VERSION=$(VERSION) ARCH=x86_64
 	@echo; echo "ready to upload:"; ls -l $(RELEASE_DIR)
+
+# npm builds DeviceDeck's npm packages from a release in dist/<version>/:
+# devicedeck (the launcher people install) and one @devicelab/devicedeck-darwin-*
+# package per Mac architecture, carrying that release's signed binaries.
+# It does not publish; it prints the publish commands.
+#   make npm VERSION=0.1.1
+npm:
+	VERSION=$(VERSION) ./npm/build-npm.sh
 
 clean:
 	rm -f $(BINARY) coverage.out

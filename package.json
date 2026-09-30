@@ -6,7 +6,8 @@
     "lint:js": "eslint internal/web/static",
     "typecheck:device": "tsc -p tsconfig.device.json",
     "typecheck:console": "tsc -p tsconfig.console.json",
-    "check:js": "npm run lint:js && npm run typecheck:device"
+    "check:js": "npm run lint:js && npm run typecheck:device",
+    "postinstall": "node -e \"require('fs').writeFileSync('node_modules/go.mod','module devicedeck/node_modules\\n')\""
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
