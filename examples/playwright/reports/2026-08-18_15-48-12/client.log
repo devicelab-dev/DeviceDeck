@@ -1,1 +1,0 @@
-15:48:13.535719 POST /session [7.183958ms] ERR:500 body={"capabilities":{"platformName":"Android","deviceName":"sdk_gphone64_arm64"}}

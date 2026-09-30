@@ -1,8 +1,9 @@
 import { defineConfig } from '@playwright/test';
 
-// The device page updates its DOM mirror on a short poll of the native UI
-// tree, so timings differ from a plain webpage: actions land instantly,
-// but new screens appear on the next mirror refresh (~300ms).
+// The device page mirrors the app's native UI as DOM. click() and fill()
+// return once the device has acted and the screen has settled, so tests
+// need no waits of their own; expect() still retries for anything the app
+// changes later on its own timer.
 export default defineConfig({
   // Every failed test gets the real device screen attached, for any test
   // regardless of how it imports `test` — no per-test fixture, no change

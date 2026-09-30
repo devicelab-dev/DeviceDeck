@@ -41,11 +41,12 @@ await page.getByTestId('login-button').click();
 await expect(page.getByTestId('cart-button')).toBeVisible();
 ```
 
-- **Typing:** `fill()` sets the field through the device's own driver and returns once the device
-  holds the value (it reads the field back). `page.keyboard.type(text)` also works, as real key
-  presses, when a test needs keystrokes.
-- **The device's own value** is exposed on `data-dd-device-value` (a secure field reports bullets —
-  check length).
+- **Typing:** `locator.fill(text)`. It returns once the device holds the value, so there is nothing
+  to wait for before submitting. Avoid `keyboard.type`: key by key it raises Android's soft keyboard,
+  and the next tap can be spent closing it. The device's own read-back of a field is on
+  `data-dd-device-value` (a secure field reports bullets).
+- **The device in a spec:** read it from an environment variable (`DEVICEDECK_UDID`) rather than
+  hard-coding the UDID of your simulator, so the spec runs on a teammate's Mac and in CI.
 - **Don't use `page.clock`:** the app runs on the device's clock, which Playwright's fake clock
   cannot reach, and pausing it would also pause the page's own refresh of the device screen.
 - **First render** waits on the tree-engine warm-up, so give the first selector ~30s.

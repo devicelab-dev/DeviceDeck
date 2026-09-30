@@ -47,8 +47,10 @@ With Playwright MCP on the device page, the same facts are in the page snapshot:
 - **A system alert over the app.** An `alertdialog` in the snapshot (a permission prompt) blocks
   every action behind it. Grant the permission up front (`device_settings`, or `?grant=` on the
   device page), or answer it in the test (`page.addLocatorHandler`).
-- **Input never landed.** Compare the field's device value with what the test typed. `fill()`
-  returns only once the device holds the value; `keyboard.type` key by key can race a submit.
+- **Input never landed, or changed.** Compare the field's device value with what the test typed.
+  `fill()` returns only once the device holds the value, so a mismatch after it means the app
+  changed it — a length limit, an input mask, autocorrect — not a race. A test that uses
+  `keyboard.type` instead can lose its next tap to Android's soft keyboard: switch it to `fill()`.
 - **Wrong screen at the start.** The app resumed a logged-in session. Launch it fresh — a launch
   clears its data by default; a Maestro flow starts with `launchApp: clearState: true`.
 - **Device held by another client.** Input is refused while another tab, test run or agent drives
