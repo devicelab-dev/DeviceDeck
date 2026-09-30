@@ -126,8 +126,9 @@ page and selectors drive iOS and Android alike.
 ### How the agent drives it
 
 The agent drives the device the way it drives any web page: it **snapshots the page**, reasons over
-the tree, and acts by ref — no coordinates, no vision model. Here it picks the right **Add** among
-five identical ones:
+the tree, and acts by ref — no coordinates, no vision model. An agent with no browser tool does the
+same through DeviceDeck's own tools: `snapshot`, then `tap` or `fill` by the refs it returns. Here it
+picks the right **Add** among five identical ones:
 
 <div align="center">
 <img src="docs/demo-agent.gif" width="820" alt="An AI agent using Playwright MCP: browser_snapshot returns the product screen as an accessibility tree with five identical Add buttons, a reasoning step picks the one after Maestro (add-to-cart-2, ref e24), browser_click adds it, and opening the cart confirms Maestro was added — not Appium.">
@@ -158,7 +159,8 @@ To record a test instead, or start from a template, see [docs/testing.md](docs/t
 
 The console lists every simulator, emulator and `--app` build on the Mac. Pick a device to boot and
 stream it, **Launch** an app onto it, and drive it with your mouse and keyboard; **Inspect** shows
-each element's id, role and text — the selectors your tests use. Teammates open the network address
+each element's id, role and text — the selectors your tests use; **Settings** switches dark mode, sets
+the location, grants permissions and opens deep links. Teammates open the network address
 `devicedeck` prints. **Guide:** [docs/console.md](docs/console.md).
 
 ### Record a flow
@@ -201,8 +203,8 @@ uninstall, delete that folder and the `# DeviceDeck` line from your shell profil
 - **A Mac to host.** iOS Simulators, `simctl`/CoreSimulator and the Swift sidecars are
   macOS-only, so the machine that runs the devices is a Mac. **Clients can be any OS:** the surface
   is a web page, so people, tests and agents drive it from Linux, Windows or another Mac.
-- **Xcode** with at least one iOS Simulator runtime — **iOS 26.2 or newer is strongly
-  recommended**; on 18.6 the simulator's render server crashes under repeated capture.
+- **Xcode** (Xcode 27 included) with at least one iOS Simulator runtime — **iOS 26.2 or newer is
+  strongly recommended**; on 18.6 the simulator's render server crashes under repeated capture.
 - **For Android:** the Android SDK, with `adb` and `emulator` on `PATH`, and at least one virtual
   device.
 
@@ -213,9 +215,10 @@ uninstall, delete that folder and the `# DeviceDeck` line from your shell profil
 Early release. Both platforms drive end to end: **Playwright logs into and checks out of TestHive on
 iOS and Android**, an agent writes those tests itself through Playwright MCP, and the console drives any
 device by hand. `click()` and `fill()` return only once the device has acted, and a filled value is
-read back from the device — on iOS *and* on Android's masked password fields. It is an ordinary web
-page, so other browser drivers (Cypress, Puppeteer) see the same DOM, but this release is tested with
-Playwright.
+read back from the device — on iOS *and* on Android's masked password fields. Agents also work with
+DeviceDeck's own tools alone, and Maestro flows — recorded in the console or written by an agent —
+replay with maestro-runner on both platforms. It is an ordinary web page, so other browser drivers
+(Cypress, Puppeteer) see the same DOM, but this release is tested with Playwright.
 
 It has run on a handful of Macs so far, so expect some first-contact problems — please
 [open an issue](https://github.com/devicelab-dev/DeviceDeck/issues) with the log folder it prints.
@@ -236,8 +239,10 @@ the ceiling is physics, not an artificial limit.
   server speaks plain HTTP — do not put it on the open internet as-is.
 - **A driver that dies without closing its connection holds its device for up to half a minute**,
   until a missed ping releases it — see [docs/testing.md](docs/testing.md#one-device-one-worker).
-- **Android video is ~18 fps and heavier than iOS.** The emulator's gRPC screenshot stream offers no
-  video codec, so every frame is a full PNG rather than an H.264 delta. Emulators DeviceDeck boots
+- **Android video is ~13–18 fps and heavier than iOS.** The emulator's gRPC screenshot stream offers
+  no video codec, so every frame is a full PNG rather than an H.264 delta. An H.264 path gives about
+  twice the frame rate at a tenth of the bandwidth; it is experimental, so opt in with
+  `DEVICEDECK_ANDROID_CAPTURE=h264`. Emulators DeviceDeck boots
   run headless, because macOS throttles an occluded window — and the emulator's window is occluded
   exactly when you are watching the browser.
 - **A freshly launched app swallows touches for about a second** after its screen is already in the
@@ -248,6 +253,11 @@ the ceiling is physics, not an artificial limit.
   first-run screen; pass `?reset=no` to resume where it was left.
 - **Two-finger gestures are dropped on Android.** They work on iOS; the Android driver has no mapping
   for them, so they are discarded rather than guessed at.
+- **iOS system alerts in landscape** (permission prompts) report their buttons in portrait
+  coordinates, so they cannot be tapped reliably; answer them in portrait.
+- **Running a Maestro flow needs the device to itself.** A device takes one driver at a time: end its
+  DeviceDeck session (or use another device) before `maestro-runner test`. Running flows inside
+  DeviceDeck's own session is planned.
 
 ## Troubleshooting
 
