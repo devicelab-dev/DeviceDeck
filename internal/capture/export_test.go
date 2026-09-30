@@ -281,7 +281,7 @@ func TestExportWrapsLongComments(t *testing.T) {
 	finding := DesertFinding{Message: "Screen has actionable elements with no durable id: add a test identifier " +
 		"(iOS accessibilityIdentifier, Android resource-id / Compose testTag, Flutter Semantics.identifier, " +
 		"React Native testID). (4 of 12 actionable elements have no identifier)"}
-	yaml := ExportMaestroWithLint("com.example", steps, []DesertFinding{finding})
+	yaml := ExportMaestroWithLint("com.example", steps, []DesertFinding{finding}, false)
 	for _, line := range strings.Split(yaml, "\n") {
 		if len(line) > commentWidth && strings.HasPrefix(line, "#") && strings.Count(line, " ") > 1 {
 			t.Errorf("comment line is %d columns, want at most %d: %q", len(line), commentWidth, line)
@@ -300,5 +300,33 @@ func TestExportWrapsLongComments(t *testing.T) {
 	writeComment(&b, "see "+strings.Repeat("x", 90))
 	if got := b.String(); got != "# see\n#   "+strings.Repeat("x", 90)+"\n" {
 		t.Errorf("long word = %q", got)
+	}
+}
+
+// On Android, typing then tapping a button closes the keyboard first, or the
+// replay's keyboard covers the button; moving between fields does not, and
+// an iOS recording never does.
+func TestExportHidesKeyboardBeforeSubmit(t *testing.T) {
+	steps := []Step{
+		{Kind: "tapOn", ID: "username", Field: true},
+		{Kind: "inputText", Input: "devicelab"},
+		{Kind: "tapOn", ID: "password", Field: true},
+		{Kind: "inputText", Secure: true, SecureVar: "PASSWORD"},
+		{Kind: "tapOn", ID: "login"},
+		{Kind: "tapOn", ID: "cart"},
+	}
+	if ios := ExportMaestroWithLint("com.x", steps, nil, false); strings.Contains(ios, "hideKeyboard") {
+		t.Errorf("an iOS recording must not close the keyboard:\n%s", ios)
+	}
+	yaml := ExportMaestroWithLint("com.x", steps, nil, true)
+	if n := strings.Count(yaml, "- hideKeyboard"); n != 1 {
+		t.Fatalf("want one hideKeyboard, got %d:\n%s", n, yaml)
+	}
+	if strings.Index(yaml, "- hideKeyboard") > strings.Index(yaml, `id: "login"`) ||
+		strings.Index(yaml, "- hideKeyboard") < strings.Index(yaml, "${PASSWORD}") {
+		t.Errorf("hideKeyboard must sit between the typing and the login tap:\n%s", yaml)
+	}
+	if err := validateExport(yaml); err != nil {
+		t.Errorf("runner rejects it: %v", err)
 	}
 }

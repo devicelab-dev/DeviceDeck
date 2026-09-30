@@ -48,7 +48,7 @@ func matching(tree []runner.Node, node *runner.Node) []*runner.Node {
 			}
 			continue
 		}
-		if node.Identifier == "" && n.Identifier == "" && n.Label == node.Label && n.Label != "" {
+		if text := visibleText(node); node.Identifier == "" && n.Identifier == "" && text != "" && visibleText(n) == text {
 			out = append(out, n)
 		}
 	}

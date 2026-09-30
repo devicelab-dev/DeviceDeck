@@ -135,7 +135,7 @@ func TestExportWithLintComments(t *testing.T) {
 		{"Flutter", "add Semantics"},
 		{"", "generic reminder"},
 	}
-	out := ExportMaestroWithLint("com.example", steps, findings)
+	out := ExportMaestroWithLint("com.example", steps, findings, false)
 	if !strings.Contains(out, "# desert (Flutter): add Semantics") {
 		t.Errorf("framework comment missing:\n%s", out)
 	}
@@ -146,7 +146,7 @@ func TestExportWithLintComments(t *testing.T) {
 		t.Fatalf("flow with desert comments invalid: %v\n%s", err, out)
 	}
 	// No findings → no desert comments, identical to the plain export.
-	if got := ExportMaestroWithLint("com.example", steps, nil); strings.Contains(got, "# desert") {
+	if got := ExportMaestroWithLint("com.example", steps, nil, false); strings.Contains(got, "# desert") {
 		t.Errorf("empty findings should add no comments:\n%s", got)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -39,7 +40,7 @@ const (
 
 // Step is one recorded flow step, exportable to Maestro YAML.
 type Step struct {
-	Kind string `json:"kind"` // tapOn | longPressOn | inputText | swipe | pressKey | tapOnPoint | assertVisible | waitVisible
+	Kind string `json:"kind"` // tapOn | longPressOn | inputText | swipe | pressKey | tapOnPoint | assertVisible | waitVisible | setLocation
 	// Selector for tapOn/longPressOn: exactly one of ID/Text set.
 	ID   string `json:"id,omitempty"`
 	Text string `json:"text,omitempty"`
@@ -61,6 +62,12 @@ type Step struct {
 	StartY float64 `json:"startY,omitempty"`
 	EndX   float64 `json:"endX,omitempty"`
 	EndY   float64 `json:"endY,omitempty"`
+	// Latitude and Longitude, in degrees, for setLocation.
+	Latitude  float64 `json:"latitude,omitempty"`
+	Longitude float64 `json:"longitude,omitempty"`
+	// Field marks a tap on a text field: typing goes there next, and the
+	// keyboard it raises is expected to stay up.
+	Field bool `json:"field,omitempty"`
 	// Bounds of the resolved element, normalized 0-1 — the console draws
 	// this over the video so the user sees what each tap resolved to.
 	Bounds *NormRect `json:"bounds,omitempty"`
@@ -114,6 +121,10 @@ type Recorder struct {
 	secure    bool
 	secureVar string
 	refresh   int // refresh generation; stale async refreshes are dropped
+	// filled is the field the last fill() went to, until any other input
+	// arrives: a test typing key by key fills the same field once per key,
+	// and those fills are one tap and one inputText, not one per key.
+	filled *[2]float64
 }
 
 type pendingTouch struct {
@@ -141,10 +152,26 @@ func NewRecorder(ctx context.Context, appID string, snapshot SnapshotFunc) (*Rec
 	return r, nil
 }
 
+// OnFill records a browser fill() of the field at x, y (normalized): a
+// tap on the field — resolved to its selector like any tap — then its whole
+// value as text. The value replaces what was buffered, as fill() replaces
+// the field's contents.
+func (r *Recorder) OnFill(x, y float64, text string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.filled == nil || r.filled[0] != x || r.filled[1] != y {
+		r.onTouch(input.Event{Kind: input.EventTouch, Phase: input.TouchDown, X: x, Y: y})
+		r.onTouch(input.Event{Kind: input.EventTouch, Phase: input.TouchUp, X: x, Y: y})
+		r.filled = &[2]float64{x, y}
+	}
+	r.text = []rune(text)
+}
+
 // OnEvent feeds one decoded input event into the recording.
 func (r *Recorder) OnEvent(ev input.Event) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.filled = nil
 	switch ev.Kind {
 	case input.EventTouch:
 		r.onTouch(ev)
@@ -217,6 +244,11 @@ func (r *Recorder) check(kind string, x, y float64) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.flushTextLocked()
+	// A check is about the screen as it is now. The recorder's copy can be
+	// a moment old — refreshed 600ms after the last tap, while the next
+	// screen was still arriving — and a check made right after a
+	// navigation would otherwise resolve against the screen it left.
+	r.treeAt = time.Time{}
 	step := r.resolveTap(kind, x, y)
 	if step.Kind != kind {
 		return false
@@ -225,17 +257,37 @@ func (r *Recorder) check(kind string, x, y float64) bool {
 	return true
 }
 
-// Steps returns a copy of what has been recorded so far.
+// OnLocation records the device's location being set. Of the device
+// settings it is the one a Maestro flow can carry (setLocation), so it is
+// the one recorded; dark mode and permissions change the session only.
+func (r *Recorder) OnLocation(lat, lon float64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.flushTextLocked()
+	r.appendStep(Step{Kind: "setLocation", Latitude: lat, Longitude: lon})
+}
+
+// Steps returns a copy of what has been recorded so far, with text still
+// being typed shown as a provisional last step. It commits nothing: the
+// console polls this while recording, and committing here split a word
+// typed across a poll into two inputText steps — a password into two
+// ${PASSWORD} steps, which replays typed twice.
 func (r *Recorder) Steps() []Step {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	steps := append([]Step(nil), r.steps...)
+	if len(r.text) > 0 {
+		steps = append(steps, r.textStepLocked())
+	}
+	return steps
+}
+
+// Finish commits pending text and returns the completed step list.
+func (r *Recorder) Finish() []Step {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.flushTextLocked()
 	return append([]Step(nil), r.steps...)
-}
-
-// Finish flushes pending text and returns the completed step list.
-func (r *Recorder) Finish() []Step {
-	return r.Steps()
 }
 
 // AppID returns the bundle id the recording targets.
@@ -303,8 +355,28 @@ func (r *Recorder) noteFocus(x, y float64) {
 	if node == nil || !uisem.TextEntry(node.Type) {
 		return
 	}
-	r.secure = node.Type == "SecureTextField"
+	r.secure = secureField(node)
 	r.secureVar = secureVarName(node.Identifier)
+}
+
+// secretName matches the words a secret field is named with, in its id,
+// label or placeholder.
+var secretName = regexp.MustCompile(`(?i)pass(word|code|wd)?|\bpin\b|secret|otp|cvv|cvc`)
+
+// secureField reports whether text typed into node must stay out of the
+// flow. iOS says so (SecureTextField); Android's tree does not mark a
+// password field at all — it is an EditText like any other — so a field
+// already showing a masked value, or named like a secret, counts too.
+// Guessing wrong one way only turns a typed value into a ${VAR} the replay
+// supplies; the other way writes a password into a file people share.
+func secureField(node *runner.Node) bool {
+	if node.Type == "SecureTextField" {
+		return true
+	}
+	if v := strings.Trim(node.Value, "•*●"); node.Value != "" && v == "" {
+		return true
+	}
+	return secretName.MatchString(node.Identifier + " " + node.Label + " " + node.Placeholder)
 }
 
 // secureVarName turns a field's identifier into an env-parameter name
@@ -343,12 +415,14 @@ func (r *Recorder) resolveTap(kind string, x, y float64) Step {
 		cancel()
 	}
 	if node := hitTest(r.tree, x, y); node != nil {
+		node = owningControl(r.tree, node)
 		bounds := normalizedBounds(r.tree, node)
+		field := uisem.TextEntry(node.Type)
 		if node.Identifier != "" {
-			return qualify(r.tree, node, Step{Kind: kind, ID: node.Identifier, Bounds: bounds})
+			return qualify(r.tree, node, Step{Kind: kind, ID: node.Identifier, Bounds: bounds, Field: field})
 		}
-		if node.Label != "" {
-			return qualify(r.tree, node, Step{Kind: kind, Text: node.Label, Bounds: bounds})
+		if text := visibleText(node); text != "" {
+			return qualify(r.tree, node, Step{Kind: kind, Text: text, Bounds: bounds, Field: field})
 		}
 	}
 	return Step{Kind: "tapOnPoint", StartX: x, StartY: y}
@@ -382,6 +456,7 @@ func hitTest(tree []runner.Node, x, y float64) *runner.Node {
 		return nil
 	}
 	px, py := x*app.Width, y*app.Height
+	onKeyboard := keyboardNodes(tree)
 	// A node covering (nearly) the whole screen is a backdrop or splash
 	// image, not a tap target — resolving to it produces a selector that
 	// matches the wrong thing on every other screen.
@@ -390,20 +465,10 @@ func hitTest(tree []runner.Node, x, y float64) *runner.Node {
 	bestScore := math.MaxFloat64
 	for i := range tree {
 		n := &tree[i]
-		if n.Depth == 0 || n.Frame.Width <= 0 || n.Frame.Height <= 0 {
+		if !candidate(n, onKeyboard, maxArea, px, py) {
 			continue
 		}
-		if n.Frame.Width*n.Frame.Height >= maxArea {
-			continue
-		}
-		if n.Identifier == "" && n.Label == "" {
-			continue
-		}
-		f := n.Frame
-		if px < f.X || px > f.X+f.Width || py < f.Y || py > f.Y+f.Height {
-			continue
-		}
-		score := f.Width * f.Height
+		score := n.Frame.Width * n.Frame.Height
 		// An identifier beats a label at any size: halving the score space
 		// keeps id-bearing containers preferred over labeled leaves only
 		// when the id node is genuinely smaller than twice the leaf.
@@ -416,6 +481,66 @@ func hitTest(tree []runner.Node, x, y float64) *runner.Node {
 		}
 	}
 	return best
+}
+
+// candidate reports whether a node can be what a tap at (px, py) meant: an
+// addressable, non-backdrop element under the point, and not a key of the
+// on-screen keyboard. Typing is recorded as inputText; a key as a tapOn step
+// ("t") replays as nothing — the keyboard is not up, or is laid out
+// differently — and the keyboard's tree can lag its animation, so a tap on
+// the app just above it can land on a key in the recorder's copy.
+func candidate(n *runner.Node, onKeyboard map[int]bool, maxArea, px, py float64) bool {
+	f := n.Frame
+	switch {
+	case n.Depth == 0 || f.Width <= 0 || f.Height <= 0 || f.Width*f.Height >= maxArea:
+		return false
+	case n.Identifier == "" && visibleText(n) == "":
+		return false
+	case onKeyboard[n.Index]:
+		return false
+	}
+	return px >= f.X && px <= f.X+f.Width && py >= f.Y && py <= f.Y+f.Height
+}
+
+// owningControl is the element a tap on node means: node itself, or — when
+// node has no identifier and sits inside an interactive element that has one
+// — that element. On Android a button's words are a child TextView drawn on
+// top of it, so the tap lands on the text; the button's id is the durable
+// selector, not its wording. Containers are never chosen: only a control.
+func owningControl(tree []runner.Node, node *runner.Node) *runner.Node {
+	if node.Identifier != "" {
+		return node
+	}
+	if anc := identifiedAncestor(tree, node); anc != nil && uisem.Interactive(anc.Type) {
+		return anc
+	}
+	return node
+}
+
+// visibleText is the text a text selector finds an element by: its label,
+// or for a plain text element its value. Android puts a TextView's words in
+// its value — which maestro-runner's text: matches there — and leaves the
+// label empty; without this, text on Android could not be asserted on and a
+// tap on it fell back to a coordinate. Only StaticText: a field's value is
+// what the user typed, and a switch's is "1".
+func visibleText(n *runner.Node) string {
+	if n.Label != "" || n.Type != "StaticText" {
+		return n.Label
+	}
+	return n.Value
+}
+
+// keyboardNodes is the set of node indices in the on-screen keyboard: the
+// Keyboard element and everything under it. Parents come before their
+// children in a tree, so one pass finds them all.
+func keyboardNodes(tree []runner.Node) map[int]bool {
+	in := map[int]bool{}
+	for _, n := range tree {
+		if n.Type == "Keyboard" || (n.ParentIndex != nil && in[*n.ParentIndex]) {
+			in[n.Index] = true
+		}
+	}
+	return in
 }
 
 // scheduleRefreshLocked re-snapshots the tree after the screen settles so
@@ -466,14 +591,18 @@ func (r *Recorder) flushTextLocked() {
 	if len(r.text) == 0 {
 		return
 	}
-	if r.secure {
-		// Never emit the typed secret. The step carries the env-var name
-		// the flow will read; the value stays with whoever replays it.
-		r.appendStep(Step{Kind: "inputText", Secure: true, SecureVar: r.secureVar})
-	} else {
-		r.appendStep(Step{Kind: "inputText", Input: string(r.text)})
-	}
+	r.appendStep(r.textStepLocked())
 	r.text = nil
+}
+
+// textStepLocked is the inputText step for the text typed so far. Never
+// the typed secret: a secure field's step carries the env-var name the flow
+// will read, and the value stays with whoever replays it.
+func (r *Recorder) textStepLocked() Step {
+	if r.secure {
+		return Step{Kind: "inputText", Secure: true, SecureVar: r.secureVar}
+	}
+	return Step{Kind: "inputText", Input: string(r.text)}
 }
 
 // keyRune maps a USB HID keyboard usage (page 0x07) to the character it

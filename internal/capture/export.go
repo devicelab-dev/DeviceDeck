@@ -19,7 +19,7 @@ import (
 // comment is there for the human reviewing the capture, which is the whole
 // point of a reviewable artifact.
 func ExportMaestro(appID string, steps []Step) string {
-	return exportMaestro(appID, steps, nil)
+	return exportMaestro(appID, steps, nil, false)
 }
 
 // ExportMaestroWithLint renders the flow and, when the capture hit a
@@ -28,11 +28,13 @@ func ExportMaestro(appID string, steps []Step) string {
 // reading the flow sees which screens have no durable selector and how to
 // fix them, right where they would otherwise wonder why a step is a
 // coordinate.
-func ExportMaestroWithLint(appID string, steps []Step, findings []DesertFinding) string {
-	return exportMaestro(appID, steps, findings)
+// android marks a flow recorded on an Android emulator, which replays there:
+// it closes the keyboard before a tap that follows typing (see writeSteps).
+func ExportMaestroWithLint(appID string, steps []Step, findings []DesertFinding, android bool) string {
+	return exportMaestro(appID, steps, findings, android)
 }
 
-func exportMaestro(appID string, steps []Step, findings []DesertFinding) string {
+func exportMaestro(appID string, steps []Step, findings []DesertFinding, android bool) string {
 	var b strings.Builder
 	for _, line := range strings.Split(strings.TrimSuffix(brand.FlowHeader(), "\n"), "\n") {
 		writeComment(&b, strings.TrimPrefix(line, "# "))
@@ -53,11 +55,33 @@ func exportMaestro(appID string, steps []Step, findings []DesertFinding) string 
 	// start from the same clean state or the first selector resolves
 	// against whatever the previous session left on screen.
 	fmt.Fprintf(&b, "- launchApp:\n    clearState: true\n")
-	for _, s := range steps {
-		fmt.Fprintf(&b, "# devicedeck: %s\n", provenance(s))
-		writeStep(&b, s)
-	}
+	writeSteps(&b, steps, android)
 	return b.String()
+}
+
+// writeSteps emits the recorded steps. On Android it closes the keyboard
+// before a tap that follows typing: on replay inputText leaves the keyboard
+// up over the lower half of the screen — where a form's submit button sits —
+// and the runner refuses the tap. The recording never saw that, since
+// DeviceDeck's fill does not leave the keyboard open. A tap on another text
+// field keeps it, as typing continues there. Not on iOS: replay taps
+// through the keyboard there without it, and the agent's hideKeyboard closes
+// the keyboard with a tap that can land on the app ("Forgot Password?").
+func writeSteps(b *strings.Builder, steps []Step, android bool) {
+	typed := false
+	for _, s := range steps {
+		if android && typed && isTap(s) && !s.Field {
+			fmt.Fprintf(b, "# devicedeck: hideKeyboard (typing left the keyboard over the next tap)\n- hideKeyboard\n")
+		}
+		fmt.Fprintf(b, "# devicedeck: %s\n", provenance(s))
+		writeStep(b, s)
+		typed = s.Kind == "inputText" || (typed && isTap(s) && s.Field)
+	}
+}
+
+// isTap reports whether a step touches the screen at an element or point.
+func isTap(s Step) bool {
+	return s.Kind == "tapOn" || s.Kind == "longPressOn" || s.Kind == "tapOnPoint"
 }
 
 // writeSecrets emits a comment naming the env parameters a masked flow
@@ -212,6 +236,8 @@ func writeStep(b *strings.Builder, s Step) {
 	case "swipe":
 		fmt.Fprintf(b, "- swipe:\n    start: \"%s, %s\"\n    end: \"%s, %s\"\n",
 			percent(s.StartX), percent(s.StartY), percent(s.EndX), percent(s.EndY))
+	case "setLocation":
+		fmt.Fprintf(b, "- setLocation:\n    latitude: %g\n    longitude: %g\n", s.Latitude, s.Longitude)
 	}
 }
 

@@ -39,6 +39,46 @@ func testTree() []runner.Node {
 	}
 }
 
+// A tap whose point the recorder's copy shows under a keyboard key resolves
+// to the app element there, never to the key.
+func TestTapIgnoresKeyboardKeys(t *testing.T) {
+	kb, key := 2, 3
+	tree := []runner.Node{
+		{Index: 0, Type: "Application", Frame: runner.Rect{Width: 100, Height: 200}},
+		{Index: 1, Type: "Button", Identifier: "login-button", Depth: 1, Frame: runner.Rect{X: 10, Y: 140, Width: 80, Height: 20}},
+		{Index: kb, Type: "Keyboard", Depth: 1, Frame: runner.Rect{X: 0, Y: 130, Width: 100, Height: 70}},
+		{Index: key, Type: "Key", Label: "t", Depth: 2, ParentIndex: &kb, Frame: runner.Rect{X: 45, Y: 145, Width: 10, Height: 10}},
+		{Index: 4, Type: "Button", Label: "shift", Depth: 3, ParentIndex: &key, Frame: runner.Rect{X: 45, Y: 145, Width: 5, Height: 5}},
+	}
+	if n := hitTest(tree, 0.5, 0.75); n == nil || n.Identifier != "login-button" {
+		t.Errorf("hit = %+v, want login-button", n)
+	}
+	if got := keyboardNodes(tree); !got[kb] || !got[key] || !got[4] || got[1] {
+		t.Errorf("keyboard nodes = %v", got)
+	}
+}
+
+// fixedTree is a SnapshotFunc that always returns tree.
+func fixedTree(tree []runner.Node) SnapshotFunc {
+	return func(context.Context) ([]runner.Node, error) { return tree, nil }
+}
+
+// A check right after a navigation resolves against the new screen, even
+// when the recorder's copy is younger than staleAfter.
+func TestCheckReadsTheCurrentScreen(t *testing.T) {
+	old := []runner.Node{{Index: 0, Type: "Application", Frame: runner.Rect{Width: 100, Height: 200}}}
+	now := append(append([]runner.Node(nil), old...), runner.Node{
+		Index: 1, Type: "StaticText", Label: "Hello", Depth: 1, Frame: runner.Rect{X: 10, Y: 20, Width: 50, Height: 30},
+	})
+	r := &Recorder{now: time.Now, tree: old, treeAt: time.Now(), appID: "com.example", snapshot: fixedTree(now)}
+	if !r.Assert(0.35, 0.175) {
+		t.Fatal("the assertion was resolved against the stale screen")
+	}
+	if steps := r.Steps(); steps[0].Text != "Hello" {
+		t.Errorf("step = %+v", steps[0])
+	}
+}
+
 // newTestRecorder builds a Recorder with instant settle and a controllable
 // clock.
 func newTestRecorder(t *testing.T, tree []runner.Node) (*Recorder, *time.Time) {
@@ -390,7 +430,7 @@ func TestAssertRecordsVisibilityWithoutTouching(t *testing.T) {
 			Frame: runner.Rect{X: 10, Y: 20, Width: 50, Height: 30},
 		},
 	}
-	r := &Recorder{now: time.Now, tree: tree, treeAt: time.Now(), appID: "com.example"}
+	r := &Recorder{now: time.Now, tree: tree, treeAt: time.Now(), appID: "com.example", snapshot: fixedTree(tree)}
 	if !r.Assert(0.35, 0.175) {
 		t.Fatal("Assert should resolve the button")
 	}
@@ -418,7 +458,7 @@ func TestAssertRecordsVisibilityWithoutTouching(t *testing.T) {
 // coordinate.
 func TestAssertRefusesUnresolvablePoint(t *testing.T) {
 	tree := []runner.Node{{Index: 0, Type: "Application", Frame: runner.Rect{Width: 100, Height: 200}}}
-	r := &Recorder{now: time.Now, tree: tree, treeAt: time.Now(), appID: "com.example"}
+	r := &Recorder{now: time.Now, tree: tree, treeAt: time.Now(), appID: "com.example", snapshot: fixedTree(tree)}
 	if r.Assert(0.5, 0.5) {
 		t.Fatal("Assert should refuse a point with nothing selectable")
 	}
@@ -434,7 +474,7 @@ func TestAssertFlushesPendingText(t *testing.T) {
 		{Index: 0, Type: "Application", Frame: runner.Rect{Width: 100, Height: 200}},
 		{Index: 1, Type: "Button", Identifier: "ok", Depth: 1, Frame: runner.Rect{X: 0, Y: 0, Width: 50, Height: 30}},
 	}
-	r := &Recorder{now: time.Now, tree: tree, treeAt: time.Now(), appID: "com.example", text: []rune("hi")}
+	r := &Recorder{now: time.Now, tree: tree, treeAt: time.Now(), appID: "com.example", text: []rune("hi"), snapshot: fixedTree(tree)}
 	if !r.Assert(0.25, 0.075) {
 		t.Fatal("Assert should resolve")
 	}
@@ -631,7 +671,7 @@ func TestWaitForExportsExtendedWait(t *testing.T) {
 		{Index: 0, Type: "Application", Frame: runner.Rect{Width: 100, Height: 200}},
 		{Index: 1, Type: "Button", Identifier: "products-screen", Depth: 1, Frame: runner.Rect{X: 10, Y: 20, Width: 50, Height: 30}},
 	}
-	r := &Recorder{now: time.Now, tree: tree, treeAt: time.Now(), appID: "com.example"}
+	r := &Recorder{now: time.Now, tree: tree, treeAt: time.Now(), appID: "com.example", snapshot: fixedTree(tree)}
 	if !r.WaitFor(0.35, 0.175) {
 		t.Fatal("WaitFor should resolve the button")
 	}
@@ -659,5 +699,93 @@ func TestWaitForExportsExtendedWait(t *testing.T) {
 		if bad, err := runner.UnsupportedFields([]byte(yaml), platform); err != nil || len(bad) != 0 {
 			t.Errorf("%s: unsupported fields %v (err %v)", platform, bad, err)
 		}
+	}
+}
+
+// Android marks no field as a password: a masked value or a secret-like name
+// keeps the typed text out of the flow; an ordinary field does not.
+func TestSecureField(t *testing.T) {
+	tests := []struct {
+		name string
+		node runner.Node
+		want bool
+	}{
+		{"iOS secure field", runner.Node{Type: "SecureTextField"}, true},
+		{"android masked value", runner.Node{Type: "TextField", Value: "•••••••••"}, true},
+		{"android password id", runner.Node{Type: "TextField", Identifier: "password-input"}, true},
+		{"passcode placeholder", runner.Node{Type: "TextField", Placeholder: "Passcode"}, true},
+		{"pin label", runner.Node{Type: "TextField", Label: "Enter PIN"}, true},
+		{"card cvv", runner.Node{Type: "TextField", Identifier: "card-cvv"}, true},
+		{"username", runner.Node{Type: "TextField", Identifier: "username-input", Placeholder: "Username", Value: "devicelab"}, false},
+		{"spinning not pin", runner.Node{Type: "TextField", Label: "Spinning"}, false},
+	}
+	for _, tt := range tests {
+		if got := secureField(&tt.node); got != tt.want {
+			t.Errorf("%s: secureField = %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
+// Android text lives in a TextView's value: it resolves as text, while a
+// field's typed value never does.
+func TestAndroidTextFromValue(t *testing.T) {
+	tree := []runner.Node{
+		{Index: 0, Type: "Application", Frame: runner.Rect{Width: 100, Height: 200}},
+		{Index: 1, Type: "StaticText", Value: "Hello, devicelab!", Depth: 1, Frame: runner.Rect{X: 10, Y: 10, Width: 60, Height: 10}},
+		{Index: 2, Type: "TextField", Value: "typed", Depth: 1, Frame: runner.Rect{X: 10, Y: 50, Width: 60, Height: 10}},
+		{Index: 3, Type: "StaticText", Value: "Hello, devicelab!", Depth: 1, Frame: runner.Rect{X: 10, Y: 90, Width: 60, Height: 10}},
+	}
+	r := &Recorder{now: time.Now, tree: tree, treeAt: time.Now(), appID: "com.x", snapshot: fixedTree(tree)}
+	if !r.Assert(0.4, 0.075) {
+		t.Fatal("android text was not resolved")
+	}
+	if step := r.Steps()[0]; step.Text != "Hello, devicelab!" || step.Index != 0 {
+		t.Errorf("step = %+v, want the first of two matches", step)
+	}
+	if r.Assert(0.4, 0.275) {
+		t.Error("a text field's typed value must not become a selector")
+	}
+	if !r.Assert(0.4, 0.475) || r.Steps()[1].Index != 1 {
+		t.Errorf("second match needs index 1: %+v", r.Steps())
+	}
+}
+
+// The console polls Steps while someone types: the poll shows the word so
+// far but must not commit it, or one word becomes two inputText steps.
+func TestPollMidWordDoesNotSplitText(t *testing.T) {
+	rec, _ := newTestRecorder(t, testTree())
+	typeKeys := func(usages ...uint32) {
+		for _, u := range usages {
+			rec.OnEvent(key(0, u))
+		}
+	}
+	typeKeys(7, 8, 25) // "dev"
+	if steps := rec.Steps(); len(steps) != 1 || steps[0].Input != "dev" {
+		t.Fatalf("poll mid-word = %+v, want one provisional \"dev\"", steps)
+	}
+	typeKeys(12, 6, 8) // "ice"
+	steps := rec.Finish()
+	if len(steps) != 1 || steps[0].Kind != "inputText" || steps[0].Input != "device" {
+		t.Errorf("steps = %+v, want one inputText \"device\"", steps)
+	}
+}
+
+// A tap on an Android button's text child records the button's id; text in
+// an identified container that is not a control stays text.
+func TestTapOnButtonTextRecordsButtonID(t *testing.T) {
+	btn, screen := 1, 3
+	tree := []runner.Node{
+		{Index: 0, Type: "Application", Frame: runner.Rect{Width: 100, Height: 200}},
+		{Index: btn, Type: "Button", Identifier: "login-button", Depth: 1, Frame: runner.Rect{X: 10, Y: 150, Width: 80, Height: 30}},
+		{Index: 2, Type: "StaticText", Value: "Sign In", Depth: 2, ParentIndex: &btn, Frame: runner.Rect{X: 40, Y: 160, Width: 20, Height: 10}},
+		{Index: screen, Type: "Other", Identifier: "products-screen", Depth: 1, Frame: runner.Rect{X: 0, Y: 0, Width: 100, Height: 100}},
+		{Index: 4, Type: "StaticText", Value: "Appium", Depth: 2, ParentIndex: &screen, Frame: runner.Rect{X: 10, Y: 10, Width: 30, Height: 10}},
+	}
+	r := &Recorder{now: time.Now, tree: tree, treeAt: time.Now(), appID: "com.x", snapshot: fixedTree(tree)}
+	if step := r.resolveTap("tapOn", 0.5, 0.825); step.ID != "login-button" {
+		t.Errorf("tap on the button's text = %+v, want id login-button", step)
+	}
+	if step := r.resolveTap("tapOn", 0.25, 0.075); step.Text != "Appium" || step.ID != "" {
+		t.Errorf("text in a non-control container = %+v, want text Appium", step)
 	}
 }

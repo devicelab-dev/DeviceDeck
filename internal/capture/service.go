@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/devicelab-dev/DeviceDeck/internal/input"
+	"github.com/devicelab-dev/DeviceDeck/internal/platform"
 	"github.com/devicelab-dev/DeviceDeck/internal/runner"
 )
 
@@ -67,7 +68,7 @@ func (s *Service) Stop(udid string) (yaml, guard string, steps []Step, err error
 		return "", "", nil, fmt.Errorf("not recording %s", udid)
 	}
 	steps = rec.Finish()
-	yaml = ExportMaestroWithLint(rec.AppID(), steps, rec.Lint())
+	yaml = ExportMaestroWithLint(rec.AppID(), steps, rec.Lint(), platform.IsAndroidSerial(udid))
 	if err := exportValidator(yaml); err != nil {
 		return "", "", steps, err
 	}
@@ -139,6 +140,28 @@ func (s *Service) Status(udid string) (bool, []Step) {
 		return false, nil
 	}
 	return true, rec.Steps()
+}
+
+// OnFill observes a fill() of the field at x, y (normalized). A no-op
+// unless the device is recording.
+func (s *Service) OnFill(udid string, x, y float64, text string) {
+	s.mu.Lock()
+	rec, ok := s.recorders[udid]
+	s.mu.Unlock()
+	if ok {
+		rec.OnFill(x, y, text)
+	}
+}
+
+// OnLocation observes the device's location being set. A no-op unless the
+// device is recording.
+func (s *Service) OnLocation(udid string, lat, lon float64) {
+	s.mu.Lock()
+	rec, ok := s.recorders[udid]
+	s.mu.Unlock()
+	if ok {
+		rec.OnLocation(lat, lon)
+	}
 }
 
 // OnFrame observes one raw input frame headed for udid's sidecar. A no-op
