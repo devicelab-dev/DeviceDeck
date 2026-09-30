@@ -248,6 +248,7 @@ function showDeviceInfo(id, name) {
   $("device-label").textContent = (d && d.name) || name || id;
   const android = d ? d.os.startsWith("android") : false;
   $("device-meta").textContent = d ? (android ? "Android emulator" : `${d.os} simulator`) : "";
+  fillPermissions(android);
   $("device-id").value = id;
   updateUseLinks();
 }
@@ -863,6 +864,93 @@ async function endSession() {
 $("btn-shot").addEventListener("click", () => window.open(`/api/devices/${udid}/screenshot`));
 $("btn-inspect").addEventListener("click", toggleInspector);
 
+// ---------- device settings ----------
+
+// PERMISSIONS are the names each platform's settings route takes (see
+// internal/sim/settings.go and internal/emu/settings.go): the simulator has
+// no camera, and notifications are Android's alone.
+const PERMISSIONS = {
+  ios: ["location", "photos", "microphone", "contacts", "calendar", "reminders", "motion"],
+  android: ["location", "camera", "photos", "microphone", "contacts", "calendar", "notifications", "motion"],
+};
+
+// field is a settings input or select, typed so its value can be read and set.
+function field(id) {
+  return /** @type {HTMLInputElement} */ ($(id));
+}
+
+// appearanceButtons are the Light and Dark buttons.
+const appearanceButtons = /** @type {NodeListOf<HTMLButtonElement>} */ (document.querySelectorAll("#appearance button"));
+
+// fillPermissions lists the permissions the device's platform can set.
+function fillPermissions(android) {
+  const names = PERMISSIONS[android ? "android" : "ios"];
+  $("perm-name").replaceChildren(...names.map((n) => new Option(n, n)));
+}
+
+// applySetting sends one change to the device and says on the status line
+// what happened. While recording it also says whether the flow carries the
+// change: a location becomes setLocation; appearance and permissions have
+// no Maestro step, so they change this session only; links are not
+// recorded yet.
+async function applySetting(what, req, path = "/settings") {
+  const res = await fetch(`/api/devices/${udid}${path}`, { method: "POST", body: JSON.stringify(req) }).catch(() => null);
+  if (!res) { serverDown(); return; }
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) { status.textContent = `${what}: ${body.error || res.status}`; return; }
+  let note = "";
+  if (recording && req.location) note = " — added to the recording";
+  else if (recording && path === "/openurl") note = " — not recorded";
+  else if (recording) note = " — not recorded (a Maestro flow has no step for it)";
+  status.textContent = `${what} done${note}`;
+}
+
+// setLocation reads "latitude, longitude" from the location field.
+function setLocation() {
+  const [lat, lon] = field("loc").value.split(",").map((v) => Number(v.trim()));
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    status.textContent = "location: enter latitude, longitude — e.g. 51.5074, -0.1278";
+    $("loc").focus();
+    return;
+  }
+  applySetting(`location ${lat}, ${lon}`, { location: { lat, lon } });
+}
+
+// setPermission grants or revokes the chosen permission for the app named
+// in the App field.
+function setPermission(grant) {
+  const app = field("app").value.trim();
+  if (!app) {
+    status.textContent = "permission: enter the app's bundle id or package in the App field";
+    $("app").focus();
+    return;
+  }
+  const name = field("perm-name").value;
+  applySetting(`${grant ? "grant" : "revoke"} ${name}`, { app, [grant ? "grant" : "revoke"]: [name] });
+}
+
+for (const b of appearanceButtons) {
+  b.addEventListener("click", () => {
+    for (const other of appearanceButtons) other.classList.toggle("active", other === b);
+    applySetting(`${b.dataset.appearance} mode`, { appearance: b.dataset.appearance });
+  });
+}
+$("btn-loc").addEventListener("click", setLocation);
+$("loc").addEventListener("keydown", (e) => { if (e.key === "Enter") setLocation(); });
+$("loc-preset").addEventListener("change", () => {
+  if (!field("loc-preset").value) return;
+  field("loc").value = field("loc-preset").value.replace(",", ", ");
+  field("loc-preset").value = "";
+  setLocation();
+});
+$("btn-grant").addEventListener("click", () => setPermission(true));
+$("btn-revoke").addEventListener("click", () => setPermission(false));
+$("btn-link").addEventListener("click", () => {
+  const url = field("link").value.trim();
+  if (url) applySetting(`open ${url}`, { url }, "/openurl");
+});
+$("link").addEventListener("keydown", (e) => { if (e.key === "Enter") $("btn-link").click(); });
+
 // ---------- flow capture ----------
 
 let recording = false;
@@ -986,7 +1074,10 @@ async function pollCapture() {
   const res = await fetch(`/api/devices/${udid}/capture`);
   const body = await res.json();
   if (!body.recording) return;
-  status.textContent = `recording — ${body.steps.length} steps`;
+  // Only when the count moves: rewriting the line on every poll wiped a
+  // message the person had just been given ("location … added to the
+  // recording") before they could read it.
+  if (body.steps.length !== seenSteps) status.textContent = `recording — ${body.steps.length} steps`;
   if (body.steps.length > seenSteps) {
     const step = body.steps[body.steps.length - 1];
     if (step.bounds) flashResolved(step);

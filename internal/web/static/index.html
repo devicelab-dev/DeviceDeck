@@ -48,6 +48,44 @@
         </span>
         <input id="app" placeholder="app bundle id (for Record and Inspect)" spellcheck="false">
       </section>
+      <section id="settings">
+        <h3>Settings</h3>
+        <div class="label" id="appearance-label">Appearance</div>
+        <div class="setting-row" id="appearance" role="group" aria-labelledby="appearance-label">
+          <button data-appearance="light" title="Switch the device to light mode">Light</button>
+          <button data-appearance="dark" title="Switch the device to dark mode">Dark</button>
+        </div>
+        <label for="loc">Location</label>
+        <div class="setting-row">
+          <input id="loc" placeholder="latitude, longitude" spellcheck="false">
+          <button id="btn-loc" title="Set the simulated GPS location. Added to the flow while recording (setLocation)">Set</button>
+        </div>
+        <div class="setting-row">
+          <select id="loc-preset" title="Set a common place">
+            <option value="">Or pick a place…</option>
+            <option value="37.3349,-122.009">Cupertino</option>
+            <option value="40.7128,-74.006">New York</option>
+            <option value="51.5074,-0.1278">London</option>
+            <option value="52.52,13.405">Berlin</option>
+            <option value="19.076,72.8777">Mumbai</option>
+            <option value="35.6762,139.6503">Tokyo</option>
+            <option value="-33.8688,151.2093">Sydney</option>
+          </select>
+        </div>
+        <label for="perm-name">Permission for the app</label>
+        <div class="setting-row">
+          <select id="perm-name"></select>
+        </div>
+        <div class="setting-row split">
+          <button id="btn-grant" title="Grant it without the system prompt. iOS closes the app when some permissions change">Grant</button>
+          <button id="btn-revoke" title="Revoke it. iOS closes the app when some permissions change">Revoke</button>
+        </div>
+        <label for="link">Deep link</label>
+        <div class="setting-row">
+          <input id="link" placeholder="myapp://path" spellcheck="false">
+          <button id="btn-link" title="Open the link on the device">Open</button>
+        </div>
+      </section>
       <section>
         <h3>Use it</h3>
         <label for="device-url">From tests</label>

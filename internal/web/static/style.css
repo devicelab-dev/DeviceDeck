@@ -95,7 +95,7 @@ select, input, button {
   margin-bottom: 10px;
 }
 #sidebar input, #sidebar select { width: 100%; min-width: 0; }
-#sidebar label { display: block; font-size: var(--fs-small); color: var(--dim); margin: 14px 0 6px; }
+#sidebar label, #sidebar .label { display: block; font-size: var(--fs-small); color: var(--dim); margin: 14px 0 6px; }
 #sidebar label:first-of-type { margin-top: 0; }
 #device-label { font-weight: 650; font-size: 18px; line-height: 1.3; word-break: break-word; }
 #device-meta { color: var(--dim); font-size: var(--fs-small); margin: 4px 0 12px; }
@@ -107,6 +107,12 @@ select, input, button {
 .copy-row { display: flex; gap: 6px; }
 .copy-row input { flex: 1; font: var(--fs-mono) var(--font-mono); color: #b3bac6; }
 .copy-row .copy { flex: 0 0 auto; }
+/* Device settings: one control per row, the action button at its end. */
+.setting-row { display: flex; gap: 6px; }
+.setting-row + .setting-row { margin-top: 6px; }
+#sidebar .setting-row input, #sidebar .setting-row select { flex: 1; width: auto; }
+.setting-row button { flex: 0 0 auto; padding-inline: 10px; }
+.setting-row.split button, #appearance button { flex: 1; }
 #apps-picker { display: flex; gap: 6px; margin-bottom: 6px; }
 #apps-picker select { flex: 1; }
 #btn-launch { flex: 0 0 auto; }

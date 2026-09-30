@@ -116,6 +116,9 @@ function queuePending(pending, buffer, at) {
 function createInputSocket(url, { now = Date.now, onOpen, onRefused, takeOver = false } = {}) {
   let ws = null;
   let closed = false;
+  // The server hands the holder a claim token as a text message; the page
+  // sends it back on its HTTP actions so they read as the holder's own.
+  let claim = "";
   const pending = [];
   const stop = () => { closed = true; pending.length = 0; };
 
@@ -125,7 +128,9 @@ function createInputSocket(url, { now = Date.now, onOpen, onRefused, takeOver = 
     first = false;
     ws.binaryType = "arraybuffer";
     ws.onopen = () => { flushPending(ws, pending, now()); onOpen?.(); };
+    ws.onmessage = ({ data }) => { claim = claimFrom(data) || claim; };
     ws.onclose = (event) => {
+      claim = ""; // a new connection is a new claim
       // A refusal is final: the server is telling us another client is
       // driving this device. Reconnecting would spin silently and turn
       // an explained refusal back into a mystery.
@@ -143,5 +148,21 @@ function createInputSocket(url, { now = Date.now, onOpen, onRefused, takeOver = 
   return {
     send: (buffer) => (ws?.readyState === WebSocket.OPEN ? ws.send(buffer) : queuePending(pending, buffer, now())),
     close: () => { stop(); ws?.close(); },
+    claim: () => claim,
   };
+}
+
+/**
+ * The claim token in a text message from the input socket, or "".
+ * @param {unknown} data
+ * @returns {string}
+ */
+function claimFrom(data) {
+  if (typeof data !== "string") return "";
+  try {
+    const token = JSON.parse(data).claim;
+    return typeof token === "string" ? token : "";
+  } catch {
+    return "";
+  }
 }
