@@ -11,7 +11,8 @@ Read the guide that matches the task:
 |---|---|
 | Author a Playwright mobile test | [`devicedeck-authoring`](devicedeck-authoring/SKILL.md) |
 | Diagnose a failing or odd mobile test | [`devicedeck-triage`](devicedeck-triage/SKILL.md) |
-| Capture or replay a Maestro flow | [`devicedeck-flows`](devicedeck-flows/SKILL.md) |
+| Write a Maestro flow (agent-authored YAML) | [`devicedeck-maestro`](devicedeck-maestro/SKILL.md) |
+| Capture or replay a recorded Maestro flow | [`devicedeck-flows`](devicedeck-flows/SKILL.md) |
 
 ## Using these outside Claude Code
 

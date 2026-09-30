@@ -1,44 +1,70 @@
 ---
 name: devicedeck-triage
-description: Use when a mobile test driven through DeviceDeck failed or is behaving unexpectedly — to see the device's actual state, confirm what is and is not on screen, and classify the failure with evidence rather than guessing.
+description: Use when a mobile test driven through DeviceDeck — a Playwright spec or a Maestro flow — failed or is behaving unexpectedly, to see the device's actual state, confirm what is and is not on screen, and classify the failure with evidence rather than guessing.
 metadata:
-  short-description: Diagnose a failing DeviceDeck mobile test
+  short-description: Diagnose a failing DeviceDeck mobile test or Maestro flow
 ---
 
 # Triaging a failing mobile test
 
-Decide from the device's own state, not the test log alone. The device is a web page, so
-inspect it with the same browser tools you drove it with — but the failure is almost always a
-**device/app behaviour, not a web one**, so weigh it against the device facts below.
+Decide from the device's own state, not the test log alone. The failure is almost always a
+**device or app behaviour, not a web one**, so weigh it against the device facts below.
 
-## Workflow
+## Look before concluding
 
-1. **Reproduce to the failing point**, navigate to the device page, then look before concluding:
-   - **Snapshot** the page — the exact elements on screen, each with its `data-testid`, role,
-     and value.
-   - **Screenshot** it — for anything structure can't show (a spinner, a rendered image, an
-     off-screen layout).
-2. **Confirm the expectation** — look in the snapshot for the element or text the test waited
-   on. Absent → the app never reached that state; present → a timing or selector problem.
-3. **Classify — these are the device/app failures a web test never hits:**
-   - *App never advanced* — a control was disabled, or a step's input did not land. Check the
-     field's `data-dd-device-value` in the snapshot: is it what the test typed? Keys are real
-     HID presses and can drop under host load; the mirror retypes, but a submit fired too early
-     races the last keystrokes onto the device.
-   - *Element not found* — a selector that no longer resolves (identifier changed, or the wrong
-     screen), or, on Android, an intermittent driver-start crash (retry the launch).
-   - *Wrong screen* — the app resumed a logged-in session instead of a first-run screen;
-     relaunch fresh (a fresh launch wipes app data by default).
-   - *Timing* — the value is right on the device but the test asserted too early; wait for the
-     device to echo it (`data-dd-device-value`).
+Reproduce to the failing point on the device, then read it. With DeviceDeck's MCP tools:
+
+| Question | Tool |
+|---|---|
+| What is on screen, and how is each element addressed? | `snapshot` (`mode: "full"` adds plain text) |
+| What changed since the last look? | `snapshot` with `mode: "diff"` |
+| Does this selector match, and how many elements? | `find_element` (by `testid`, `text`, `role` + `name`) |
+| Does it appear or go away if I wait? | `wait_for` with `state: "visible"` / `"gone"` / `"settled"` |
+| What does it look like (spinner, image, layout)? | `screenshot` |
+| Every attribute of every element | `ui_tree` (large; saved to a file when it is too big) |
+
+With Playwright MCP on the device page, the same facts are in the page snapshot: each element's
+`data-testid`, role and name, and a field's device value in `data-dd-device-value`.
+
+## Classify — the failures a web test never hits
+
+- **Element not found.** Check with `find_element` whether the selector matches anything:
+  - no match on this screen → the app is on a different screen (look at the snapshot) or the
+    identifier changed in the app;
+  - several matches → the test acted on the wrong one; narrow the selector;
+  - a Maestro `id:` / `text:` is a **whole-value regular expression**: an unescaped `.`, `(`, `$`
+    or `?` in the label, or a partial label, will not match;
+  - on Android, an intermittent driver-start crash also reads as "not found" — relaunch and retry.
+- **"Could not read the device's screen."** The engine is busy or restarting. It is not the
+  element being absent — retry before concluding anything.
+- **Present but disabled.** The screen was still settling (a Sign In button enabled only once both
+  fields are filled). Fill the form, then look again.
+- **Off screen or under the keyboard.** The element exists but a tap on it lands elsewhere. Scroll
+  it into view, or press Enter / dismiss the keyboard first.
+- **Under the status bar (Android 15+).** The app draws the element behind the system's status bar
+  (an edge-to-edge layout it does not inset), and the system takes every tap there — a finger could
+  not tap it either. Report it as an app bug: the layout needs the status-bar inset.
+- **A system alert over the app.** An `alertdialog` in the snapshot (a permission prompt) blocks
+  every action behind it. Grant the permission up front (`device_settings`, or `?grant=` on the
+  device page), or answer it in the test (`page.addLocatorHandler`).
+- **Input never landed.** Compare the field's device value with what the test typed. `fill()`
+  returns only once the device holds the value; `keyboard.type` key by key can race a submit.
+- **Wrong screen at the start.** The app resumed a logged-in session. Launch it fresh — a launch
+  clears its data by default; a Maestro flow starts with `launchApp: clearState: true`.
+- **Device held by another client.** Input is refused while another tab, test run or agent drives
+  the device (the page says who). One driver per device: close the other, or use another device.
+- **Timing.** The value is right on the device but the test asserted too early. Assert with
+  `expect` (Playwright) or `extendedWaitUntil` (Maestro), which retry — never a fixed wait.
+
+## A failing Maestro flow
+
+maestro-runner prints its report folder; the failing step and a screenshot of the screen at the
+failure are there. Reproduce up to that step on the device, then check the step's selector with
+`find_element` as above. Fix the step, not the timing: a flow that needs a longer sleep is
+waiting on something `extendedWaitUntil` should name.
 
 ## Report
 
-State the failure with the evidence that decided it — the snapshot fragment or screenshot, the
-element's presence, the field's device value — so the fix targets the real cause, not a symptom.
-
-## Optional: DeviceDeck MCP
-
-If you are driving through DeviceDeck's MCP rather than browser tools, the same read-only
-inspection is `mcp__devicedeck__ui_tree` (structure), `mcp__devicedeck__screenshot` (pixels),
-and `mcp__devicedeck__assert_visible` (an expectation).
+State the failure with the evidence that decided it — the snapshot lines, the `find_element`
+result, the screenshot, the field's device value — so the fix targets the real cause, not a
+symptom.

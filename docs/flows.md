@@ -9,7 +9,9 @@ real devices at [devicelab.dev](https://devicelab.dev).
 
 1. Open a device in the console.
 2. Pick your app in the sidebar (or type its bundle id).
-3. Press **Record**, then use the app: tap, type, swipe.
+3. Press **Record**, then use the app: tap, type, swipe. A location set from **Settings** in the
+   sidebar (or through the API or MCP) is recorded too, as `setLocation`; dark mode and
+   permissions are not, since a Maestro flow has no step for them.
 4. Press **Stop**. The flow appears in the right-hand panel, with **Copy** and **Download** (which
    asks where to save it and suggests a name like `testhive-2026-09-23-0107.yaml`).
 
@@ -81,7 +83,7 @@ With [maestro-runner](https://github.com/devicelab-dev/maestro-runner) installed
 simulator or emulator:
 
 ```bash
-maestro-runner --driver devicelab test flow.yaml -e PASSWORD_INPUT=…
+maestro-runner --driver devicelab test -e PASSWORD_INPUT=… flow.yaml
 ```
 
 The same file runs on real iPhones and Android phones at [devicelab.dev](https://devicelab.dev) —

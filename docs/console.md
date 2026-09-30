@@ -32,6 +32,11 @@ to the device, including Return and Backspace.
   DeviceDeck on this device and shuts it down.
 - **App** — pick a registered build and **Launch** it (a fresh start: its data is cleared first), or
   type a bundle id for Record and Inspect.
+- **Settings** — switch the device to **Light** or **Dark** mode, set its GPS **location** (type
+  `latitude, longitude` or pick a place), **grant** or **revoke** a permission for the app named
+  above without the system prompt (iOS closes the app when some permissions change), and open a
+  **deep link**. While recording, a location is added to the flow as `setLocation`; the other
+  settings change this session only.
 - **Use it** — the device page URL for your tests, and a ready-made prompt to paste into Claude Code.
 
 **Controls** (right panel): **Home**, **Switcher** (the app switcher), **Lock**, **Shot** (a

@@ -159,20 +159,26 @@ test('the mirror really scrolls, and forgets the offset when the screen changes'
   const box = (await mirror.boundingBox())!;
   expect((await below.boundingBox())!.y).toBeGreaterThan(box.y + box.height);
 
+  // The view rests one gutter in — a screen's height — so there is room
+  // to scroll up as well as down.
+  const scrollTop = () => page.evaluate(() => document.getElementById('mirror')!.scrollTop);
+  const rest = Math.round(box.height);
+  expect(Math.abs((await scrollTop()) - rest)).toBeLessThanOrEqual(1);
+
   // What scrollIntoView and cy.scrollTo do: write the offset. The
   // mirror keeps it — it is the tool's view transform — and the row
   // below the fold is now inside the box, where a tool can hit-test it.
   await below.scrollIntoViewIfNeeded();
-  expect(await page.evaluate(() => document.getElementById('mirror')!.scrollTop)).toBeGreaterThan(0);
+  expect(await scrollTop()).toBeGreaterThan(rest + 1);
   const scrolled = (await below.boundingBox())!;
   expect(scrolled.y + scrolled.height).toBeLessThanOrEqual(box.y + box.height + 1);
 
   // A new screen arrives laid out against the real device, so the
-  // offset goes back to zero rather than shifting every click on it.
+  // offset goes back to rest rather than shifting every click on it.
   const cart = fixture('cart');
   expect(cart.hash).not.toBe(products.hash);
   await page.route('**/api/devices/*/tree*', (r) => r.fulfill({ json: cart }));
-  await expect.poll(() => page.evaluate(() => document.getElementById('mirror')!.scrollTop), { timeout: 15_000 }).toBe(0);
+  await expect.poll(async () => Math.abs((await scrollTop()) - rest) <= 1, { timeout: 15_000 }).toBe(true);
 });
 
 test('nothing takes a click while the barrier is open', async ({ page }) => {
@@ -259,4 +265,100 @@ test('every real TestHive screen recorded here is fully addressable', async ({ p
     const audit = await page.evaluate(() => (window as any).devicedeck.audit());
     expect(audit, name).toEqual({ unnamed: [], duplicates: [] });
   }
+});
+
+// An action finishes on the device, not on the page. The device page acts
+// through a synchronous /act request and applies the settled tree it
+// returns before its event handler returns — and Playwright's click() and
+// fill() resolve only once the page has handled the event. So the call
+// takes as long as the device does, and the next line reads the device's
+// new screen with no waiting of its own.
+test.describe('an action returns with the device screen after it', () => {
+  const DEVICE_MS = 1500;
+
+  async function stubAct(page: Page, answer: string) {
+    const acts: any[] = [];
+    await page.route('**/api/devices/*/act', async (route) => {
+      acts.push(route.request().postDataJSON());
+      await new Promise((r) => setTimeout(r, DEVICE_MS));
+      await route.fulfill({ json: { ...fixture(answer), act: { kind: 'x', timedOut: false } } });
+    });
+    return acts;
+  }
+
+  test('click() waits for the tap and returns on the next screen', async ({ page }) => {
+    await serveMirror(page, 'login');
+    const acts = await stubAct(page, 'products');
+    const started = Date.now();
+    await page.getByTestId('forgot-password-button').click();
+    expect(Date.now() - started).toBeGreaterThanOrEqual(DEVICE_MS - 50);
+    // No auto-wait: count() reads the DOM as it is at this instant.
+    expect(await page.getByTestId('add-to-cart-1').count()).toBe(1);
+    expect(acts).toHaveLength(1);
+    expect(acts[0]).toMatchObject({ kind: 'tap', app: 'dev.devicelab.testhive' });
+    expect(acts[0].x).toBeGreaterThan(0);
+    expect(acts[0].x).toBeLessThan(1);
+  });
+
+  test('fill() waits for the device to hold the value', async ({ page }) => {
+    await serveMirror(page, 'login');
+    const acts = await stubAct(page, 'login-typed');
+    const started = Date.now();
+    await page.getByTestId('username-input').fill('devicelab');
+    expect(Date.now() - started).toBeGreaterThanOrEqual(DEVICE_MS - 50);
+    expect(await page.getByTestId('username-input').getAttribute('data-dd-device-value')).toBe('devicelab');
+    expect(acts).toHaveLength(1);
+    expect(acts[0]).toMatchObject({ kind: 'fill', field: 'username-input', text: 'devicelab' });
+  });
+
+  // A refresh re-places every element; a field it moved lost focus, and an
+  // unfocused secure field showed the device's bullets, not the text filled.
+  test('a filled secure field keeps focus and its text across the refresh', async ({ page }) => {
+    await serveMirror(page, 'login');
+    const typed = fixture('login-typed');
+    typed.nodes.find((n: any) => n.identifier === 'password-input').value = '•••••••••';
+    await page.route('**/api/devices/*/act', (route) =>
+      route.fulfill({ json: { ...typed, act: { kind: 'fill', timedOut: false } } }));
+    const password = page.getByTestId('password-input');
+    await password.fill('robustest');
+    expect(await password.getAttribute('data-dd-device-value')).toBe('•••••••••');
+    await expect(password).toBeFocused();
+    await expect(password).toHaveValue('robustest');
+  });
+
+  // A horizontal row scrolled so a chip sits past the screen's left edge:
+  // a scroll box cannot scroll to a negative offset, so Playwright could
+  // never bring the chip into view and its click timed out. The mirror's
+  // gutter makes it scrollable; the click then swipes the row and taps.
+  test('a chip past the left edge is revealed and tapped', async ({ page }) => {
+    await serveMirror(page, 'products');
+    const products = fixture('products');
+    const shifted = fixture('products');
+    const row = new Set([22, 23, 24, 25, 26]);
+    for (const n of shifted.nodes) if (row.has(n.index)) n.frame.x -= 120;
+    await page.route('**/api/devices/*/tree*', (r) => r.fulfill({ json: shifted }));
+    const acts: any[] = [];
+    await page.route('**/api/devices/*/act', async (route) => {
+      acts.push(route.request().postDataJSON());
+      await route.fulfill({ json: { ...products, act: { kind: 'x', timedOut: false } } });
+    });
+    const all = page.getByRole('button', { name: 'All', exact: true });
+    await expect.poll(async () => (await all.evaluate((el) => el.getBoundingClientRect().right))
+      < (await page.locator('#mirror').evaluate((el) => el.getBoundingClientRect().left))).toBe(true);
+    await all.click({ timeout: 5_000 });
+    expect(acts.map((a) => a.kind)).toEqual(['swipe', 'tap']);
+    const [swipe, tap] = acts;
+    expect(swipe.toX).toBeGreaterThan(swipe.x); // finger moves right: the row scrolls left into view
+    expect(Math.abs(swipe.y - (210.67 + 20.5) / 874)).toBeLessThan(0.02); // along the chip row
+    expect(Math.abs(tap.x - (16 + 29) / 402)).toBeLessThan(0.02);
+  });
+
+  test('a key press waits for the device too', async ({ page }) => {
+    await serveMirror(page, 'login');
+    const acts = await stubAct(page, 'login');
+    const started = Date.now();
+    await page.getByTestId('username-input').press('Enter');
+    expect(Date.now() - started).toBeGreaterThanOrEqual(DEVICE_MS - 50);
+    expect(acts.map((a) => a.kind)).toContain('key');
+  });
 });

@@ -10,7 +10,10 @@ import { expect, type APIRequestContext, type Locator, type Page } from '@playwr
 // helpers here are the ones a web test would have anyway.
 
 export const UDID = process.env.DEVICEDECK_UDID || 'booted';
-export const APP = 'dev.devicelab.testhive';
+// TestHive's id on the device's platform (an emulator's serial is
+// emulator-NNNN); DEVICEDECK_APP overrides it for another app.
+export const ANDROID = /^emulator-\d+$/.test(UDID);
+export const APP = process.env.DEVICEDECK_APP || (ANDROID ? 'com.testhiveapp' : 'dev.devicelab.testhive');
 
 /** launchApp puts the app in the foreground, taking input. */
 export async function launchApp(request: APIRequestContext, app = APP) {
@@ -26,6 +29,18 @@ export async function openDevice(page: Page, app = APP) {
   // shows up as input silently going nowhere. Say so here instead.
   const refused = await page.locator('#mirror').getAttribute('data-dd-input-refused');
   expect(refused, 'another client is driving this device').toBeNull();
+}
+
+/**
+ * openReady opens the device page with setup options (reset, appearance,
+ * grant, link…) and waits until the page has applied them and shows the
+ * app — `#mirror[data-dd-ready]`; the load event fires before that. A setup
+ * step the device refused is shown in the page's notice, and fails here.
+ */
+export async function openReady(page: Page, device: string, query: string) {
+  await page.goto(`/device/${device}?${query}`);
+  await expect(page.locator('#mirror[data-dd-ready]')).toBeAttached({ timeout: 60_000 });
+  expect(await page.locator('#notice').getAttribute('data-reason'), 'device setup failed').toBeNull();
 }
 
 /**

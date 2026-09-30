@@ -53,15 +53,34 @@ claude mcp add playwright npx @playwright/mcp@latest
 claude plugin marketplace add devicelab-dev/DeviceDeck
 claude plugin install devicedeck@devicedeck-marketplace
 
-# 3. Ask Claude — it boots a simulator, launches your app, drives it, writes the test
-#    "Write a Playwright test that logs in to my app com.your.app"
+# 3. Ask Claude — it finds your app, boots a simulator, launches it, drives it, writes the test
+#    "Write a Playwright test that logs in to my app"
 
 # 4. Run it
 npx playwright test
 ```
 
+Need a simulator build of your app, or the step-by-step? See [docs/getting-started.md](docs/getting-started.md).
 Using Gemini CLI, Codex, VS Code or Cursor? Only step 2 changes — see [Other agents](#other-agents).
 Prefer to use devices by hand? Open the console at `http://127.0.0.1:8787`.
+
+### Or install with npm
+
+In a Playwright project, add DeviceDeck as a dev dependency, so every machine and CI job runs the
+same version — no install script, nothing downloaded after `npm install`:
+
+```bash
+npm install --save-dev devicedeck
+npx devicedeck --app path/to/MyApp.app
+```
+
+Or try it without installing: `npx devicedeck --app path/to/MyApp.app`. For the Claude plugin, which
+starts `devicedeck mcp` itself, install it globally so it is on your `PATH`: `npm install -g
+devicedeck`. Playwright can also start it for you, in `playwright.config.ts`:
+
+```ts
+webServer: { command: 'npx devicedeck --app path/to/MyApp.app', url: 'http://127.0.0.1:8787', reuseExistingServer: true },
+```
 
 ## What it does
 
@@ -74,11 +93,17 @@ page, so Playwright, Cypress and Puppeteer tests drive it by selector, and your 
 through [Playwright MCP](https://github.com/microsoft/playwright-mcp) — the same browser tool it
 uses for the web. Nothing mobile-specific to learn.
 
-**Record a flow.** Use the app by hand in the console and DeviceDeck writes it down as a
-[Maestro](https://maestro.dev) flow, with durable selectors, ready to review and replay — unchanged
-on real devices at [devicelab.dev](https://devicelab.dev).
+**Record or write a Maestro flow.** Use the app by hand in the console and DeviceDeck writes it down
+as a [Maestro](https://maestro.dev) flow, with durable selectors — or ask your agent to write one: it
+explores the app through DeviceDeck, checks every selector on the device as it goes, and runs the
+result with [maestro-runner](https://github.com/devicelab-dev/maestro-runner). Either way the flow
+replays unchanged on real devices at [devicelab.dev](https://devicelab.dev).
 
-One binary behind all three — nothing to fork, no Xcode project to open.
+**Set the device up for the test.** Dark mode, a GPS location, app permissions granted without the
+system prompt, and deep links — from the console, the page URL (`?appearance=dark&grant=location`),
+the HTTP API or the agent's tools.
+
+One binary behind all of it — nothing to fork, no Xcode project to open.
 
 ## How it works
 
@@ -119,8 +144,8 @@ In [Get started](#get-started), steps 1, 3 and 4 are the same; only step 2 chang
 | **Cursor, and others** | add the same two MCP servers in the agent's settings, then `npx skills add devicelab-dev/DeviceDeck` — [docs/agents.md](docs/agents.md#set-up-your-agent) |
 
 Each agent gets the same three pieces: **Playwright MCP** to drive the device page, DeviceDeck's
-**device tools** to boot devices and launch apps, and its **skills** for writing tests, recording
-flows and triaging failures.
+**device tools** to boot devices and launch apps, and its **skills** for writing Playwright tests,
+writing and recording Maestro flows, and triaging failures.
 
 ### Already have tests, or prefer to write them?
 
@@ -143,6 +168,10 @@ Press **Record**, use the app, press **Stop**: DeviceDeck writes it as a
 [devicelab.dev](https://devicelab.dev). **Guide:** [docs/flows.md](docs/flows.md).
 
 ## Install options
+
+With npm: `npm install --save-dev devicedeck` in a project, or `npm install -g devicedeck` — see
+[Or install with npm](#or-install-with-npm). The host is a Mac; installing it on Linux (a CI job that
+drives a remote Mac, say) is harmless.
 
 The install script puts DeviceDeck in `~/.devicedeck` and adds its `bin` folder to your `PATH` — no
 sudo, and nothing else to install: the Android driver ships inside the binary. Pin a version with
@@ -180,11 +209,12 @@ uninstall, delete that folder and the `# DeviceDeck` line from your shell profil
 
 ## Status
 
-Early release. Both platforms drive end to end: **Playwright, Cypress and Puppeteer each log into and
-check out of TestHive through the same DOM**, and the console drives any device by hand. It is an
-ordinary web page, so any browser driver works with no mobile-specific code. Typing is checked
-against the device's own read-back, so a keystroke that does not land is retyped rather than lost —
-on iOS *and* on Android's masked password fields.
+Early release. Both platforms drive end to end: **Playwright logs into and checks out of TestHive
+through the device page**, and the console drives any device by hand. It is an ordinary web page, so
+any browser driver can drive it; the Cypress and Puppeteer examples in `examples/` predate the current
+input path and have not been re-verified against it yet. Every action waits until the device has
+done it: `fill()` types through the device's own driver, which reads the field back and fails if the
+device does not hold the value — on iOS *and* on Android's masked password fields.
 
 It has run on a handful of Macs so far, so expect some first-contact problems — please
 [open an issue](https://github.com/devicelab-dev/DeviceDeck/issues) with the log folder it prints.
@@ -197,10 +227,12 @@ the ceiling is physics, not an artificial limit.
 
 ## Known limits
 
-- **The server is unauthenticated.** It listens on all interfaces (`0.0.0.0:8787`) by default, so
-  anyone on your network can view and drive your devices. That suits a trusted office or home
-  network; on shared Wi-Fi run `devicedeck --addr 127.0.0.1:8787` to keep it to this Mac. There is
-  no access control yet — do not put it on the open internet as-is.
+- **The server is open by default.** It listens on all interfaces (`0.0.0.0:8787`), so anyone on
+  your network can view and drive your devices — fine on a trusted office or home network. To limit
+  it, start it with an access token (`devicedeck --token <secret>` or `DEVICEDECK_TOKEN`): the links
+  it prints carry the token, and every other request needs it. On shared Wi-Fi you can also keep it
+  to this Mac with `--addr 127.0.0.1:8787`. A token is a shared secret, not user accounts, and the
+  server speaks plain HTTP — do not put it on the open internet as-is.
 - **A driver that dies without closing its connection holds its device for up to half a minute**,
   until a missed ping releases it — see [docs/testing.md](docs/testing.md#one-device-one-worker).
 - **Android video is ~18 fps and heavier than iOS.** The emulator's gRPC screenshot stream offers no
@@ -218,6 +250,8 @@ the ceiling is physics, not an artificial limit.
 
 ## Troubleshooting
 
+Every command, flag, environment variable and HTTP endpoint: [docs/cli-reference.md](docs/cli-reference.md).
+
 `devicedeck doctor` checks the tools DeviceDeck needs: Xcode, the iOS runtime, adb, an Android
 emulator, Node.js, Claude Code and maestro-runner.
 
@@ -227,9 +261,17 @@ driver, one log per sidecar and device, and `crash.log` if the process panics. T
 only what needs attention; `DEVICEDECK_LOG=info` or `debug` shows more there too. The last 20 runs
 are kept — attach the folder to an issue.
 
+## Privacy
+
+DeviceDeck runs on your Mac and keeps everything there: no account, no analytics, no telemetry.
+The only request it makes off the machine is a check for a newer release at startup (a GET to
+`open.devicelab.dev` with no device or app data); set `DEVICEDECK_NO_UPDATE_CHECK=1` to turn it off.
+
 ## Licence
 
-Apache License 2.0 — see [`LICENSE`](LICENSE).
+Apache License 2.0 — see [`LICENSE`](LICENSE). The DeviceLab device agents it installs on
+simulators and emulators come with maestro-runner as prebuilt binaries: free to use, not open
+source — see [`LICENSE-BINARIES.md`](internal/home/LICENSE-BINARIES.md).
 
 ## Built on
 

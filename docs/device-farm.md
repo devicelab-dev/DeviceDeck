@@ -19,7 +19,10 @@ local simulator on the client at all.
   see [the console](console.md#one-device-one-driver).
 - **Automation is cheap over the network** — a test reads the lightweight DOM tree, not video; the
   pixel stream is only for a human watching.
-- **No auth yet.** The server is unauthenticated: anyone who can reach the address can view and
-  drive the devices. That suits a trusted office or home network. On shared Wi-Fi, keep it to this
-  Mac with `devicedeck --addr 127.0.0.1:8787`, and do not put it on the open internet as-is (see
+- **Open unless you set a token.** By default anyone who can reach the address can view and drive
+  the devices — fine on a trusted office or home network. Start with `devicedeck --token <secret>`
+  (or `DEVICEDECK_TOKEN`) to require it: share the links the startup guide prints, which carry the
+  token; a browser opens one once and is remembered. Tests add `?token=…` to the first page they
+  open or send `Authorization: Bearer …`, and `devicedeck mcp --token …` for agents. It is a shared
+  secret over plain HTTP, so still do not put it on the open internet (see
   [Known limits](../README.md#known-limits)).

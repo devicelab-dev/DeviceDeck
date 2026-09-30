@@ -27,6 +27,11 @@ You don't need a mobile test suite to start:
   post-launch tap-swallow window. It clears the app's data first, so the test starts at a
   first-run screen; post to `/app/launch?reset=no` to resume where the app was left instead.
 
+- **Let Playwright start DeviceDeck**, if you installed it with npm:
+  ```ts
+  webServer: { command: 'npx devicedeck --app path/to/MyApp.app', url: 'http://127.0.0.1:8787', reuseExistingServer: true },
+  ```
+
 ## Drive it
 
 ```ts
@@ -36,12 +41,28 @@ await page.getByTestId('login-button').click();
 await expect(page.getByTestId('cart-button')).toBeVisible();
 ```
 
-- **Typing:** `page.keyboard.type(text, { delay: 150 })` — keystrokes go in as real HID presses.
-- **Wait for the echo before submitting:** the device's own value is exposed on
-  `data-dd-device-value` (a secure field reports bullets — check length).
+- **Typing:** `fill()` sets the field through the device's own driver and returns once the device
+  holds the value (it reads the field back). `page.keyboard.type(text)` also works, as real key
+  presses, when a test needs keystrokes.
+- **The device's own value** is exposed on `data-dd-device-value` (a secure field reports bullets —
+  check length).
+- **Don't use `page.clock`:** the app runs on the device's clock, which Playwright's fake clock
+  cannot reach, and pausing it would also pause the page's own refresh of the device screen.
 - **First render** waits on the tree-engine warm-up, so give the first selector ~30s.
-- **Native gestures** a DOM event can't express: `page.evaluate(() => devicedeck.gesture('home'))` —
-  see [behaviors](behaviors.md).
+- **Device state from the URL:** `?appearance=dark`, `?location=51.5074,-0.1278`, and with `?app=`,
+  `?grant=location,photos` / `?revoke=camera` set the device up before the app launches; `?link=myapp://checkout`
+  opens a deep link after. The page does this before the mirror shows anything, and a failure is shown
+  on the page:
+  ```ts
+  await page.goto(`/device/${UDID}?app=${APP}&reset=yes&appearance=dark&grant=location`);
+  ```
+  Mid-test, `page.evaluate(() => devicedeck.settings({ appearance: 'light' }))` and
+  `devicedeck.openURL(url)` do the same. Permission names: `location`, `microphone`, `contacts`,
+  `photos`, `calendar`, `motion` on both platforms; `reminders` on iOS; `camera` and `notifications`
+  on Android (the simulator has no camera). iOS ends the app when some permissions change.
+- **Native gestures** a DOM event can't express, on `window.devicedeck`:
+  `page.evaluate(() => devicedeck.gesture('home'))` — also `swipe`, `button`, `key` and `screenshot()`;
+  see [behaviors](behaviors.md). The HTTP equivalents are in the [CLI reference](cli-reference.md#http-api).
 
 ## One device, one worker
 
@@ -49,7 +70,25 @@ A device takes one driver at a time: two clients tapping at once would interleav
 a second one is refused and told who holds the device. Test runners go parallel by default, so set
 one worker per device (`workers: 1` in Playwright) — and to run in parallel, boot more devices and
 give each worker its own. A tab left open on the device in the [console](console.md) counts as a
-driver too.
+driver too. An HTTP action (`/tap`, `/act`, …) from another client while a page holds the
+device is still carried out — an agent may tap through DeviceDeck's MCP tools while its browser tool
+holds the page — but it is logged and its response carries an `X-DeviceDeck-Warning` header.
+
+## Recipes
+
+Short specs in [`examples/playwright/tests/recipes`](../examples/playwright/tests/recipes/):
+
+- **[Accessibility check](../examples/playwright/tests/recipes/a11y.spec.ts)** — run
+  [axe](https://github.com/dequelabs/axe-core-npm/tree/develop/packages/playwright) on `#mirror`
+  with its naming rules: the mirror carries the app's own accessibility data, so an unnamed control
+  in the app is an axe violation.
+- **[Permission prompts](../examples/playwright/tests/recipes/permission-prompts.spec.ts)** — set
+  the permission up front with `?grant=`, or answer a system alert (mirrored as an `alertdialog`)
+  with `page.addLocatorHandler`.
+- **[Two devices in one test](../examples/playwright/tests/recipes/two-devices.spec.ts)** — a page
+  per device, driven together; the same selectors work on iOS and Android.
+- **[Seed test for Playwright's test agents](../examples/playwright/tests/recipes/seed.spec.ts)** —
+  the start `npx playwright init-agents` plans and generates from: the app launched fresh.
 
 ## Frameworks
 

@@ -10,33 +10,49 @@ metadata:
 DeviceDeck mirrors a simulator/emulator's native UI as **real DOM** over a live video of the
 screen, so Playwright drives it exactly like a web page — same API, no Appium. What is
 *different* is that you are driving a **device running a native app**, and this skill is that
-difference: durable accessibility-id selectors, real-HID typing, native gestures, and app
-lifecycle a web test would not know.
+difference: durable accessibility-id selectors, actions that wait for the device, native
+gestures, and app lifecycle a web test would not know.
 
 **Prerequisites**
 - `devicedeck` is running (default `http://127.0.0.1:8787`). The device page is
-  `/device/{udid}?app={bundleId}` — use `booted` for the udid when one simulator is up.
+  `/device/{udid}?app={bundleId}`, where the udid is a simulator's UDID or an emulator's serial
+  (`emulator-5554`). Use the explicit id from `list_devices`; `booted` is only a shortcut for
+  when exactly one simulator and no emulator is up.
+- **Find the app with `list_apps`** when the user says "my app" rather than a bundle id: it
+  lists the builds registered with `devicedeck --app` (name, bundle id, platform, minimum OS).
+  Pick the one that matches; ask only if several do.
 - **If no device is booted, boot one yourself** — do not send the user to the console. With
-  DeviceDeck's MCP tools: `list_devices`, then `boot_device` on a simulator (or emulator) that
-  fits the app, then `launch_app` with the bundle id (a build registered with `devicedeck --app`
-  is installed first). `device_page_url` gives the page to open. Only without those tools, ask the
-  user to open the console at the base URL and pick a device.
+  DeviceDeck's MCP tools: `list_devices`, then `boot_device` on a simulator (or emulator) of the
+  app's platform, then `launch_app` with the bundle id (a registered build is installed first). `device_page_url` gives the page to open. Without the MCP tools, the same steps are HTTP
+  calls: `GET /api/devices`, `GET /api/apps`, `POST /api/devices/{id}/boot`,
+  `POST /api/devices/{udid}/app/launch` with `{"app": "<bundle id>"}`. Only if you can do none of
+  these, ask the user to open the console at the base URL and pick a device.
+- **Boot returns before the device is up.** Poll `list_devices` (or `GET /api/devices`) every few
+  seconds until it is listed booted — typically 10–30s, longer on a cold machine. A powered-off
+  emulator is listed as `avd:{name}`; boot it by that id, and it comes back under a serial such
+  as `emulator-5554` — use the serial from then on.
+- **Launch blocks until the app takes input**, so the first action after it lands. Right after a
+  boot, an emulator can be listed booted while Android is still starting: a launch then fails
+  with a raw `adb … monkey … exit status` error. Wait a few seconds and launch again; only
+  *"is it installed?"* means the build is missing. Expect a first launch to take ~20s on iOS
+  (the tree engine starts) and a few seconds after that.
 - You drive with **Playwright MCP** (`@playwright/mcp`) — the browser tool you already use for
-  the web. (Cypress and Puppeteer drive the same DOM too — see [`examples/`](../../examples/) —
-  but Playwright is the natural pairing, since it is also what drives.)
+  the web — and emit a Playwright spec.
 
 ## Explore the device with Playwright MCP
 
 The tools are your normal Playwright browser tools; the **awareness** below is the device layer.
 
-1. **Navigate** to `http://127.0.0.1:8787/device/booted?app={bundleId}`.
+1. **Navigate** to `http://127.0.0.1:8787/device/{udid}?app={bundleId}`, after `launch_app`.
 2. **Snapshot** — the native screen comes back as a DOM tree; every element carries its
    `data-testid` (the app's accessibility id) and an ARIA role/name.
 3. **Act by selector** — `getByTestId` / `getByRole`, never a coordinate.
-4. **Confirm a typed value landed before you submit.** Keys reach the device as real HID
-   presses a moment after the DOM shows them; the submit button usually enables only once the
-   app has accepted the value. Submitting too early acts on a half-typed form — unlike a
-   normal web input.
+4. **Actions wait for the device.** `browser_click` and `browser_type` (which emits `fill()`)
+   return once the device has acted and the screen has settled, so the next snapshot shows the
+   result — no waiting needed. Two exceptions to know: an app that updates on a timer (a
+   debounced search) can change after the snapshot — assert with `expect`, which retries; and a
+   button the app has disabled can show only as its text, with no ref and no test id, until it is
+   enabled — fill the form, then snapshot again to find it.
 5. **Device-only controls** no DOM element exposes live on `window.devicedeck`, via
    `page.evaluate`:
    - `devicedeck.gesture('home' | 'appSwitcher' | 'notificationCenter' | 'lockScreen')`
@@ -61,18 +77,29 @@ matter here:
   — it blocks until the app is taking input, so the first action lands. It clears the app's data
   first; post to `/app/launch?reset=no` to resume where the app was left instead.
 - **Selectors:** `page.getByTestId('login-button')` / `getByRole`; Playwright auto-waits.
-- **Typing:** `page.keyboard.type(text, { delay: 150 })` — real HID pacing.
-- **Wait for the echo before submitting:** `page.waitForFunction` on the field's
-  `data-dd-device-value` (a secure field reports bullets — check its *length*).
+- **Typing:** `locator.fill(text)` — the same code Playwright MCP emits. It returns once the
+  device holds the value, so there is nothing to wait for before submitting. Avoid
+  `keyboard.type`: key by key it raises Android's soft keyboard, and the tap after it can be
+  spent closing the keyboard instead of pressing the button.
 - **First render** waits on the tree-engine warm-up — give the first selector ~30s.
 - **Gestures:** `await page.evaluate(() => devicedeck.gesture('home'))`.
+- **Device state from the URL**, set before the first screen shows:
+  `/device/{udid}?app={id}&reset=yes&appearance=dark&location=51.5074,-0.1278&grant=location,photos`
+  (`revoke=`, and `link=myapp://…` to open a deep link after launch). Mid-test:
+  `page.evaluate(() => devicedeck.settings({ appearance: 'light' }))` / `devicedeck.openURL(url)`.
+  iOS closes the app when some permissions change, so grant them in the URL, before launch.
+- **System permission prompts** are mirrored as an `alertdialog`. Prefer granting up front
+  (`grant=`); for prompts that cannot be granted, answer them with
+  `page.addLocatorHandler(page.getByRole('alertdialog'), d => d.getByRole('button', { name: 'Allow' }).click())`.
+- **Recipes** to start from — accessibility check (axe), permission prompts, two devices in one
+  test, a seed test for Playwright's test agents: `examples/playwright/tests/recipes`.
 
 ## Rules that keep a test durable
 
 - **Selectors, never coordinates.** Drive and assert by `data-testid`; a test that used pixels
   reviews as noise and breaks on the first layout change.
-- **Wait for the device to echo a typed value before submitting.** Keys land a moment after the
-  DOM has them; a submit fired too early acts on a half-typed form.
+- **No fixed waits.** `click()` and `fill()` return once the device has acted; a
+  `waitForTimeout` only hides a real problem. Assert with `expect`, which retries.
 - **Reset between independent tests.** A native app stays logged in across relaunch; a fresh
   launch (the default) is the clean first-run slate.
 - **One driver per device.** Run a single worker, and close any console tab left open on the
@@ -81,12 +108,34 @@ matter here:
 ## Managing devices
 
 With DeviceDeck's MCP tools (the Claude plugin, the Gemini extension, or `devicedeck mcp` added by
-hand) the agent picks, boots, installs and launches itself: `list_devices`, `boot_device`, `install_app`
+hand) the agent picks, boots, installs and launches itself: `list_devices`, `list_apps`, `boot_device`, `install_app`
 (a `.app` for a Simulator or a `.apk` for an emulator — not a device `.ipa`), and `launch_app`
 (which also takes an `appFile` to install-then-launch in one call); `device_page_url` returns the
 page to hand to Playwright MCP. Without them, a device the user booted plus Playwright MCP is all you
-need.
+need. With no browser tool at all, act through the MCP tools themselves: `snapshot`, then `tap`,
+`fill` (types a value and reads it back from the device) or `long_press` by a ref from the snapshot
+(`e12`), a testid, visible text, or role and name; `find_element` to check a selector matches one
+element, `wait_for` (visible / gone / settled) instead of a fixed wait, and `device_settings` for
+dark mode, location and permissions.
 
 **If the app is not installed** (a launch fails with *"is it installed?"*) **or you were not given
 its file, ask the user** for the `.app`/`.apk` path or the bundle id — do not guess a bundle id or
 fabricate a path.
+
+**If the device is stuck, restart it.** Relaunch the app first (`launch_app`). If the page stays empty
+or the app sits on its splash screen after that, the device itself is wedged: shut it down and boot
+it again, then launch the app. There is no MCP tool for the shutdown; use the HTTP API, which works
+from Playwright MCP too — the device page is served by the same server, so `browser_evaluate` can
+call it:
+
+```js
+// 1. Shut the device down (ends its session; whoever drives it is told so).
+await fetch('/api/devices/{udid}/shutdown', { method: 'POST' });
+// 2. Boot it again. A simulator boots by its UDID. An emulator loses its serial when it
+//    powers off, so boot it by its AVD — the "avd" field of GET /api/devices: `avd:{name}`.
+await fetch('/api/devices/{udid-or-avd:name}/boot', { method: 'POST' });
+// 3. Poll GET /api/devices until the device is listed booted (an emulator reappears with
+//    a serial, which may differ from before), then launch the app on it.
+```
+
+Restart only a device you were given or booted yourself — never one the user is working on.

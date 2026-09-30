@@ -11,8 +11,8 @@ coordinates, no vision model.
 
 Every agent needs two things: the `devicedeck` binary installed and running (`devicedeck` in a
 terminal), and a browser tool — [Playwright MCP](https://github.com/microsoft/playwright-mcp). The
-`devicedeck mcp` server adds device tools (list, boot, launch, UI tree) and briefs the agent when it
-connects; the three skills (authoring, flows, triage) teach it the rest.
+`devicedeck mcp` server adds device tools (list, boot, launch, UI tree, device settings) and briefs the agent when it
+connects; the four skills (authoring, maestro, flows, triage) teach it the rest.
 
 **Claude Code** — the plugin brings the skills and the `devicedeck` MCP server:
 
@@ -36,6 +36,14 @@ codex mcp add devicedeck -- devicedeck mcp
 npx skills add devicelab-dev/DeviceDeck
 ```
 
+Codex stops a tool call after 60 seconds by default, and booting a cold emulator or installing a
+large build can take longer. Raise it for DeviceDeck in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.devicedeck]
+tool_timeout_sec = 300
+```
+
 **VS Code / GitHub Copilot**
 
 ```bash
@@ -56,10 +64,21 @@ npx skills add devicelab-dev/DeviceDeck
 }
 ```
 
+If you installed DeviceDeck with npm into a project, `devicedeck` is not on your `PATH`: use
+`npx devicedeck mcp` as the MCP command, or install it globally with `npm install -g devicedeck`.
+
 **Anything else** (Windsurf/Devin, Cline, JetBrains AI, …) — the same two servers in that
 client's MCP settings, in its own format; `npx skills add devicelab-dev/DeviceDeck` installs the
 skills for most agents. Clients that install [Agent Plugins](https://agent-plugins.org) can install
 this repository directly: `plugin.json`, `mcp.json` and `skills/` at its root are that bundle.
+
+## Ask for a test
+
+> Write a Playwright test that logs in to my app.
+
+The agent calls `list_apps` to find the build you registered with `devicedeck --app`, boots a
+simulator of its platform, launches the app (installing it first), drives it through the device page
+and writes a spec that selects by the app's accessibility ids. Review and run it like any other test.
 
 ## Tested with
 
